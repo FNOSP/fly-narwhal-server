@@ -1,0 +1,3 @@
+rootProject.name = 'fly-narwhal-server'
+include 'fly-narwhal-core'
+include 'fly-narwhal-web'
