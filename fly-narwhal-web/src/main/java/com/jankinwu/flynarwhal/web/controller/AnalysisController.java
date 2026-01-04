@@ -1,6 +1,7 @@
 package com.jankinwu.flynarwhal.web.controller;
 
 import com.jankinwu.flynarwhal.core.dto.request.AnalyzeRequest;
+import com.jankinwu.flynarwhal.core.dto.response.EpisodeSegmentsResponse;
 import com.jankinwu.flynarwhal.web.service.AnalysisService;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,5 +24,10 @@ public class AnalysisController {
             e.printStackTrace();
             return "Error: " + e.getMessage();
         }
+    }
+
+    @GetMapping("/segments")
+    public EpisodeSegmentsResponse getSegments(@RequestParam String episodeGuid) {
+        return analysisService.getSegmentsByEpisodeGuid(episodeGuid);
     }
 }

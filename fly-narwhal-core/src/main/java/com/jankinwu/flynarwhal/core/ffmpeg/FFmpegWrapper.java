@@ -14,6 +14,7 @@ import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -24,6 +25,65 @@ public class FFmpegWrapper {
     private static final Pattern BLACK_FRAME_PATTERN = Pattern.compile("frame:(\\d+)\\s+pblack:(\\d+)\\s+pts:\\d+\s+t:([\\d\\.]+)");
     private static final Pattern CHAPTER_START_PATTERN = Pattern.compile("Chapter #\\d+:\\d+: start (\\d+\\.\\d+), end (\\d+\\.\\d+)");
     private static final Pattern CHAPTER_TITLE_PATTERN = Pattern.compile("Metadata:\\s+title\\s+:\\s+(.+)");
+    private static final int STDERR_MAX_CHARS = 8192;
+    private static final Object CAPABILITY_LOCK = new Object();
+    private static volatile Boolean FFMPEG_AVAILABLE;
+    private static volatile Boolean CHROMAPRINT_MUXER_AVAILABLE;
+    private static final AtomicBoolean CHROMAPRINT_UNAVAILABLE_LOGGED = new AtomicBoolean(false);
+
+    public static boolean isFfmpegAvailable() {
+        Boolean cached = FFMPEG_AVAILABLE;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (CAPABILITY_LOCK) {
+            cached = FFMPEG_AVAILABLE;
+            if (cached != null) {
+                return cached;
+            }
+            boolean available;
+            try {
+                Process process = new ProcessBuilder("ffmpeg", "-version")
+                    .redirectErrorStream(true)
+                    .start();
+                process.waitFor();
+                available = process.exitValue() == 0;
+            } catch (Exception e) {
+                available = false;
+            }
+            FFMPEG_AVAILABLE = available;
+            return available;
+        }
+    }
+
+    public static boolean isChromaprintMuxerAvailable() {
+        Boolean cached = CHROMAPRINT_MUXER_AVAILABLE;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (CAPABILITY_LOCK) {
+            cached = CHROMAPRINT_MUXER_AVAILABLE;
+            if (cached != null) {
+                return cached;
+            }
+            boolean available;
+            if (!isFfmpegAvailable()) {
+                available = false;
+            } else {
+                try {
+                    Process process = new ProcessBuilder("ffmpeg", "-hide_banner", "-h", "muxer=chromaprint")
+                        .redirectErrorStream(true)
+                        .start();
+                    process.waitFor();
+                    available = process.exitValue() == 0;
+                } catch (Exception e) {
+                    available = false;
+                }
+            }
+            CHROMAPRINT_MUXER_AVAILABLE = available;
+            return available;
+        }
+    }
 
     public double getDuration(String path) throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-i", path);
@@ -49,16 +109,34 @@ public class FFmpegWrapper {
     }
 
     public int[] getFingerprint(String path, double start, double duration) throws IOException, InterruptedException {
+        if (!isChromaprintMuxerAvailable()) {
+            if (CHROMAPRINT_UNAVAILABLE_LOGGED.compareAndSet(false, true)) {
+                log.warn("FFmpeg does not support chromaprint muxer; skipping Chromaprint analysis");
+            }
+            return new int[0];
+        }
+        if (Double.isNaN(start) || Double.isInfinite(start) || start < 0) {
+            return new int[0];
+        }
+        if (Double.isNaN(duration) || Double.isInfinite(duration) || duration <= 0) {
+            return new int[0];
+        }
+
         List<String> command = new ArrayList<>();
         command.add("ffmpeg");
+        command.add("-hide_banner");
+        command.add("-loglevel");
+        command.add("error");
         command.add("-ss");
         command.add(String.valueOf(start));
         command.add("-i");
         command.add(path);
-        if (duration > 0) {
-            command.add("-t");
-            command.add(String.valueOf(duration));
-        }
+        command.add("-t");
+        command.add(String.valueOf(duration));
+        command.add("-map");
+        command.add("0:a:0?");
+        command.add("-ac");
+        command.add("2");
         command.add("-vn"); // No video
         command.add("-sn"); // No subtitles
         command.add("-dn"); // No data
@@ -74,13 +152,25 @@ public class FFmpegWrapper {
         Process process = pb.start();
 
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        StringBuilder stderr = new StringBuilder();
         
-        // Thread to consume stderr (chromaprint logs usually go to stderr or nothing, but we need to drain it)
         Thread stderrThread = new Thread(() -> {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
-                while (reader.readLine() != null) {}
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (stderr.length() < STDERR_MAX_CHARS) {
+                        int remaining = STDERR_MAX_CHARS - stderr.length();
+                        if (line.length() <= remaining) {
+                            stderr.append(line).append('\n');
+                        } else {
+                            stderr.append(line, 0, remaining);
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
             } catch (IOException e) {
-                // Ignore
             }
         });
         stderrThread.start();
@@ -97,7 +187,12 @@ public class FFmpegWrapper {
         stderrThread.join();
         
         if (process.exitValue() != 0) {
-            log.error("FFmpeg exited with code {}", process.exitValue());
+            String stderrText = stderr.toString().trim();
+            if (!stderrText.isEmpty()) {
+                log.error("FFmpeg exited with code {}. stderr: {}", process.exitValue(), stderrText);
+            } else {
+                log.error("FFmpeg exited with code {}", process.exitValue());
+            }
             return new int[0];
         }
         

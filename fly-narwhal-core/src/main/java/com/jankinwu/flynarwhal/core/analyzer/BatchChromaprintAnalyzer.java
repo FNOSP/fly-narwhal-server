@@ -32,14 +32,18 @@ public class BatchChromaprintAnalyzer implements MediaFileAnalyzer {
             if (mode == AnalysisMode.INTRODUCTION && ep.getIntroFingerprint() == null) {
                 try {
                     int[] fp = chromaprintAnalyzer.getFingerprint(ep, mode);
-                    ep.setIntroFingerprint(intsToBytes(fp));
+                    if (fp != null && fp.length > 0) {
+                        ep.setIntroFingerprint(intsToBytes(fp));
+                    }
                 } catch (Exception e) {
                     log.error("Error generating fingerprint for " + ep.getPath(), e);
                 }
             } else if (mode == AnalysisMode.CREDITS && ep.getCreditsFingerprint() == null) {
                 try {
                     int[] fp = chromaprintAnalyzer.getFingerprint(ep, mode);
-                    ep.setCreditsFingerprint(intsToBytes(fp));
+                    if (fp != null && fp.length > 0) {
+                        ep.setCreditsFingerprint(intsToBytes(fp));
+                    }
                 } catch (Exception e) {
                     log.error("Error generating fingerprint for " + ep.getPath(), e);
                 }

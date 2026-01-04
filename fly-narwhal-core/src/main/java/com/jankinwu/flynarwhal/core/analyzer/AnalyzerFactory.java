@@ -2,6 +2,7 @@ package com.jankinwu.flynarwhal.core.analyzer;
 
 import com.jankinwu.flynarwhal.core.data.AnalysisMode;
 import com.jankinwu.flynarwhal.core.data.AnalyzerAction;
+import com.jankinwu.flynarwhal.core.ffmpeg.FFmpegWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -24,8 +25,9 @@ public class AnalyzerFactory {
     public List<MediaFileAnalyzer> createAnalyzers(AnalysisMode mode, boolean isAnime, boolean isMovie, AnalyzerAction action) {
         List<MediaFileAnalyzer> analyzers = new ArrayList<>();
 
-        boolean ffmpegValid = true; // Assume true for now
-        boolean chromaprintOnly = ffmpegValid && preferChromaprint && (action == AnalyzerAction.DEFAULT || action == AnalyzerAction.CHROMAPRINT);
+        boolean ffmpegValid = FFmpegWrapper.isFfmpegAvailable();
+        boolean chromaprintValid = ffmpegValid && FFmpegWrapper.isChromaprintMuxerAvailable();
+        boolean chromaprintOnly = chromaprintValid && preferChromaprint && (action == AnalyzerAction.DEFAULT || action == AnalyzerAction.CHROMAPRINT);
 
         // 1. Chapter Analyzer
         if (!chromaprintOnly && (action == AnalyzerAction.CHAPTER || action == AnalyzerAction.DEFAULT)) {
@@ -34,7 +36,7 @@ public class AnalyzerFactory {
 
         // 2. Chromaprint (Anime)
         if (isAnime && (mode == AnalysisMode.INTRODUCTION || mode == AnalysisMode.CREDITS) && 
-            (action == AnalyzerAction.DEFAULT || action == AnalyzerAction.CHROMAPRINT) && ffmpegValid) {
+            (action == AnalyzerAction.DEFAULT || action == AnalyzerAction.CHROMAPRINT) && chromaprintValid) {
             analyzers.add(new BatchChromaprintAnalyzer(chromaprintAnalyzer));
         }
 
@@ -49,7 +51,7 @@ public class AnalyzerFactory {
 
         // 4. Chromaprint (General)
         if (!isAnime && !isMovie && (mode == AnalysisMode.INTRODUCTION || mode == AnalysisMode.CREDITS) && 
-            (action == AnalyzerAction.DEFAULT || action == AnalyzerAction.CHROMAPRINT) && ffmpegValid) {
+            (action == AnalyzerAction.DEFAULT || action == AnalyzerAction.CHROMAPRINT) && chromaprintValid) {
             analyzers.add(new BatchChromaprintAnalyzer(chromaprintAnalyzer));
         }
 

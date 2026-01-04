@@ -5,7 +5,10 @@ spring:
     url: jdbc:h2:file:./data/fly-narwhal;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
     driver-class-name: org.h2.Driver
     username: sa
-    password: 
+    password: 123456
   sql:
     init:
       mode: always
+
+server:
+  port: 5365

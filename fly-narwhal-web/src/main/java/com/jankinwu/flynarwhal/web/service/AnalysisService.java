@@ -9,6 +9,7 @@ import com.jankinwu.flynarwhal.core.data.QueuedEpisode;
 import com.jankinwu.flynarwhal.core.data.Segment;
 import com.jankinwu.flynarwhal.core.ffmpeg.FFmpegWrapper;
 import com.jankinwu.flynarwhal.core.scanner.MediaFileScanner;
+import com.jankinwu.flynarwhal.core.dto.response.EpisodeSegmentsResponse;
 import com.jankinwu.flynarwhal.web.entity.EpisodeSegment;
 import com.jankinwu.flynarwhal.web.entity.SeriesEpisode;
 import com.jankinwu.flynarwhal.core.dto.request.EpisodeDetailRequest;
@@ -48,6 +49,28 @@ public class AnalysisService {
         this.analyzerFactory = analyzerFactory;
         this.mediaFileScanner = mediaFileScanner;
         this.ffmpegWrapper = new FFmpegWrapper();
+    }
+
+    public EpisodeSegmentsResponse getSegmentsByEpisodeGuid(String episodeGuid) {
+        EpisodeSegment segment = episodeSegmentMapper.selectOne(
+            new QueryWrapper<EpisodeSegment>()
+                .eq("guid", episodeGuid)
+                .last("LIMIT 1")
+        );
+
+        if (segment == null) {
+            return new EpisodeSegmentsResponse();
+        }
+
+        EpisodeSegmentsResponse response = new EpisodeSegmentsResponse();
+        if (segment.getIntroStart() != null && segment.getIntroEnd() != null) {
+            response.setIntro(new Segment(segment.getIntroStart(), segment.getIntroEnd(), true));
+        }
+        if (segment.getCreditsStart() != null && segment.getCreditsEnd() != null) {
+            response.setCredits(new Segment(segment.getCreditsStart(), segment.getCreditsEnd(), true));
+        }
+
+        return response;
     }
 
     @Transactional
@@ -134,9 +157,6 @@ public class AnalysisService {
 
     private void runAnalyzers(List<MediaFileAnalyzer> analyzers, List<QueuedEpisode> queue, AnalysisMode mode) {
         for (MediaFileAnalyzer analyzer : analyzers) {
-            // Filter out already analyzed episodes for optimization?
-            // But some batch analyzers (Chromaprint) might need all episodes context.
-            // So we pass the full list, and let the analyzer decide (they check isAnalyzed).
             try {
                 analyzer.analyze(queue, mode);
             } catch (Exception e) {
