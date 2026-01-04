@@ -55,19 +55,12 @@ jobs:
         run: |
           TAG_NAME="${{ steps.release_tag.outputs.tag }}"
 
-          NOTES="实现片头/片尾智能检测"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          # 在此处手动填写发布日志
+          NOTES="1. 实现片头/片尾智能检测"
+
+          # 如果是通过 GitHub 页面手动触发并输入了日志，则优先使用输入的内容
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_body }}" ]; then
             NOTES="${{ github.event.inputs.release_body }}"
-          else
-            TAG_MESSAGE="$(git for-each-ref "refs/tags/${TAG_NAME}" --format='%(contents)')"
-            if [ -z "$TAG_MESSAGE" ]; then
-              echo "Release notes not found for tag '${TAG_NAME}'." >&2
-              echo "Please use an annotated tag, e.g.:" >&2
-              echo "  git tag -a ${TAG_NAME} -m \"your changelog\"" >&2
-              echo "Or run this workflow with workflow_dispatch and provide 'release_body'." >&2
-              exit 1
-            fi
-            NOTES="$TAG_MESSAGE"
           fi
 
           WARNING=""

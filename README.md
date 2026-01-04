@@ -15,7 +15,7 @@
 #### 构建 Jar 包
 1. 克隆项目：
    ```bash
-   git clone <项目地址>
+   git clone https://github.com/FNOSP/fly-narwhal-server
    cd fly-narwhal-server
    ```
 2. 赋予脚本执行权限：
