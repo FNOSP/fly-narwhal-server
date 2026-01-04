@@ -15,13 +15,13 @@ public class EpisodeSegment {
 
     private String seriesGuid;
     private String filePath;
-    private Integer episodeIndex;
+    private Integer episodeNumber;
     private Double duration;
     
-    private Double introStart;
-    private Double introEnd;
-    private Double creditsStart;
-    private Double creditsEnd;
+    private Integer introStart;
+    private Integer introEnd;
+    private Integer creditsStart;
+    private Integer creditsEnd;
 
     private byte[] introFingerprint;
     private byte[] creditsFingerprint;

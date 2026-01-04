@@ -3,6 +3,7 @@ package com.jankinwu.flynarwhal.web.controller;
 import com.jankinwu.flynarwhal.core.dto.request.AnalyzeRequest;
 import com.jankinwu.flynarwhal.core.dto.response.EpisodeSegmentsResponse;
 import com.jankinwu.flynarwhal.core.dto.response.Result;
+import com.jankinwu.flynarwhal.core.data.AnalysisStatus;
 import com.jankinwu.flynarwhal.web.service.AnalysisService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -21,10 +22,27 @@ public class AnalysisController {
     @PostMapping("/analyze")
     public Result<String> analyze(@RequestBody AnalyzeRequest request) {
         try {
-            int queueSize = analysisService.enqueueAnalyzeSeason(request.getSeriesGuid(), request.getSeasonPath(), request.getEpisodes());
-            return Result.success("Analysis success. queueSize=" + queueSize);
+            int queueSize = analysisService.enqueueAnalyzeSeason(
+                request.getSeriesGuid(), 
+                request.getSeasonPath(), 
+                request.getEpisodes(),
+                request.getTvTitle(),
+                request.getSeasonNumber()
+            );
+            return Result.success();
         } catch (Exception e) {
             log.error("Error analyzing season", e);
+            return Result.error("Error: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/status")
+    public Result<AnalysisStatus> getStatus(@RequestParam String seriesGuid) {
+        try {
+            AnalysisStatus status = analysisService.getAnalysisStatus(seriesGuid);
+            return Result.success(status);
+        } catch (Exception e) {
+            log.error("Error getting status", e);
             return Result.error("Error: " + e.getMessage());
         }
     }

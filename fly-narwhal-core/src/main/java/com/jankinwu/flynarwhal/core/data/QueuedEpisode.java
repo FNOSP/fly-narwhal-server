@@ -13,7 +13,7 @@ public class QueuedEpisode {
     private String episodeGuid;
     private String seriesGuid;
     private String path;
-    private int episodeIndex;
+    private int episodeNumber;
     private double duration;
     
     // Status tracking

@@ -7,7 +7,7 @@ public class EpisodeDetailRequest {
 
     private String filePath;
 
-    private Integer episodeIndex;
+    private Integer episodeNumber;
 
     private String guid;
 }

@@ -3,10 +3,7 @@ package com.jankinwu.flynarwhal.web.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.jankinwu.flynarwhal.core.analyzer.AnalyzerFactory;
 import com.jankinwu.flynarwhal.core.analyzer.MediaFileAnalyzer;
-import com.jankinwu.flynarwhal.core.data.AnalysisMode;
-import com.jankinwu.flynarwhal.core.data.AnalyzerAction;
-import com.jankinwu.flynarwhal.core.data.QueuedEpisode;
-import com.jankinwu.flynarwhal.core.data.Segment;
+import com.jankinwu.flynarwhal.core.data.*;
 import com.jankinwu.flynarwhal.core.ffmpeg.FFmpegWrapper;
 import com.jankinwu.flynarwhal.core.scanner.MediaFileScanner;
 import com.jankinwu.flynarwhal.core.dto.response.EpisodeSegmentsResponse;
@@ -46,6 +43,13 @@ public class AnalysisService {
     private final TransactionTemplate transactionTemplate;
     private final BlockingDeque<AnalyzeJob> analyzeJobQueue = new LinkedBlockingDeque<>();
 
+    @PostConstruct
+    public void init() {
+        Thread thread = new Thread(this::processQueue, "AnalysisThread");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
     public AnalysisService(SeriesEpisodeMapper seriesEpisodeMapper,
                            EpisodeSegmentMapper episodeSegmentMapper,
                            AnalyzerFactory analyzerFactory,
@@ -59,36 +63,65 @@ public class AnalysisService {
         this.transactionTemplate = transactionTemplate;
     }
 
-    @PostConstruct
-    public void startWorker() {
-        Thread worker = new Thread(() -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                try {
-                    AnalyzeJob job = analyzeJobQueue.takeFirst();
-                    transactionTemplate.executeWithoutResult(status -> {
-                        try {
-                            analyzeSeasonInternal(job.seriesGuid, job.seasonFolderPath, job.episodes);
-                        } catch (Exception e) {
-                            status.setRollbackOnly();
-                            log.error("Error processing analyze job for seriesGuid={}", job.seriesGuid, e);
-                        }
-                    });
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                } catch (Exception e) {
-                    log.error("Error in analyze worker loop", e);
-                }
+    private void processQueue() {
+        while (true) {
+            try {
+                AnalyzeJob job = analyzeJobQueue.takeFirst();
+                transactionTemplate.executeWithoutResult(status -> {
+                    try {
+                        analyzeSeasonInternal(job.seriesGuid, job.seasonFolderPath, job.episodes, job.tvTitle, job.seasonNumber);
+                    } catch (Exception e) {
+                        log.error("Error analyzing season internal", e);
+                        status.setRollbackOnly();
+                        updateAnalysisStatus(job.seriesGuid, AnalysisStatus.FAILED);
+                    }
+                });
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Exception e) {
+                log.error("Error processing analyze job", e);
             }
-        }, "analysis-job-worker");
-        worker.setDaemon(true);
-        worker.start();
+        }
     }
 
-    public int enqueueAnalyzeSeason(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes) {
+    public int enqueueAnalyzeSeason(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, String tvTitle, Integer seasonNumber) {
+        // 1. Register/Update Series with PENDING status
+        transactionTemplate.executeWithoutResult(status -> {
+            SeriesEpisode series = seriesEpisodeMapper.selectById(seriesGuid);
+            if (series == null) {
+                series = new SeriesEpisode();
+                series.setSeriesGuid(seriesGuid);
+                series.setSeasonFolderPath(seasonFolderPath);
+                series.setTvTitle(tvTitle);
+                series.setSeasonNumber(seasonNumber);
+                series.setStatus(AnalysisStatus.PENDING);
+                seriesEpisodeMapper.insert(series);
+            } else {
+                series.setSeasonFolderPath(seasonFolderPath);
+                series.setTvTitle(tvTitle);
+                series.setSeasonNumber(seasonNumber);
+                series.setStatus(AnalysisStatus.PENDING);
+                seriesEpisodeMapper.updateById(series);
+            }
+        });
+
+        // 2. Add to queue
         List<EpisodeDetailRequest> safeEpisodes = episodes == null ? List.of() : List.copyOf(episodes);
-        analyzeJobQueue.addLast(new AnalyzeJob(seriesGuid, seasonFolderPath, safeEpisodes, LocalDateTime.now()));
+        analyzeJobQueue.addLast(new AnalyzeJob(seriesGuid, seasonFolderPath, safeEpisodes, LocalDateTime.now(), tvTitle, seasonNumber));
         return analyzeJobQueue.size();
+    }
+
+    public AnalysisStatus getAnalysisStatus(String seriesGuid) {
+        SeriesEpisode series = seriesEpisodeMapper.selectById(seriesGuid);
+        return series != null ? series.getStatus() : null;
+    }
+
+    private void updateAnalysisStatus(String seriesGuid, AnalysisStatus status) {
+        SeriesEpisode series = new SeriesEpisode();
+        series.setSeriesGuid(seriesGuid);
+        series.setStatus(status);
+        seriesEpisodeMapper.updateById(series);
     }
 
     public EpisodeSegmentsResponse getSegmentsByEpisodeGuid(String episodeGuid) {
@@ -104,105 +137,130 @@ public class AnalysisService {
 
         EpisodeSegmentsResponse response = new EpisodeSegmentsResponse();
         if (segment.getIntroStart() != null && segment.getIntroEnd() != null) {
-            response.setIntro(new Segment(segment.getIntroStart(), segment.getIntroEnd(), true));
+            response.setIntro(new Segment(segment.getIntroStart().doubleValue(), segment.getIntroEnd().doubleValue(), true));
         }
         if (segment.getCreditsStart() != null && segment.getCreditsEnd() != null) {
-            response.setCredits(new Segment(segment.getCreditsStart(), segment.getCreditsEnd(), true));
+            response.setCredits(new Segment(segment.getCreditsStart().doubleValue(), segment.getCreditsEnd().doubleValue(), true));
         }
 
         return response;
     }
 
-    private void analyzeSeasonInternal(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes) {
+    private void analyzeSeasonInternal(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, String tvTitle, Integer seasonNumber) {
         log.info("Starting analysis for series {} in folder {}", seriesGuid, seasonFolderPath);
+        updateAnalysisStatus(seriesGuid, AnalysisStatus.IN_PROGRESS);
 
-        // 1. Check/Register Series
-        SeriesEpisode series = seriesEpisodeMapper.selectById(seriesGuid);
-        if (series == null) {
-            series = new SeriesEpisode();
-            series.setSeriesGuid(seriesGuid);
-            series.setSeasonFolderPath(seasonFolderPath);
-            seriesEpisodeMapper.insert(series);
-        } else {
-            // Update path if changed
-            if (!seasonFolderPath.equals(series.getSeasonFolderPath())) {
+        try {
+            // 1. Check/Register Series (redundant but kept for consistency, status is already IN_PROGRESS)
+            SeriesEpisode series = seriesEpisodeMapper.selectById(seriesGuid);
+            if (series == null) {
+                series = new SeriesEpisode();
+                series.setSeriesGuid(seriesGuid);
                 series.setSeasonFolderPath(seasonFolderPath);
-                seriesEpisodeMapper.updateById(series);
-            }
-        }
-
-        // 2. Scan for episodes
-        List<QueuedEpisode> queue = mediaFileScanner.getEpisodeQueue(seriesGuid, seasonFolderPath, episodes);
-        if (queue.isEmpty()) {
-            log.info("No episodes found in {}", seasonFolderPath);
-            return;
-        }
-        log.info("Found {} episodes", queue.size());
-
-        // 3. Load existing state
-        for (QueuedEpisode ep : queue) {
-            // Fetch existing segment from DB
-            EpisodeSegment existing = episodeSegmentMapper.selectOne(
-                new QueryWrapper<EpisodeSegment>()
-                    .eq("series_guid", seriesGuid)
-                    .eq("episode_index", ep.getEpisodeIndex())
-                    .last("LIMIT 1")
-            );
-            
-            if (existing != null) {
-                ep.setIntroFingerprint(existing.getIntroFingerprint());
-                ep.setCreditsFingerprint(existing.getCreditsFingerprint());
-                if (existing.getDuration() != null) {
-                    ep.setDuration(existing.getDuration());
+                series.setTvTitle(tvTitle);
+                series.setSeasonNumber(seasonNumber);
+                series.setStatus(AnalysisStatus.IN_PROGRESS);
+                seriesEpisodeMapper.insert(series);
+            } else {
+                // Update info if changed
+                boolean updated = false;
+                if (seasonFolderPath != null && !seasonFolderPath.equals(series.getSeasonFolderPath())) {
+                    series.setSeasonFolderPath(seasonFolderPath);
+                    updated = true;
+                }
+                if (tvTitle != null && !tvTitle.equals(series.getTvTitle())) {
+                    series.setTvTitle(tvTitle);
+                    updated = true;
+                }
+                if (seasonNumber != null && !seasonNumber.equals(series.getSeasonNumber())) {
+                    series.setSeasonNumber(seasonNumber);
+                    updated = true;
                 }
                 
-                if (existing.getIntroStart() != null && existing.getIntroEnd() != null) {
-                    ep.setIntroSegment(new Segment(existing.getIntroStart(), existing.getIntroEnd(), true));
-                }
-                if (existing.getCreditsStart() != null && existing.getCreditsEnd() != null) {
-                    ep.setCreditsSegment(new Segment(existing.getCreditsStart(), existing.getCreditsEnd(), true));
-                }
-
-                parseActions(existing.getAction(), ep);
-            } else {
-                try {
-                    ep.setDuration(ffmpegWrapper.getDuration(ep.getPath()));
-                } catch (Exception e) {
-                    log.error("Failed to get duration for " + ep.getPath(), e);
+                if (updated) {
+                    seriesEpisodeMapper.updateById(series);
                 }
             }
 
-            if (ep.getDuration() <= 0) {
-                try {
-                    ep.setDuration(ffmpegWrapper.getDuration(ep.getPath()));
-                } catch (Exception e) {
-                    log.error("Failed to get duration for " + ep.getPath(), e);
+            // 2. Scan for episodes
+            List<QueuedEpisode> queue = mediaFileScanner.getEpisodeQueue(seriesGuid, seasonFolderPath, episodes);
+            if (queue.isEmpty()) {
+                log.info("No episodes found in {}", seasonFolderPath);
+                updateAnalysisStatus(seriesGuid, AnalysisStatus.COMPLETED);
+                return;
+            }
+            log.info("Found {} episodes", queue.size());
+
+            // 3. Load existing state
+            for (QueuedEpisode ep : queue) {
+                // Fetch existing segment from DB
+                EpisodeSegment existing = episodeSegmentMapper.selectOne(
+                    new QueryWrapper<EpisodeSegment>()
+                        .eq("series_guid", seriesGuid)
+                        .eq("episode_index", ep.getEpisodeNumber())
+                        .last("LIMIT 1")
+                );
+                
+                if (existing != null) {
+                    ep.setIntroFingerprint(existing.getIntroFingerprint());
+                    ep.setCreditsFingerprint(existing.getCreditsFingerprint());
+                    if (existing.getDuration() != null) {
+                        ep.setDuration(existing.getDuration());
+                    }
+                    
+                    if (existing.getIntroStart() != null && existing.getIntroEnd() != null) {
+                        ep.setIntroSegment(new Segment(existing.getIntroStart().doubleValue(), existing.getIntroEnd().doubleValue(), true));
+                    }
+                    if (existing.getCreditsStart() != null && existing.getCreditsEnd() != null) {
+                        ep.setCreditsSegment(new Segment(existing.getCreditsStart().doubleValue(), existing.getCreditsEnd().doubleValue(), true));
+                    }
+
+                    parseActions(existing.getAction(), ep);
+                } else {
+                    try {
+                        ep.setDuration(ffmpegWrapper.getDuration(ep.getPath()));
+                    } catch (Exception e) {
+                        log.error("Failed to get duration for " + ep.getPath(), e);
+                    }
                 }
+
+                if (ep.getDuration() <= 0) {
+                    try {
+                        ep.setDuration(ffmpegWrapper.getDuration(ep.getPath()));
+                    } catch (Exception e) {
+                        log.error("Failed to get duration for " + ep.getPath(), e);
+                    }
+                }
+
+                ep.setIntroFingerprintEnd(600);
+                ep.setCreditsFingerprintStart(Math.max(0, ep.getDuration() - 240));
+
+                ep.setIntroAnalyzed(false);
+                ep.setCreditsAnalyzed(false);
             }
 
-            ep.setIntroFingerprintEnd(600);
-            ep.setCreditsFingerprintStart(Math.max(0, ep.getDuration() - 240));
+            // 4. Run Analysis Chain
+            // Hardcoded flags for now, can be passed as params
+            boolean isAnime = false; 
+            boolean isMovie = false;
+            AnalyzerAction action = AnalyzerAction.DEFAULT;
 
-            ep.setIntroAnalyzed(false);
-            ep.setCreditsAnalyzed(false);
+            // Analyze Introduction
+            List<MediaFileAnalyzer> introAnalyzers = analyzerFactory.createAnalyzers(AnalysisMode.INTRODUCTION, isAnime, isMovie, action);
+            runAnalyzers(introAnalyzers, queue, AnalysisMode.INTRODUCTION);
+
+            // Analyze Credits
+            List<MediaFileAnalyzer> creditsAnalyzers = analyzerFactory.createAnalyzers(AnalysisMode.CREDITS, isAnime, isMovie, action);
+            runAnalyzers(creditsAnalyzers, queue, AnalysisMode.CREDITS);
+
+            // 5. Save Results
+            saveResults(queue, seriesGuid);
+            updateAnalysisStatus(seriesGuid, AnalysisStatus.COMPLETED);
+        } catch (Exception e) {
+            log.error("Error during analysis for series {}", seriesGuid, e);
+            updateAnalysisStatus(seriesGuid, AnalysisStatus.FAILED);
+            throw e;
         }
-
-        // 4. Run Analysis Chain
-        // Hardcoded flags for now, can be passed as params
-        boolean isAnime = false; 
-        boolean isMovie = false;
-        AnalyzerAction action = AnalyzerAction.DEFAULT;
-
-        // Analyze Introduction
-        List<MediaFileAnalyzer> introAnalyzers = analyzerFactory.createAnalyzers(AnalysisMode.INTRODUCTION, isAnime, isMovie, action);
-        runAnalyzers(introAnalyzers, queue, AnalysisMode.INTRODUCTION);
-
-        // Analyze Credits
-        List<MediaFileAnalyzer> creditsAnalyzers = analyzerFactory.createAnalyzers(AnalysisMode.CREDITS, isAnime, isMovie, action);
-        runAnalyzers(creditsAnalyzers, queue, AnalysisMode.CREDITS);
-
-        // 5. Save Results
-        saveResults(queue, seriesGuid);
     }
 
     private void runAnalyzers(List<MediaFileAnalyzer> analyzers, List<QueuedEpisode> queue, AnalysisMode mode) {
@@ -221,7 +279,7 @@ public class AnalysisService {
             EpisodeSegment segment = episodeSegmentMapper.selectOne(
                 new QueryWrapper<EpisodeSegment>()
                     .eq("series_guid", seriesGuid)
-                    .eq("episode_index", ep.getEpisodeIndex())
+                    .eq("episode_index", ep.getEpisodeNumber())
                     .last("LIMIT 1")
             );
 
@@ -233,14 +291,14 @@ public class AnalysisService {
 
             segment.setSeriesGuid(seriesGuid);
             segment.setGuid(ep.getEpisodeGuid());
-            segment.setEpisodeIndex(ep.getEpisodeIndex());
+            segment.setEpisodeNumber(ep.getEpisodeNumber());
             segment.setFilePath(ep.getPath());
             segment.setDuration(ep.getDuration());
             
-            segment.setIntroStart(ep.getIntroSegment() == null ? null : ep.getIntroSegment().getStart());
-            segment.setIntroEnd(ep.getIntroSegment() == null ? null : ep.getIntroSegment().getEnd());
-            segment.setCreditsStart(ep.getCreditsSegment() == null ? null : ep.getCreditsSegment().getStart());
-            segment.setCreditsEnd(ep.getCreditsSegment() == null ? null : ep.getCreditsSegment().getEnd());
+            segment.setIntroStart(ep.getIntroSegment() == null ? null : roundToIntSeconds(ep.getIntroSegment().getStart()));
+            segment.setIntroEnd(ep.getIntroSegment() == null ? null : roundToIntSeconds(ep.getIntroSegment().getEnd()));
+            segment.setCreditsStart(ep.getCreditsSegment() == null ? null : roundToIntSeconds(ep.getCreditsSegment().getStart()));
+            segment.setCreditsEnd(ep.getCreditsSegment() == null ? null : roundToIntSeconds(ep.getCreditsSegment().getEnd()));
             
             segment.setIntroFingerprint(ep.getIntroFingerprint());
             segment.setCreditsFingerprint(ep.getCreditsFingerprint());
@@ -316,6 +374,17 @@ public class AnalysisService {
         }
     }
 
-    private record AnalyzeJob(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, LocalDateTime enqueuedAt) {
+    private Integer roundToIntSeconds(double value) {
+        long rounded = Math.round(value);
+        if (rounded > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        if (rounded < Integer.MIN_VALUE) {
+            return Integer.MIN_VALUE;
+        }
+        return (int) rounded;
+    }
+
+    private record AnalyzeJob(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, LocalDateTime enqueuedAt, String tvTitle, Integer seasonNumber) {
     }
 }

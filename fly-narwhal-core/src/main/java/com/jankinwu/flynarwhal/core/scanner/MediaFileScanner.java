@@ -24,7 +24,7 @@ public class MediaFileScanner {
             QueuedEpisode episode = new QueuedEpisode();
             episode.setSeriesGuid(seriesGuid);
             episode.setPath(requestEpisode.getFilePath());
-            episode.setEpisodeIndex(requestEpisode.getEpisodeIndex());
+            episode.setEpisodeNumber(requestEpisode.getEpisodeNumber());
             episode.setEpisodeGuid(requestEpisode.getGuid());
             episodes.add(episode);
         }
@@ -50,7 +50,7 @@ public class MediaFileScanner {
 //            log.error("Error scanning folder: {}", folderPath, e);
 //        }
         
-        episodes.sort(Comparator.comparingInt(QueuedEpisode::getEpisodeIndex));
+        episodes.sort(Comparator.comparingInt(QueuedEpisode::getEpisodeNumber));
         return episodes;
     }
 

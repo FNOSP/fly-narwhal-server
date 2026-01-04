@@ -11,5 +11,9 @@ public class AnalyzeRequest {
 
     private String seasonPath;
 
+    private String tvTitle;
+
+    private Integer seasonNumber;
+
     private List<EpisodeDetailRequest> episodes;
 }
