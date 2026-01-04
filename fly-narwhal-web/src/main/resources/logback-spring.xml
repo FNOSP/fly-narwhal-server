@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 日志级别从低到高分为TRACE < DEBUG < INFO < WARN < ERROR < FATAL，如果设置为WARN，则低于WARN的信息都不会输出 -->
+<!-- scan:当此属性设置为true时，配置文件如果发生改变，将会被重新加载，默认值为true -->
+<!-- scanPeriod:设置监测配置文件是否有修改的时间间隔，如果没有给出时间单位，默认单位是毫秒。当scan为true时，此属性生效。默认的时间间隔为1分钟。 -->
+<!-- debug:当此属性设置为true时，将打印出logback内部日志信息，实时查看logback运行状态。默认值为false。 -->
+<configuration scan="true" scanPeriod="60 seconds">
+    <!-- name的值是变量的名称，value的值时变量定义的值。通过定义的值会被插入到logger上下文中。定义变量后，可以使“${}”来使用变量。 -->
+    <property name="loggingPath" value="./logs" />
+
+    <!-- 彩色日志 -->
+    <!-- 彩色日志依赖的渲染类 -->
+    <conversionRule conversionWord="clr"
+                    converterClass="org.springframework.boot.logging.logback.ColorConverter" />
+    <conversionRule conversionWord="wex"
+                    converterClass="org.springframework.boot.logging.logback.WhitespaceThrowableProxyConverter" />
+    <conversionRule conversionWord="wEx"
+                    converterClass="org.springframework.boot.logging.logback.ExtendedWhitespaceThrowableProxyConverter" />
+    <!-- 彩色日志格式 -->
+    <property name="CONSOLE_LOG_PATTERN"
+              value="${CONSOLE_LOG_PATTERN:-%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}}" />
+
+
+    <!--输出到控制台 -->
+    <appender name="console_log"
+              class="ch.qos.logback.core.ConsoleAppender">
+        <!--此日志appender是为开发使用，只配置最底级别，控制台输出的日志级别是大于或等于此级别的日志信息 -->
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>info</level>
+        </filter>
+        <encoder>
+            <Pattern>${CONSOLE_LOG_PATTERN}</Pattern>
+            <!-- 设置字符集 -->
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 时间滚动输出 level为 INFO 日志 -->
+    <appender name="info_log" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <!-- 正在记录的日志文件的路径及文件名 -->
+        <file>${loggingPath}/log_info.log</file>
+        <!--日志文件输出格式 -->
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} -%msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+        <!-- 分开规则（Policy）考虑到跨天跨时间 。则在追加器中定义拆分规则：SizeAndTimeBasedRollingPolicy -->
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${loggingPath}/%d{yyyy-MM,aux}/info/log_info-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <!--单个日志文件的最大体积-->
+            <maxFileSize>50MB</maxFileSize>
+            <!-- 日志最大的历史 30天 -->
+            <maxHistory>90</maxHistory>
+            <!--控制所有归档日志文件的总大小-->
+            <totalSizeCap>10GB</totalSizeCap>
+            <!--是否在应用启动的时候删除历史日志-->
+            <!--<cleanHistoryOnStart>true</cleanHistoryOnStart>-->
+        </rollingPolicy>
+        <!-- 此日志文件只记录info级别的 -->
+        <filter class="ch.qos.logback.classic.filter.LevelFilter">
+            <!-- 过滤的级别 -->
+            <level>INFO</level>
+            <!-- 匹配时的操作：接收（记录） -->
+            <onMatch>ACCEPT</onMatch>
+            <!-- 不匹配时的操作：有序列表里的下个过滤器过接着处理日志 -->
+            <onMismatch>NEUTRAL</onMismatch>
+        </filter>
+    </appender>
+
+    <!-- error 日志 -->
+    <!-- RollingFileAppender：滚动记录文件，先将日志记录到指定文件，当符合某个条件时，将日志记录到其他文件 -->
+    <!-- 以下的大概意思是：1.先按日期存日志，日期变了，将前一天的日志文件名重命名为XXX%日期%索引，新的日志仍然是project_error.log -->
+    <!-- 2.如果日期没有发生变化，但是当前日志的文件大小超过10MB时，对当前日志进行分割 重命名 -->
+    <appender name="error_log" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <!--日志文件路径和名称 -->
+        <File>${loggingPath}/log_error.log</File>
+        <!--日志文件输出格式 -->
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} -%msg%n</pattern>
+<!--            <charset>UTF-8</charset>-->
+            <charset>UTF-8</charset>
+        </encoder>
+        <!--是否追加到文件末尾,默认为true -->
+        <append>true</append>
+        <!-- ThresholdFilter过滤低于指定阈值的事件。 对于等于或高于阈值的事件，ThresholdFilter将在调用其decision（）方法时响应NEUTRAL。
+            但是，将拒绝级别低于阈值的事件 -->
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level><!-- 低于ERROR级别的日志（debug,info）将被拒绝，等于或者高于ERROR的级别将相应NEUTRAL -->
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${loggingPath}/%d{yyyy-MM,aux}/error/log_error-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <!--单个日志文件的最大体积-->
+            <maxFileSize>50MB</maxFileSize>
+            <!-- 日志最大的历史 30天 -->
+            <maxHistory>30</maxHistory>
+            <!--控制所有归档日志文件的总大小-->
+            <totalSizeCap>1GB</totalSizeCap>
+            <!--是否在应用启动的时候删除历史日志-->
+            <!--<cleanHistoryOnStart>true</cleanHistoryOnStart>-->
+        </rollingPolicy>
+    </appender>
+
+    <springProperty scope="context" name="lokiUrl" source="loki.url"/>
+    <springProperty name="application" source="spring.application.name" />
+    <property name="PATTERN" value="${application} %d{yyyy-MM-dd HH:mm:ss} [%-4level] %logger{}:%L [%thread] %msg%n" />
+    <property name="LOKI_URL" value="${lokiUrl}"/>
+    <appender name="lokiAppender" class="com.github.loki4j.logback.Loki4jAppender">
+        <batchTimeoutMs>1000</batchTimeoutMs>
+        <http class="com.github.loki4j.logback.ApacheHttpSender">
+            <url>${LOKI_URL}/push</url>
+        </http>
+        <format>
+            <!--页面上显示的标签-->
+            <label>
+                <pattern>system=${application},level=%level,logType=%X{log_file_type:-logType}</pattern>
+            </label>
+            <message>
+                <pattern>${PATTERN}</pattern>
+            </message>
+            <sortByTime>true</sortByTime>
+        </format>
+    </appender>
+
+    <!--生产环境:打印到控制台并输出到文件 -->
+    <springProfile name="release">
+        <root level="info">
+            <appender-ref ref="console_log" />
+            <appender-ref ref="info_log" />
+            <appender-ref ref="error_log" />
+        </root>
+    </springProfile>
+
+    <!--开发环境:打印控制台 -->
+    <springProfile name="dev">
+        <root level="info">
+            <appender-ref ref="console_log" />
+<!--            <appender-ref ref="info_log" />-->
+<!--            <appender-ref ref="error_log" />-->
+        </root>
+    </springProfile>
+
+</configuration>

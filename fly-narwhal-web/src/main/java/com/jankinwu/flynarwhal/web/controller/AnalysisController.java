@@ -2,9 +2,12 @@ package com.jankinwu.flynarwhal.web.controller;
 
 import com.jankinwu.flynarwhal.core.dto.request.AnalyzeRequest;
 import com.jankinwu.flynarwhal.core.dto.response.EpisodeSegmentsResponse;
+import com.jankinwu.flynarwhal.core.dto.response.Result;
 import com.jankinwu.flynarwhal.web.service.AnalysisService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/analysis")
 public class AnalysisController {
@@ -16,18 +19,24 @@ public class AnalysisController {
     }
 
     @PostMapping("/analyze")
-    public String analyze(@RequestBody AnalyzeRequest request) {
+    public Result<String> analyze(@RequestBody AnalyzeRequest request) {
         try {
             analysisService.analyzeSeason(request.getSeriesGuid(), request.getSeasonPath(), request.getEpisodes());
-            return "Season analysis queued/completed";
+            return Result.success("Season analysis queued/completed");
         } catch (Exception e) {
-            e.printStackTrace();
-            return "Error: " + e.getMessage();
+            log.error("Error analyzing season", e);
+            return Result.error("Error: " + e.getMessage());
         }
     }
 
     @GetMapping("/segments")
-    public EpisodeSegmentsResponse getSegments(@RequestParam String episodeGuid) {
-        return analysisService.getSegmentsByEpisodeGuid(episodeGuid);
+    public Result<EpisodeSegmentsResponse> getSegments(@RequestParam String episodeGuid) {
+        try {
+            EpisodeSegmentsResponse response = analysisService.getSegmentsByEpisodeGuid(episodeGuid);
+            return Result.success(response);
+        } catch (Exception e) {
+            log.error("Error getting segments", e);
+            return Result.error("Error: " + e.getMessage());
+        }
     }
 }
