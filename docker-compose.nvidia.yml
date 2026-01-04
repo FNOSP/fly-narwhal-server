@@ -1,0 +1,25 @@
+services:
+  fly-narwhal-server:
+    build: .
+    container_name: fly-narwhal-server
+    ports:
+      - "5365:5365"
+    # 需要挂载存储视频文件的文件目录，容器挂载路径需要和宿主机路径保持一致，根据实际需求可挂载多个目录
+    volumes:
+      - /vol1/1000/docker/fly-narwhal-server/data:/app/data
+      # 这只是个示例，实际路径根据实际情况修改
+      - /vol2/1000/video:/vol2/1000/video
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      - TZ=Asia/Shanghai
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
+    runtime: nvidia

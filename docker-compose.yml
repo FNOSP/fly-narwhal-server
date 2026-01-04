@@ -1,0 +1,13 @@
+services:
+  fly-narwhal-server:
+    build: .
+    container_name: fly-narwhal-server
+    ports:
+      - "5365:5365"
+    volumes:
+      - /vol1/1000/docker/fly-narwhal-server/data:/app/data
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
