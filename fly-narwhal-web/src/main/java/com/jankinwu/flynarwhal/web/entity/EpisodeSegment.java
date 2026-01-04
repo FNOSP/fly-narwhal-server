@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 @Data
 @TableName("EPISODE_SEGMENTS")
 public class EpisodeSegment {
@@ -23,6 +25,11 @@ public class EpisodeSegment {
 
     private byte[] introFingerprint;
     private byte[] creditsFingerprint;
+
+    private String action;
+
+    private LocalDateTime createTime;
+    private LocalDateTime updateTime;
 
     private String guid;
 }

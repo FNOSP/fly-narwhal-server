@@ -1,6 +1,3 @@
-DROP TABLE IF EXISTS SERIES_EPISODES;
-DROP TABLE IF EXISTS EPISODE_SEGMENTS;
-
 CREATE TABLE IF NOT EXISTS SERIES_EPISODES (
     series_guid VARCHAR(255) NOT NULL PRIMARY KEY,
     season_folder_path VARCHAR(2048)
@@ -18,5 +15,8 @@ CREATE TABLE IF NOT EXISTS EPISODE_SEGMENTS (
     credits_start DOUBLE,
     credits_end DOUBLE,
     intro_fingerprint BLOB,
-    credits_fingerprint BLOB
+    credits_fingerprint BLOB,
+    action VARCHAR(255),
+    create_time TIMESTAMP,
+    update_time TIMESTAMP
 );

@@ -1,6 +1,7 @@
 package com.jankinwu.flynarwhal.core.analyzer;
 
 import com.jankinwu.flynarwhal.core.data.AnalysisMode;
+import com.jankinwu.flynarwhal.core.data.AnalyzerAction;
 import com.jankinwu.flynarwhal.core.data.QueuedEpisode;
 import com.jankinwu.flynarwhal.core.data.Segment;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ public class BatchBlackFrameAnalyzer implements MediaFileAnalyzer {
                     log.info("Found Credits via BlackFrame for {}: {}-{}", episode.getPath(), segment.getStart(), segment.getEnd());
                     episode.setCreditsSegment(segment);
                     episode.setCreditsAnalyzed(true);
+                    episode.setCreditsAction(AnalyzerAction.BLACK_FRAME);
                 }
             } catch (Exception e) {
                 log.error("Error in BlackFrame analysis for " + episode.getPath(), e);

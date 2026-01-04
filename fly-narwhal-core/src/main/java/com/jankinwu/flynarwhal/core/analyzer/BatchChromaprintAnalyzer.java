@@ -1,6 +1,7 @@
 package com.jankinwu.flynarwhal.core.analyzer;
 
 import com.jankinwu.flynarwhal.core.data.AnalysisMode;
+import com.jankinwu.flynarwhal.core.data.AnalyzerAction;
 import com.jankinwu.flynarwhal.core.data.QueuedEpisode;
 import com.jankinwu.flynarwhal.core.data.Segment;
 import lombok.RequiredArgsConstructor;
@@ -21,13 +22,8 @@ public class BatchChromaprintAnalyzer implements MediaFileAnalyzer {
     @Override
     public void analyze(List<QueuedEpisode> episodes, AnalysisMode mode) {
         log.info("Starting Chromaprint Analysis for {} episodes (Mode: {})", episodes.size(), mode);
-        
+
         // 1. Generate fingerprints for all NOT analyzed episodes
-        // Actually, we need fingerprints for ALL episodes to compare against each other, 
-        // even if one is already analyzed (it can serve as a reference).
-        // But for optimization, maybe we only generate if missing?
-        // Let's generate for all if missing.
-        
         for (QueuedEpisode ep : episodes) {
             if (mode == AnalysisMode.INTRODUCTION && ep.getIntroFingerprint() == null) {
                 try {
@@ -83,9 +79,11 @@ public class BatchChromaprintAnalyzer implements MediaFileAnalyzer {
                         if (mode == AnalysisMode.INTRODUCTION) {
                             current.setIntroSegment(seg);
                             current.setIntroAnalyzed(true);
+                            current.setIntroAction(AnalyzerAction.CHROMAPRINT);
                         } else {
                             current.setCreditsSegment(seg);
                             current.setCreditsAnalyzed(true);
+                            current.setCreditsAction(AnalyzerAction.CHROMAPRINT);
                         }
                         break; // Found a match, move to next episode
                     }

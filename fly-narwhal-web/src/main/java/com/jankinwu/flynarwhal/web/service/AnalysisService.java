@@ -16,11 +16,15 @@ import com.jankinwu.flynarwhal.core.dto.request.EpisodeDetailRequest;
 import com.jankinwu.flynarwhal.web.mapper.EpisodeSegmentMapper;
 import com.jankinwu.flynarwhal.web.mapper.SeriesEpisodeMapper;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.annotation.PostConstruct;
 import org.springframework.context.annotation.Import;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.BlockingDeque;
+import java.util.concurrent.LinkedBlockingDeque;
 
 @Service
 @Slf4j
@@ -39,16 +43,52 @@ public class AnalysisService {
     private final AnalyzerFactory analyzerFactory;
     private final MediaFileScanner mediaFileScanner;
     private final FFmpegWrapper ffmpegWrapper;
+    private final TransactionTemplate transactionTemplate;
+    private final BlockingDeque<AnalyzeJob> analyzeJobQueue = new LinkedBlockingDeque<>();
 
     public AnalysisService(SeriesEpisodeMapper seriesEpisodeMapper,
                            EpisodeSegmentMapper episodeSegmentMapper,
                            AnalyzerFactory analyzerFactory,
-                           MediaFileScanner mediaFileScanner) {
+                           MediaFileScanner mediaFileScanner,
+                           TransactionTemplate transactionTemplate) {
         this.seriesEpisodeMapper = seriesEpisodeMapper;
         this.episodeSegmentMapper = episodeSegmentMapper;
         this.analyzerFactory = analyzerFactory;
         this.mediaFileScanner = mediaFileScanner;
         this.ffmpegWrapper = new FFmpegWrapper();
+        this.transactionTemplate = transactionTemplate;
+    }
+
+    @PostConstruct
+    public void startWorker() {
+        Thread worker = new Thread(() -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    AnalyzeJob job = analyzeJobQueue.takeFirst();
+                    transactionTemplate.executeWithoutResult(status -> {
+                        try {
+                            analyzeSeasonInternal(job.seriesGuid, job.seasonFolderPath, job.episodes);
+                        } catch (Exception e) {
+                            status.setRollbackOnly();
+                            log.error("Error processing analyze job for seriesGuid={}", job.seriesGuid, e);
+                        }
+                    });
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                } catch (Exception e) {
+                    log.error("Error in analyze worker loop", e);
+                }
+            }
+        }, "analysis-job-worker");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    public int enqueueAnalyzeSeason(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes) {
+        List<EpisodeDetailRequest> safeEpisodes = episodes == null ? List.of() : List.copyOf(episodes);
+        analyzeJobQueue.addLast(new AnalyzeJob(seriesGuid, seasonFolderPath, safeEpisodes, LocalDateTime.now()));
+        return analyzeJobQueue.size();
     }
 
     public EpisodeSegmentsResponse getSegmentsByEpisodeGuid(String episodeGuid) {
@@ -73,8 +113,7 @@ public class AnalysisService {
         return response;
     }
 
-    @Transactional
-    public void analyzeSeason(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes) {
+    private void analyzeSeasonInternal(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes) {
         log.info("Starting analysis for series {} in folder {}", seriesGuid, seasonFolderPath);
 
         // 1. Check/Register Series
@@ -111,30 +150,41 @@ public class AnalysisService {
             );
             
             if (existing != null) {
-                // Restore state
                 ep.setIntroFingerprint(existing.getIntroFingerprint());
                 ep.setCreditsFingerprint(existing.getCreditsFingerprint());
-                ep.setDuration(existing.getDuration());
+                if (existing.getDuration() != null) {
+                    ep.setDuration(existing.getDuration());
+                }
                 
                 if (existing.getIntroStart() != null && existing.getIntroEnd() != null) {
                     ep.setIntroSegment(new Segment(existing.getIntroStart(), existing.getIntroEnd(), true));
-                    ep.setIntroAnalyzed(true);
                 }
                 if (existing.getCreditsStart() != null && existing.getCreditsEnd() != null) {
                     ep.setCreditsSegment(new Segment(existing.getCreditsStart(), existing.getCreditsEnd(), true));
-                    ep.setCreditsAnalyzed(true);
                 }
+
+                parseActions(existing.getAction(), ep);
             } else {
-                // Get duration if new
                 try {
                     ep.setDuration(ffmpegWrapper.getDuration(ep.getPath()));
-                    // Config defaults
-                    ep.setIntroFingerprintEnd(600); 
-                    ep.setCreditsFingerprintStart(Math.max(0, ep.getDuration() - 240));
                 } catch (Exception e) {
                     log.error("Failed to get duration for " + ep.getPath(), e);
                 }
             }
+
+            if (ep.getDuration() <= 0) {
+                try {
+                    ep.setDuration(ffmpegWrapper.getDuration(ep.getPath()));
+                } catch (Exception e) {
+                    log.error("Failed to get duration for " + ep.getPath(), e);
+                }
+            }
+
+            ep.setIntroFingerprintEnd(600);
+            ep.setCreditsFingerprintStart(Math.max(0, ep.getDuration() - 240));
+
+            ep.setIntroAnalyzed(false);
+            ep.setCreditsAnalyzed(false);
         }
 
         // 4. Run Analysis Chain
@@ -179,30 +229,93 @@ public class AnalysisService {
             if (isNew) {
                 segment = new EpisodeSegment();
                 segment.setSeriesGuid(seriesGuid);
-                segment.setGuid(ep.getEpisodeGuid());
-                segment.setEpisodeIndex(ep.getEpisodeIndex());
-                segment.setFilePath(ep.getPath());
             }
 
+            segment.setSeriesGuid(seriesGuid);
+            segment.setGuid(ep.getEpisodeGuid());
+            segment.setEpisodeIndex(ep.getEpisodeIndex());
+            segment.setFilePath(ep.getPath());
             segment.setDuration(ep.getDuration());
             
-            if (ep.getIntroSegment() != null) {
-                segment.setIntroStart(ep.getIntroSegment().getStart());
-                segment.setIntroEnd(ep.getIntroSegment().getEnd());
-            }
-            if (ep.getCreditsSegment() != null) {
-                segment.setCreditsStart(ep.getCreditsSegment().getStart());
-                segment.setCreditsEnd(ep.getCreditsSegment().getEnd());
-            }
+            segment.setIntroStart(ep.getIntroSegment() == null ? null : ep.getIntroSegment().getStart());
+            segment.setIntroEnd(ep.getIntroSegment() == null ? null : ep.getIntroSegment().getEnd());
+            segment.setCreditsStart(ep.getCreditsSegment() == null ? null : ep.getCreditsSegment().getStart());
+            segment.setCreditsEnd(ep.getCreditsSegment() == null ? null : ep.getCreditsSegment().getEnd());
             
             segment.setIntroFingerprint(ep.getIntroFingerprint());
             segment.setCreditsFingerprint(ep.getCreditsFingerprint());
+            segment.setAction(buildActions(ep));
 
+            LocalDateTime now = LocalDateTime.now();
             if (isNew) {
+                segment.setCreateTime(now);
+                segment.setUpdateTime(now);
                 episodeSegmentMapper.insert(segment);
             } else {
+                if (segment.getCreateTime() == null) {
+                    segment.setCreateTime(now);
+                }
+                segment.setUpdateTime(now);
                 episodeSegmentMapper.updateById(segment);
             }
         }
+    }
+
+    private String buildActions(QueuedEpisode ep) {
+        AnalyzerAction intro = ep.getIntroAction();
+        AnalyzerAction credits = ep.getCreditsAction();
+        if (intro == null && credits == null) {
+            return null;
+        }
+        if (intro != null && credits != null && intro == credits) {
+            return intro.name();
+        }
+        if (intro != null && credits != null) {
+            return "INTRODUCTION=" + intro.name() + ";CREDITS=" + credits.name();
+        }
+        if (intro != null) {
+            return "INTRODUCTION=" + intro.name();
+        }
+        return "CREDITS=" + credits.name();
+    }
+
+    private void parseActions(String action, QueuedEpisode ep) {
+        if (action == null || action.isBlank()) {
+            return;
+        }
+
+        String trimmed = action.trim();
+        if (!trimmed.contains("=")) {
+            try {
+                AnalyzerAction a = AnalyzerAction.valueOf(trimmed);
+                ep.setIntroAction(a);
+                ep.setCreditsAction(a);
+            } catch (Exception ignored) {
+            }
+            return;
+        }
+
+        String[] parts = trimmed.split(";");
+        for (String part : parts) {
+            String p = part.trim();
+            int idx = p.indexOf('=');
+            if (idx <= 0 || idx >= p.length() - 1) {
+                continue;
+            }
+            String key = p.substring(0, idx).trim();
+            String value = p.substring(idx + 1).trim();
+            try {
+                AnalyzerAction a = AnalyzerAction.valueOf(value);
+                if ("INTRODUCTION".equalsIgnoreCase(key)) {
+                    ep.setIntroAction(a);
+                } else if ("CREDITS".equalsIgnoreCase(key)) {
+                    ep.setCreditsAction(a);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private record AnalyzeJob(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, LocalDateTime enqueuedAt) {
     }
 }

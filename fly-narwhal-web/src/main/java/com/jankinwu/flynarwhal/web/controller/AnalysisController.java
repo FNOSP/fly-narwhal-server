@@ -21,8 +21,8 @@ public class AnalysisController {
     @PostMapping("/analyze")
     public Result<String> analyze(@RequestBody AnalyzeRequest request) {
         try {
-            analysisService.analyzeSeason(request.getSeriesGuid(), request.getSeasonPath(), request.getEpisodes());
-            return Result.success("Season analysis queued/completed");
+            int queueSize = analysisService.enqueueAnalyzeSeason(request.getSeriesGuid(), request.getSeasonPath(), request.getEpisodes());
+            return Result.success("Analysis success. queueSize=" + queueSize);
         } catch (Exception e) {
             log.error("Error analyzing season", e);
             return Result.error("Error: " + e.getMessage());

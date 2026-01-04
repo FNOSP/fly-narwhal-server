@@ -7,7 +7,6 @@ import com.jankinwu.flynarwhal.core.data.TimeRange;
 import com.jankinwu.flynarwhal.core.ffmpeg.FFmpegWrapper;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.IOException;
 import java.util.List;
 
 @Slf4j
@@ -34,14 +33,6 @@ public class BlackFrameAnalyzer {
         // Calculate search boundaries
         double searchDistance = 2 * minimumCreditsDuration;
         
-        // episode.CreditsFingerprintStart is essentially where we start looking for credits relative to end? 
-        // No, in intro-skipper CreditsFingerprintStart is an absolute time (e.g. Duration - 240s).
-        // But the binary search logic in C# uses "initialStart" which seems to be "seconds from end"?
-        // Let's check FindSearchStart:
-        // var searchStart = 3d * _config.MinimumCreditsDuration; (e.g. 45s)
-        // var maxSearchStart = episode.Duration - episode.CreditsFingerprintStart; (e.g. 240s)
-        // So searchStart is indeed "distance from end".
-        
         double upperLimit = Math.min(initialStart, episode.getDuration() - episode.getCreditsFingerprintStart());
         double lowerLimit = Math.max(initialStart - searchDistance, minimumCreditsDuration);
 
@@ -63,7 +54,6 @@ public class BlackFrameAnalyzer {
 
                 if (blackFrames.isEmpty()) {
                     // No black frames found, move search range toward the end (smaller distance from end)
-                    // In C#: searchStart = midpoint - TimeSpan.FromSeconds(2);
                     searchStartSec = midpoint - 2;
 
                     // If we're close to the lower limit, expand search range
@@ -75,21 +65,6 @@ public class BlackFrameAnalyzer {
                 } else {
                     // Black frames found, move search range toward the beginning (larger distance from end)
                     searchEndSec = midpoint;
-                    // blackFrames[0].getTime() is relative to the clip start? 
-                    // No, ffmpeg blackframe output 't' is usually relative to the input start time.
-                    // But here we use -ss range.Start.
-                    // If we use -ss before -i, timestamps are reset to 0 unless -copyts is used.
-                    // My FFmpegWrapper implementation:
-                    // ffmpeg -ss {start} -i {path} -to {duration} ...
-                    // In this case, 't' in blackframe output starts from 0.
-                    // So absolute time = range.Start + t.
-                    // C# wrapper does: currentRange.Start = time + range.Start; (Wait, that was detectSilence)
-                    // Let's check ParseBlackFrame in C#... it takes `time` from regex.
-                    // C# DetectBlackFrames logic:
-                    // "-ss {0} -i \"{1}\" -to {2} ... -f null -"
-                    // And ParseBlackFrame returns BlackFrame object with 'time'.
-                    // In AnalyzeMediaFile: firstBlackFrameTime = blackFrames[0].Time + scanTime;
-                    // This implies blackFrames[0].Time is relative to the segment start (0-based).
                     
                     firstBlackFrameTime = blackFrames.get(0).getTime() + scanTime;
 
@@ -145,6 +120,5 @@ public class BlackFrameAnalyzer {
         }
         
         return searchStart; // return last attempted? or max?
-        // C# code just loops and if loop finishes, it implicitly returns searchStart (which is >= maxSearchStart).
     }
 }

@@ -19,6 +19,9 @@ public class QueuedEpisode {
     // Status tracking
     private boolean introAnalyzed;
     private boolean creditsAnalyzed;
+
+    private AnalyzerAction introAction;
+    private AnalyzerAction creditsAction;
     
     // Additional fields for configuration logic
     private double introFingerprintEnd; // e.g. 600 seconds

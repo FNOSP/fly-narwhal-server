@@ -1,6 +1,7 @@
 package com.jankinwu.flynarwhal.core.analyzer;
 
 import com.jankinwu.flynarwhal.core.data.AnalysisMode;
+import com.jankinwu.flynarwhal.core.data.AnalyzerAction;
 import com.jankinwu.flynarwhal.core.data.QueuedEpisode;
 import com.jankinwu.flynarwhal.core.data.Segment;
 import lombok.RequiredArgsConstructor;
@@ -26,9 +27,11 @@ public class BatchChapterAnalyzer implements MediaFileAnalyzer {
                 if (mode == AnalysisMode.INTRODUCTION) {
                     episode.setIntroSegment(segment);
                     episode.setIntroAnalyzed(true);
+                    episode.setIntroAction(AnalyzerAction.CHAPTER);
                 } else {
                     episode.setCreditsSegment(segment);
                     episode.setCreditsAnalyzed(true);
+                    episode.setCreditsAction(AnalyzerAction.CHAPTER);
                 }
             }
         }
