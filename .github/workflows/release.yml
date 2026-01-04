@@ -10,7 +10,7 @@ on:
         description: 'Release Tag (e.g. v1.0.0)'
         required: true
       release_body:
-        description: '实现智能检测片头片尾功能'
+        description: 'Release Changelog (更新日志)'
         required: true
         type: string
 
@@ -49,16 +49,50 @@ jobs:
             echo "tag=${TAG_NAME}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Generate Release Body
+        if: steps.release_tag.outputs.tag != ''
+        shell: bash
+        run: |
+          TAG_NAME="${{ steps.release_tag.outputs.tag }}"
+
+          NOTES="实现片头/片尾智能检测"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            NOTES="${{ github.event.inputs.release_body }}"
+          else
+            TAG_MESSAGE="$(git for-each-ref "refs/tags/${TAG_NAME}" --format='%(contents)')"
+            if [ -z "$TAG_MESSAGE" ]; then
+              echo "Release notes not found for tag '${TAG_NAME}'." >&2
+              echo "Please use an annotated tag, e.g.:" >&2
+              echo "  git tag -a ${TAG_NAME} -m \"your changelog\"" >&2
+              echo "Or run this workflow with workflow_dispatch and provide 'release_body'." >&2
+              exit 1
+            fi
+            NOTES="$TAG_MESSAGE"
+          fi
+
+          WARNING=""
+          if [[ "$TAG_NAME" =~ [Aa]lpha ]]; then
+            WARNING=$'\n\n> **此版本为开发中的版本，请酌情下载安装。**\n'
+          fi
+
+          {
+            echo "RELEASE_BODY<<EOF"
+            echo "$NOTES"
+            echo "$WARNING"
+            echo "EOF"
+          } >> $GITHUB_ENV
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         if: steps.release_tag.outputs.tag != ''
         with:
           tag_name: ${{ steps.release_tag.outputs.tag }}
-          body: ${{ github.event.inputs.release_body }}
+          body: |
+            ${{ env.RELEASE_BODY }}
           files: |
-            fly-narwhal-web/build/libs/fly-narwhal-web-*.jar
+            fly-narwhal-web/build/libs/fly-narwhal-server-*.jar
           generate_release_notes: false
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(steps.release_tag.outputs.tag, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

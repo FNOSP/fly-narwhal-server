@@ -4,13 +4,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.core.env.Environment;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 import org.springframework.stereotype.Component;
+import com.jankinwu.flynarwhal.web.config.BuildVersionConfiguration;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -26,7 +26,6 @@ public class DatabaseMigrationRunner implements ApplicationRunner {
     private static final String VERSION_TABLE = "DB_VERSION";
 
     private final DataSource dataSource;
-    private final Environment environment;
 
     @Override
     public void run(ApplicationArguments args) throws Exception {
@@ -57,17 +56,8 @@ public class DatabaseMigrationRunner implements ApplicationRunner {
     }
 
     private String resolveAppVersion() {
-        String version = environment.getProperty("app.version");
-        if (version != null && !version.isBlank()) {
-            return version.trim();
-        }
-        String manifestVersion = DatabaseMigrationRunner.class.getPackage() == null
-            ? null
-            : DatabaseMigrationRunner.class.getPackage().getImplementationVersion();
-        if (manifestVersion != null && !manifestVersion.isBlank()) {
-            return manifestVersion.trim();
-        }
-        return "0.0.0";
+        String version = BuildVersionConfiguration.BASE_VERSION;
+        return (version == null || version.isBlank()) ? "0.0.0" : version.trim();
     }
 
     private void ensureVersionTable() {
@@ -201,8 +191,16 @@ public class DatabaseMigrationRunner implements ApplicationRunner {
         }
         String v = version.trim();
         int dash = v.indexOf('-');
+        int plus = v.indexOf('+');
+        int cut = -1;
         if (dash > 0) {
-            v = v.substring(0, dash);
+            cut = dash;
+        }
+        if (plus > 0) {
+            cut = cut < 0 ? plus : Math.min(cut, plus);
+        }
+        if (cut > 0) {
+            v = v.substring(0, cut);
         }
         String[] parts = v.split("\\.");
         int[] nums = new int[parts.length];
@@ -216,4 +214,3 @@ public class DatabaseMigrationRunner implements ApplicationRunner {
         return nums;
     }
 }
-

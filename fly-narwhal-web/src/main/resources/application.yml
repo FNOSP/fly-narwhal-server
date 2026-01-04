@@ -11,8 +11,6 @@ spring:
       mode: never
 
 app:
-  version: 0.0.1
-
 server:
   port: 5365
 

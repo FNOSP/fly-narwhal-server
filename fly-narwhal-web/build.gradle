@@ -20,3 +20,77 @@ dependencies {
 tasks.named('test') {
     useJUnitPlatform()
 }
+
+bootJar {
+    archiveFileName = "fly-narwhal-server-${project.version}.jar"
+}
+
+def generatedVersionSrcDir = layout.buildDirectory.dir("generated/sources/version/java")
+
+tasks.register('generateVersionConfig') {
+    outputs.dir(generatedVersionSrcDir)
+    doLast {
+        def dir = generatedVersionSrcDir.get().asFile
+        def packagePath = new File(dir, "com/jankinwu/flynarwhal/web/config")
+        packagePath.mkdirs()
+
+        def buildTime = java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).toString()
+        def baseVersion = project.ext.baseVersion?.toString() ?: project.version.toString()
+        def version = project.version.toString()
+
+        def file = new File(packagePath, "BuildVersionConfiguration.java")
+        file.text =
+            "package com.jankinwu.flynarwhal.web.config;\n" +
+            "\n" +
+            "import org.springframework.context.annotation.Bean;\n" +
+            "import org.springframework.context.annotation.Configuration;\n" +
+            "\n" +
+            "@Configuration\n" +
+            "public class BuildVersionConfiguration {\n" +
+            "    public static final String VERSION = \"" + version + "\";\n" +
+            "    public static final String BASE_VERSION = \"" + baseVersion + "\";\n" +
+            "    public static final String BUILD_TIME = \"" + buildTime + "\";\n" +
+            "\n" +
+            "    @Bean\n" +
+            "    public BuildVersionInfo buildVersionInfo() {\n" +
+            "        return new BuildVersionInfo(VERSION, BASE_VERSION, BUILD_TIME);\n" +
+            "    }\n" +
+            "\n" +
+            "    public static final class BuildVersionInfo {\n" +
+            "        private final String version;\n" +
+            "        private final String baseVersion;\n" +
+            "        private final String buildTime;\n" +
+            "\n" +
+            "        public BuildVersionInfo(String version, String baseVersion, String buildTime) {\n" +
+            "            this.version = version;\n" +
+            "            this.baseVersion = baseVersion;\n" +
+            "            this.buildTime = buildTime;\n" +
+            "        }\n" +
+            "\n" +
+            "        public String getVersion() {\n" +
+            "            return version;\n" +
+            "        }\n" +
+            "\n" +
+            "        public String getBaseVersion() {\n" +
+            "            return baseVersion;\n" +
+            "        }\n" +
+            "\n" +
+            "        public String getBuildTime() {\n" +
+            "            return buildTime;\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n"
+    }
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir(generatedVersionSrcDir)
+        }
+    }
+}
+
+tasks.named('compileJava') {
+    dependsOn(tasks.named('generateVersionConfig'))
+}

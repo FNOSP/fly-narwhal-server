@@ -4,9 +4,19 @@ plugins {
     id 'io.spring.dependency-management' version '1.1.7' apply false
 }
 
+ext {
+    baseVersion = '0.0.1'
+    versionSuffix = 'Beta'.toString().trim()
+    normalizedVersionSuffix = versionSuffix
+        ? ((versionSuffix.startsWith('-') || versionSuffix.startsWith('+')) ? versionSuffix : "-${versionSuffix}")
+        : ''
+}
+
 allprojects {
     group = 'com.jankinwu'
-    version = '0.0.1'
+    version = rootProject.ext.baseVersion + rootProject.ext.normalizedVersionSuffix
+    ext.baseVersion = rootProject.ext.baseVersion
+    ext.versionSuffix = rootProject.ext.versionSuffix
 
     repositories {
         mavenCentral()
