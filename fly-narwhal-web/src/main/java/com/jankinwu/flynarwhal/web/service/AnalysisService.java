@@ -8,10 +8,11 @@ import com.jankinwu.flynarwhal.core.ffmpeg.FFmpegWrapper;
 import com.jankinwu.flynarwhal.core.scanner.MediaFileScanner;
 import com.jankinwu.flynarwhal.core.dto.response.EpisodeSegmentsResponse;
 import com.jankinwu.flynarwhal.web.entity.EpisodeSegment;
-import com.jankinwu.flynarwhal.web.entity.SeriesEpisode;
+import com.jankinwu.flynarwhal.web.entity.TvSeasonInfo;
 import com.jankinwu.flynarwhal.core.dto.request.EpisodeDetailRequest;
+import com.jankinwu.flynarwhal.web.mapstruct.AnalysisEntityMapper;
 import com.jankinwu.flynarwhal.web.mapper.EpisodeSegmentMapper;
-import com.jankinwu.flynarwhal.web.mapper.SeriesEpisodeMapper;
+import com.jankinwu.flynarwhal.web.mapper.TvSeasonInfoMapper;
 import lombok.extern.slf4j.Slf4j;
 import jakarta.annotation.PostConstruct;
 import org.springframework.context.annotation.Import;
@@ -35,12 +36,13 @@ import java.util.concurrent.LinkedBlockingDeque;
 })
 public class AnalysisService {
 
-    private final SeriesEpisodeMapper seriesEpisodeMapper;
+    private final TvSeasonInfoMapper tvSeasonInfoMapper;
     private final EpisodeSegmentMapper episodeSegmentMapper;
     private final AnalyzerFactory analyzerFactory;
     private final MediaFileScanner mediaFileScanner;
     private final FFmpegWrapper ffmpegWrapper;
     private final TransactionTemplate transactionTemplate;
+    private final AnalysisEntityMapper analysisEntityMapper;
     private final BlockingDeque<AnalyzeJob> analyzeJobQueue = new LinkedBlockingDeque<>();
 
     @PostConstruct
@@ -50,17 +52,19 @@ public class AnalysisService {
         thread.start();
     }
 
-    public AnalysisService(SeriesEpisodeMapper seriesEpisodeMapper,
+    public AnalysisService(TvSeasonInfoMapper tvSeasonInfoMapper,
                            EpisodeSegmentMapper episodeSegmentMapper,
                            AnalyzerFactory analyzerFactory,
                            MediaFileScanner mediaFileScanner,
-                           TransactionTemplate transactionTemplate) {
-        this.seriesEpisodeMapper = seriesEpisodeMapper;
+                           TransactionTemplate transactionTemplate,
+                           AnalysisEntityMapper analysisEntityMapper) {
+        this.tvSeasonInfoMapper = tvSeasonInfoMapper;
         this.episodeSegmentMapper = episodeSegmentMapper;
         this.analyzerFactory = analyzerFactory;
         this.mediaFileScanner = mediaFileScanner;
         this.ffmpegWrapper = new FFmpegWrapper();
         this.transactionTemplate = transactionTemplate;
+        this.analysisEntityMapper = analysisEntityMapper;
     }
 
     private void processQueue() {
@@ -86,42 +90,53 @@ public class AnalysisService {
     }
 
     public int enqueueAnalyzeSeason(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, String tvTitle, Integer seasonNumber) {
-        // 1. Register/Update Series with PENDING status
-        transactionTemplate.executeWithoutResult(status -> {
-            SeriesEpisode series = seriesEpisodeMapper.selectById(seriesGuid);
-            if (series == null) {
-                series = new SeriesEpisode();
-                series.setSeriesGuid(seriesGuid);
-                series.setSeasonFolderPath(seasonFolderPath);
-                series.setTvTitle(tvTitle);
-                series.setSeasonNumber(seasonNumber);
-                series.setStatus(AnalysisStatus.PENDING);
-                seriesEpisodeMapper.insert(series);
-            } else {
-                series.setSeasonFolderPath(seasonFolderPath);
-                series.setTvTitle(tvTitle);
-                series.setSeasonNumber(seasonNumber);
-                series.setStatus(AnalysisStatus.PENDING);
-                seriesEpisodeMapper.updateById(series);
-            }
-        });
-
-        // 2. Add to queue
         List<EpisodeDetailRequest> safeEpisodes = episodes == null ? List.of() : List.copyOf(episodes);
-        analyzeJobQueue.addLast(new AnalyzeJob(seriesGuid, seasonFolderPath, safeEpisodes, LocalDateTime.now(), tvTitle, seasonNumber));
+        registerPending(seriesGuid, seasonFolderPath, tvTitle, seasonNumber, safeEpisodes);
+        enqueueJob(seriesGuid, seasonFolderPath, safeEpisodes, tvTitle, seasonNumber);
         return analyzeJobQueue.size();
     }
 
-    public AnalysisStatus getAnalysisStatus(String seriesGuid) {
-        SeriesEpisode series = seriesEpisodeMapper.selectById(seriesGuid);
+    private void enqueueJob(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, String tvTitle, Integer seasonNumber) {
+        analyzeJobQueue.addLast(new AnalyzeJob(seriesGuid, seasonFolderPath, episodes, LocalDateTime.now(), tvTitle, seasonNumber));
+    }
+
+    private void registerPending(String seriesGuid, String seasonFolderPath, String tvTitle, Integer seasonNumber, List<EpisodeDetailRequest> episodes) {
+        transactionTemplate.executeWithoutResult(tx -> {
+            upsertSeries(seriesGuid, seasonFolderPath, tvTitle, seasonNumber, AnalysisStatus.PENDING);
+            upsertEpisodeSegmentsFromRequest(seriesGuid, episodes, AnalysisStatus.PENDING);
+        });
+    }
+
+    private AnalysisStatus getSeasonAnalysisStatus(String seriesGuid) {
+        TvSeasonInfo series = tvSeasonInfoMapper.selectById(seriesGuid);
         return series != null ? series.getStatus() : null;
     }
 
+    private AnalysisStatus getEpisodeAnalysisStatus(String episodeGuid) {
+        EpisodeSegment segment = findEpisodeSegmentByGuid(episodeGuid);
+        return segment != null ? segment.getStatus() : null;
+    }
+
+    public AnalysisStatus getStatus(String type, String guid) {
+        if ("EPISODE".equalsIgnoreCase(type)) {
+            if (guid == null || guid.isBlank()) {
+                throw new IllegalArgumentException("episodeGuid is required when type=EPISODE");
+            }
+            return getEpisodeAnalysisStatus(guid);
+        }
+
+        if (guid == null || guid.isBlank()) {
+            throw new IllegalArgumentException("seriesGuid is required when type=SEASON");
+        }
+        return getSeasonAnalysisStatus(guid);
+    }
+
     private void updateAnalysisStatus(String seriesGuid, AnalysisStatus status) {
-        SeriesEpisode series = new SeriesEpisode();
+        TvSeasonInfo series = new TvSeasonInfo();
         series.setSeriesGuid(seriesGuid);
         series.setStatus(status);
-        seriesEpisodeMapper.updateById(series);
+        series.setUpdateTime(LocalDateTime.now());
+        tvSeasonInfoMapper.updateById(series);
     }
 
     public EpisodeSegmentsResponse getSegmentsByEpisodeGuid(String episodeGuid) {
@@ -151,39 +166,9 @@ public class AnalysisService {
         updateAnalysisStatus(seriesGuid, AnalysisStatus.IN_PROGRESS);
 
         try {
-            // 1. Check/Register Series (redundant but kept for consistency, status is already IN_PROGRESS)
-            SeriesEpisode series = seriesEpisodeMapper.selectById(seriesGuid);
-            if (series == null) {
-                series = new SeriesEpisode();
-                series.setSeriesGuid(seriesGuid);
-                series.setSeasonFolderPath(seasonFolderPath);
-                series.setTvTitle(tvTitle);
-                series.setSeasonNumber(seasonNumber);
-                series.setStatus(AnalysisStatus.IN_PROGRESS);
-                seriesEpisodeMapper.insert(series);
-            } else {
-                // Update info if changed
-                boolean updated = false;
-                if (seasonFolderPath != null && !seasonFolderPath.equals(series.getSeasonFolderPath())) {
-                    series.setSeasonFolderPath(seasonFolderPath);
-                    updated = true;
-                }
-                if (tvTitle != null && !tvTitle.equals(series.getTvTitle())) {
-                    series.setTvTitle(tvTitle);
-                    updated = true;
-                }
-                if (seasonNumber != null && !seasonNumber.equals(series.getSeasonNumber())) {
-                    series.setSeasonNumber(seasonNumber);
-                    updated = true;
-                }
-                
-                if (updated) {
-                    seriesEpisodeMapper.updateById(series);
-                }
-            }
+            upsertSeries(seriesGuid, seasonFolderPath, tvTitle, seasonNumber, AnalysisStatus.IN_PROGRESS);
 
-            // 2. Scan for episodes
-            List<QueuedEpisode> queue = mediaFileScanner.getEpisodeQueue(seriesGuid, seasonFolderPath, episodes);
+            List<QueuedEpisode> queue = buildQueue(seriesGuid, seasonFolderPath, episodes);
             if (queue.isEmpty()) {
                 log.info("No episodes found in {}", seasonFolderPath);
                 updateAnalysisStatus(seriesGuid, AnalysisStatus.COMPLETED);
@@ -191,76 +176,43 @@ public class AnalysisService {
             }
             log.info("Found {} episodes", queue.size());
 
-            // 3. Load existing state
-            for (QueuedEpisode ep : queue) {
-                // Fetch existing segment from DB
-                EpisodeSegment existing = episodeSegmentMapper.selectOne(
-                    new QueryWrapper<EpisodeSegment>()
-                        .eq("series_guid", seriesGuid)
-                        .eq("episode_index", ep.getEpisodeNumber())
-                        .last("LIMIT 1")
-                );
-                
-                if (existing != null) {
-                    ep.setIntroFingerprint(existing.getIntroFingerprint());
-                    ep.setCreditsFingerprint(existing.getCreditsFingerprint());
-                    if (existing.getDuration() != null) {
-                        ep.setDuration(existing.getDuration());
-                    }
-                    
-                    if (existing.getIntroStart() != null && existing.getIntroEnd() != null) {
-                        ep.setIntroSegment(new Segment(existing.getIntroStart().doubleValue(), existing.getIntroEnd().doubleValue(), true));
-                    }
-                    if (existing.getCreditsStart() != null && existing.getCreditsEnd() != null) {
-                        ep.setCreditsSegment(new Segment(existing.getCreditsStart().doubleValue(), existing.getCreditsEnd().doubleValue(), true));
-                    }
+            upsertEpisodeSegmentsFromQueue(seriesGuid, queue, AnalysisStatus.IN_PROGRESS);
+            hydrateQueueFromExistingSegments(seriesGuid, queue);
+            prepareEpisodesForAnalysis(queue);
+            runDefaultAnalysis(queue);
 
-                    parseActions(existing.getAction(), ep);
-                } else {
-                    try {
-                        ep.setDuration(ffmpegWrapper.getDuration(ep.getPath()));
-                    } catch (Exception e) {
-                        log.error("Failed to get duration for " + ep.getPath(), e);
-                    }
-                }
-
-                if (ep.getDuration() <= 0) {
-                    try {
-                        ep.setDuration(ffmpegWrapper.getDuration(ep.getPath()));
-                    } catch (Exception e) {
-                        log.error("Failed to get duration for " + ep.getPath(), e);
-                    }
-                }
-
-                ep.setIntroFingerprintEnd(600);
-                ep.setCreditsFingerprintStart(Math.max(0, ep.getDuration() - 240));
-
-                ep.setIntroAnalyzed(false);
-                ep.setCreditsAnalyzed(false);
-            }
-
-            // 4. Run Analysis Chain
-            // Hardcoded flags for now, can be passed as params
-            boolean isAnime = false; 
-            boolean isMovie = false;
-            AnalyzerAction action = AnalyzerAction.DEFAULT;
-
-            // Analyze Introduction
-            List<MediaFileAnalyzer> introAnalyzers = analyzerFactory.createAnalyzers(AnalysisMode.INTRODUCTION, isAnime, isMovie, action);
-            runAnalyzers(introAnalyzers, queue, AnalysisMode.INTRODUCTION);
-
-            // Analyze Credits
-            List<MediaFileAnalyzer> creditsAnalyzers = analyzerFactory.createAnalyzers(AnalysisMode.CREDITS, isAnime, isMovie, action);
-            runAnalyzers(creditsAnalyzers, queue, AnalysisMode.CREDITS);
-
-            // 5. Save Results
-            saveResults(queue, seriesGuid);
-            updateAnalysisStatus(seriesGuid, AnalysisStatus.COMPLETED);
+            boolean hadFailedEpisodes = persistResults(seriesGuid, queue);
+            updateAnalysisStatus(seriesGuid, hadFailedEpisodes ? AnalysisStatus.PARTIAL_SUCCESS : AnalysisStatus.COMPLETED);
         } catch (Exception e) {
             log.error("Error during analysis for series {}", seriesGuid, e);
             updateAnalysisStatus(seriesGuid, AnalysisStatus.FAILED);
             throw e;
         }
+    }
+
+    private List<QueuedEpisode> buildQueue(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes) {
+        return mediaFileScanner.getEpisodeQueue(seriesGuid, seasonFolderPath, episodes);
+    }
+
+    private void prepareEpisodesForAnalysis(List<QueuedEpisode> queue) {
+        for (QueuedEpisode ep : queue) {
+            ep.setIntroFingerprintEnd(600);
+            ep.setCreditsFingerprintStart(Math.max(0, ep.getDuration() - 240));
+            ep.setIntroAnalyzed(false);
+            ep.setCreditsAnalyzed(false);
+        }
+    }
+
+    private void runDefaultAnalysis(List<QueuedEpisode> queue) {
+        boolean isAnime = false;
+        boolean isMovie = false;
+        AnalyzerAction action = AnalyzerAction.DEFAULT;
+
+        List<MediaFileAnalyzer> introAnalyzers = analyzerFactory.createAnalyzers(AnalysisMode.INTRODUCTION, isAnime, isMovie, action);
+        runAnalyzers(introAnalyzers, queue, AnalysisMode.INTRODUCTION);
+
+        List<MediaFileAnalyzer> creditsAnalyzers = analyzerFactory.createAnalyzers(AnalysisMode.CREDITS, isAnime, isMovie, action);
+        runAnalyzers(creditsAnalyzers, queue, AnalysisMode.CREDITS);
     }
 
     private void runAnalyzers(List<MediaFileAnalyzer> analyzers, List<QueuedEpisode> queue, AnalysisMode mode) {
@@ -273,38 +225,36 @@ public class AnalysisService {
         }
     }
 
-    private void saveResults(List<QueuedEpisode> queue, String seriesGuid) {
+    private boolean persistResults(String seriesGuid, List<QueuedEpisode> queue) {
+        boolean hadFailed = false;
+        LocalDateTime now = LocalDateTime.now();
         for (QueuedEpisode ep : queue) {
-            // Check if exists again to decide insert/update
-            EpisodeSegment segment = episodeSegmentMapper.selectOne(
-                new QueryWrapper<EpisodeSegment>()
-                    .eq("series_guid", seriesGuid)
-                    .eq("episode_index", ep.getEpisodeNumber())
-                    .last("LIMIT 1")
-            );
+            hadFailed |= persistEpisodeResult(seriesGuid, ep, now);
+        }
+        return hadFailed;
+    }
 
+    private boolean persistEpisodeResult(String seriesGuid, QueuedEpisode ep, LocalDateTime now) {
+        try {
+            boolean failed = ep.getDuration() <= 0;
+
+            EpisodeSegment segment = findEpisodeSegmentBySeriesAndNumber(seriesGuid, ep.getEpisodeNumber());
             boolean isNew = (segment == null);
             if (isNew) {
                 segment = new EpisodeSegment();
                 segment.setSeriesGuid(seriesGuid);
             }
 
-            segment.setSeriesGuid(seriesGuid);
-            segment.setGuid(ep.getEpisodeGuid());
             segment.setEpisodeNumber(ep.getEpisodeNumber());
-            segment.setFilePath(ep.getPath());
-            segment.setDuration(ep.getDuration());
-            
+            analysisEntityMapper.updateEpisodeFromQueuedEpisode(segment, ep);
+
             segment.setIntroStart(ep.getIntroSegment() == null ? null : roundToIntSeconds(ep.getIntroSegment().getStart()));
             segment.setIntroEnd(ep.getIntroSegment() == null ? null : roundToIntSeconds(ep.getIntroSegment().getEnd()));
             segment.setCreditsStart(ep.getCreditsSegment() == null ? null : roundToIntSeconds(ep.getCreditsSegment().getStart()));
             segment.setCreditsEnd(ep.getCreditsSegment() == null ? null : roundToIntSeconds(ep.getCreditsSegment().getEnd()));
-            
-            segment.setIntroFingerprint(ep.getIntroFingerprint());
-            segment.setCreditsFingerprint(ep.getCreditsFingerprint());
             segment.setAction(buildActions(ep));
+            segment.setStatus(failed ? AnalysisStatus.FAILED : AnalysisStatus.COMPLETED);
 
-            LocalDateTime now = LocalDateTime.now();
             if (isNew) {
                 segment.setCreateTime(now);
                 segment.setUpdateTime(now);
@@ -316,7 +266,180 @@ public class AnalysisService {
                 segment.setUpdateTime(now);
                 episodeSegmentMapper.updateById(segment);
             }
+
+            return failed;
+        } catch (Exception e) {
+            updateEpisodeStatus(seriesGuid, ep.getEpisodeNumber(), AnalysisStatus.FAILED, ep.getEpisodeGuid(), ep.getPath());
+            return true;
         }
+    }
+
+    private void updateEpisodeStatus(String seriesGuid, int episodeNumber, AnalysisStatus status, String guid, String filePath) {
+        EpisodeSegment segment = findEpisodeSegmentBySeriesAndNumber(seriesGuid, episodeNumber);
+        LocalDateTime now = LocalDateTime.now();
+        if (segment == null) {
+            segment = new EpisodeSegment();
+            segment.setSeriesGuid(seriesGuid);
+            segment.setEpisodeNumber(episodeNumber);
+            segment.setGuid(guid);
+            segment.setFilePath(filePath);
+            segment.setStatus(status);
+            segment.setCreateTime(now);
+            segment.setUpdateTime(now);
+            episodeSegmentMapper.insert(segment);
+        } else {
+            segment.setGuid(guid);
+            segment.setFilePath(filePath);
+            segment.setStatus(status);
+            if (segment.getCreateTime() == null) {
+                segment.setCreateTime(now);
+            }
+            segment.setUpdateTime(now);
+            episodeSegmentMapper.updateById(segment);
+        }
+    }
+
+    private void hydrateQueueFromExistingSegments(String seriesGuid, List<QueuedEpisode> queue) {
+        for (QueuedEpisode ep : queue) {
+            EpisodeSegment existing = findEpisodeSegmentBySeriesAndNumber(seriesGuid, ep.getEpisodeNumber());
+            if (existing != null) {
+                ep.setIntroFingerprint(existing.getIntroFingerprint());
+                ep.setCreditsFingerprint(existing.getCreditsFingerprint());
+                if (existing.getDuration() != null) {
+                    ep.setDuration(existing.getDuration());
+                }
+
+                if (existing.getIntroStart() != null && existing.getIntroEnd() != null) {
+                    ep.setIntroSegment(new Segment(existing.getIntroStart().doubleValue(), existing.getIntroEnd().doubleValue(), true));
+                }
+                if (existing.getCreditsStart() != null && existing.getCreditsEnd() != null) {
+                    ep.setCreditsSegment(new Segment(existing.getCreditsStart().doubleValue(), existing.getCreditsEnd().doubleValue(), true));
+                }
+
+                parseActions(existing.getAction(), ep);
+            }
+
+            ensureDuration(ep);
+        }
+    }
+
+    private void ensureDuration(QueuedEpisode ep) {
+        if (ep.getDuration() > 0) {
+            return;
+        }
+        try {
+            ep.setDuration(ffmpegWrapper.getDuration(ep.getPath()));
+        } catch (Exception e) {
+            log.error("Failed to get duration for " + ep.getPath(), e);
+        }
+    }
+
+    private void upsertSeries(String seriesGuid, String seasonFolderPath, String tvTitle, Integer seasonNumber, AnalysisStatus status) {
+        TvSeasonInfo series = tvSeasonInfoMapper.selectById(seriesGuid);
+        LocalDateTime now = LocalDateTime.now();
+        if (series == null) {
+            series = new TvSeasonInfo();
+            series.setSeriesGuid(seriesGuid);
+            analysisEntityMapper.updateTvSeasonInfo(series, seasonFolderPath, tvTitle, seasonNumber);
+            series.setStatus(status);
+            series.setCreateTime(now);
+            series.setUpdateTime(now);
+            tvSeasonInfoMapper.insert(series);
+            return;
+        }
+
+        analysisEntityMapper.updateTvSeasonInfo(series, seasonFolderPath, tvTitle, seasonNumber);
+        series.setStatus(status);
+        if (series.getCreateTime() == null) {
+            series.setCreateTime(now);
+        }
+        series.setUpdateTime(now);
+        tvSeasonInfoMapper.updateById(series);
+    }
+
+    private void upsertEpisodeSegmentsFromRequest(String seriesGuid, List<EpisodeDetailRequest> episodes, AnalysisStatus status) {
+        LocalDateTime now = LocalDateTime.now();
+        for (EpisodeDetailRequest ep : episodes) {
+            upsertEpisodeSegmentFromRequest(seriesGuid, ep, status, now);
+        }
+    }
+
+    private void upsertEpisodeSegmentFromRequest(String seriesGuid, EpisodeDetailRequest ep, AnalysisStatus status, LocalDateTime now) {
+        if (ep == null || ep.getEpisodeNumber() == null) {
+            return;
+        }
+        EpisodeSegment segment = findEpisodeSegmentBySeriesAndNumber(seriesGuid, ep.getEpisodeNumber());
+        boolean isNew = segment == null;
+        if (isNew) {
+            segment = new EpisodeSegment();
+            segment.setSeriesGuid(seriesGuid);
+        }
+
+        analysisEntityMapper.updateEpisodeFromRequest(segment, ep);
+        segment.setStatus(status);
+
+        if (isNew) {
+            segment.setCreateTime(now);
+            segment.setUpdateTime(now);
+            episodeSegmentMapper.insert(segment);
+        } else {
+            if (segment.getCreateTime() == null) {
+                segment.setCreateTime(now);
+            }
+            segment.setUpdateTime(now);
+            episodeSegmentMapper.updateById(segment);
+        }
+    }
+
+    private void upsertEpisodeSegmentsFromQueue(String seriesGuid, List<QueuedEpisode> queue, AnalysisStatus status) {
+        transactionTemplate.executeWithoutResult(tx -> {
+            LocalDateTime now = LocalDateTime.now();
+            for (QueuedEpisode ep : queue) {
+                upsertEpisodeSegmentFromQueue(seriesGuid, ep, status, now);
+            }
+        });
+    }
+
+    private void upsertEpisodeSegmentFromQueue(String seriesGuid, QueuedEpisode ep, AnalysisStatus status, LocalDateTime now) {
+        EpisodeSegment segment = findEpisodeSegmentBySeriesAndNumber(seriesGuid, ep.getEpisodeNumber());
+        boolean isNew = segment == null;
+        if (isNew) {
+            segment = new EpisodeSegment();
+            segment.setSeriesGuid(seriesGuid);
+            segment.setEpisodeNumber(ep.getEpisodeNumber());
+        }
+
+        analysisEntityMapper.updateEpisodeFromQueuedEpisode(segment, ep);
+        segment.setStatus(status);
+
+        if (isNew) {
+            segment.setCreateTime(now);
+            segment.setUpdateTime(now);
+            episodeSegmentMapper.insert(segment);
+        } else {
+            if (segment.getCreateTime() == null) {
+                segment.setCreateTime(now);
+            }
+            segment.setUpdateTime(now);
+            episodeSegmentMapper.updateById(segment);
+        }
+    }
+
+    private EpisodeSegment findEpisodeSegmentBySeriesAndNumber(String seriesGuid, int episodeNumber) {
+        return episodeSegmentMapper.selectOne(
+            new QueryWrapper<EpisodeSegment>()
+                .eq("series_guid", seriesGuid)
+                .eq("episode_number", episodeNumber)
+                .last("LIMIT 1")
+        );
+    }
+
+    private EpisodeSegment findEpisodeSegmentByGuid(String episodeGuid) {
+        return episodeSegmentMapper.selectOne(
+            new QueryWrapper<EpisodeSegment>()
+                .eq("guid", episodeGuid)
+                .last("LIMIT 1")
+        );
     }
 
     private String buildActions(QueuedEpisode ep) {

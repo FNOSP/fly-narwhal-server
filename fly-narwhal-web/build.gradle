@@ -8,9 +8,12 @@ dependencies {
     implementation project(':fly-narwhal-core')
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'com.baomidou:mybatis-plus-spring-boot3-starter:3.5.9'
+    implementation 'org.mapstruct:mapstruct:1.5.5.Final'
     runtimeOnly 'com.h2database:h2'
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
+    annotationProcessor 'org.mapstruct:mapstruct-processor:1.5.5.Final'
+    annotationProcessor 'org.projectlombok:lombok-mapstruct-binding:0.2.0'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 

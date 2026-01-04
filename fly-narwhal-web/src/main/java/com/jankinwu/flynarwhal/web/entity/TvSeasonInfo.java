@@ -6,9 +6,12 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.jankinwu.flynarwhal.core.data.AnalysisStatus;
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 @Data
-@TableName("SERIES_EPISODES")
-public class SeriesEpisode {
+@TableName("TV_SEASON_INFO")
+public class TvSeasonInfo {
+
     @TableId(value = "series_guid", type = IdType.INPUT)
     private String seriesGuid;
 
@@ -19,4 +22,8 @@ public class SeriesEpisode {
     private Integer seasonNumber;
 
     private AnalysisStatus status;
+
+    private LocalDateTime createTime;
+
+    private LocalDateTime updateTime;
 }

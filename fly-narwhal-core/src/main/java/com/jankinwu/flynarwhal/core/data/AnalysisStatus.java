@@ -6,6 +6,7 @@ import lombok.Getter;
 public enum AnalysisStatus {
     PENDING("未开始"),
     IN_PROGRESS("正在分析中"),
+    PARTIAL_SUCCESS("部分成功"),
     COMPLETED("已完成"),
     FAILED("分析失败");
 
