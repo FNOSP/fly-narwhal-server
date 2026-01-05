@@ -120,6 +120,11 @@
         </format>
     </appender>
 
+    <!-- 默认配置：打印到控制台 -->
+    <root level="info">
+        <appender-ref ref="console_log" />
+    </root>
+
     <!--生产环境:打印到控制台并输出到文件 -->
     <springProfile name="release">
         <root level="info">
