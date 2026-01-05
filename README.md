@@ -46,7 +46,9 @@
    - **Linux**:
      ```bash
      # 请根据实际构建出的版本号替换{version}
-     nohup java -jar fly-narwhal-web/build/libs/fly-narwhal-server-{version}.jar > server.log 2>&1 &
+     nohup java -jar fly-narwhal-server-{version}.jar > /dev/null 2>&1 &
+     # 如果需要更换默认端口
+     nohup java -jar fly-narwhal-server-{version}.jar --server.port=8080 > /dev/null 2>&1 &
      ```
 
 4. **停止服务**：

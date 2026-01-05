@@ -30,12 +30,13 @@ def generatedVersionSrcDir = layout.buildDirectory.dir("generated/sources/versio
 
 tasks.register('generateVersionConfig') {
     outputs.dir(generatedVersionSrcDir)
+    outputs.upToDateWhen { false }
     doLast {
         def dir = generatedVersionSrcDir.get().asFile
         def packagePath = new File(dir, "com/jankinwu/flynarwhal/web/config")
         packagePath.mkdirs()
 
-        def buildTime = java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).toString()
+        def buildTime = java.time.OffsetDateTime.now(java.time.ZoneOffset.ofHours(8)).toString()
         def baseVersion = project.ext.baseVersion?.toString() ?: project.version.toString()
         def version = project.version.toString()
 
