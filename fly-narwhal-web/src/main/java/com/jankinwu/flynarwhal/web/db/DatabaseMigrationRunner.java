@@ -50,9 +50,9 @@ public class DatabaseMigrationRunner implements ApplicationRunner {
             }
 
             applyVersionScripts(version, scriptsByVersion.get(version));
-            setDatabaseVersion(version);
             dbVersion = version;
         }
+        setDatabaseVersion(appVersion);
     }
 
     private String resolveAppVersion() {

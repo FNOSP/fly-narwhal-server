@@ -25,9 +25,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -82,7 +84,7 @@ public class AnalysisService {
     }
 
     private void processQueue() {
-        while (true) {
+        while (!Thread.currentThread().isInterrupted()) {
             try {
                 AnalyzeJob job = analyzeJobQueue.takeFirst();
                 transactionTemplate.executeWithoutResult(status -> {
@@ -154,11 +156,7 @@ public class AnalysisService {
     }
 
     public EpisodeSegmentsResponse getSegmentsByEpisodeGuid(String episodeGuid) {
-        EpisodeSegment segment = episodeSegmentMapper.selectOne(
-            new QueryWrapper<EpisodeSegment>()
-                .eq("guid", episodeGuid)
-                .last("LIMIT 1")
-        );
+        EpisodeSegment segment = findEpisodeSegmentByGuid(episodeGuid);
 
         if (segment == null) {
             return new EpisodeSegmentsResponse();
@@ -242,69 +240,68 @@ public class AnalysisService {
     private boolean persistResults(String seriesGuid, List<QueuedEpisode> queue) {
         boolean hadFailed = false;
         LocalDateTime now = LocalDateTime.now();
+
+        List<EpisodeSegment> existingSegments = episodeSegmentMapper.selectList(
+            new QueryWrapper<EpisodeSegment>().eq("series_guid", seriesGuid)
+        );
+        Map<Integer, EpisodeSegment> segmentMap = existingSegments.stream()
+            .collect(Collectors.toMap(EpisodeSegment::getEpisodeNumber, s -> s, (a, b) -> a));
+
         for (QueuedEpisode ep : queue) {
-            hadFailed |= persistEpisodeResult(seriesGuid, ep, now);
+            EpisodeSegment existing = segmentMap.get(ep.getEpisodeNumber());
+            hadFailed |= persistEpisodeResult(seriesGuid, ep, now, existing);
         }
         return hadFailed;
     }
 
-    private boolean persistEpisodeResult(String seriesGuid, QueuedEpisode ep, LocalDateTime now) {
+    private boolean persistEpisodeResult(String seriesGuid, QueuedEpisode ep, LocalDateTime now, EpisodeSegment segment) {
         try {
             boolean failed = ep.getDuration() <= 0;
 
-            EpisodeSegment segment = findEpisodeSegmentBySeriesAndNumber(seriesGuid, ep.getEpisodeNumber());
             boolean isNew = (segment == null);
             if (isNew) {
                 segment = new EpisodeSegment();
                 segment.setSeriesGuid(seriesGuid);
+                segment.setEpisodeNumber(ep.getEpisodeNumber());
             }
 
-            segment.setEpisodeNumber(ep.getEpisodeNumber());
             analysisEntityMapper.updateEpisodeFromQueuedEpisode(segment, ep);
 
-            segment.setIntroStart(new BigDecimal(ep.getIntroSegment() == null ? null : ep.getIntroSegment().getStart()));
-            segment.setIntroEnd(new BigDecimal(ep.getIntroSegment() == null ? null : ep.getIntroSegment().getEnd()));
-            segment.setCreditsStart(new BigDecimal(ep.getCreditsSegment() == null ? null : ep.getCreditsSegment().getStart()));
-            segment.setCreditsEnd(new BigDecimal(ep.getCreditsSegment() == null ? null : ep.getCreditsSegment().getEnd()));
+            if (ep.getIntroSegment() != null) {
+                segment.setIntroStart(BigDecimal.valueOf(ep.getIntroSegment().getStart()));
+                segment.setIntroEnd(BigDecimal.valueOf(ep.getIntroSegment().getEnd()));
+            } else {
+                segment.setIntroStart(null);
+                segment.setIntroEnd(null);
+            }
+
+            if (ep.getCreditsSegment() != null) {
+                segment.setCreditsStart(BigDecimal.valueOf(ep.getCreditsSegment().getStart()));
+                segment.setCreditsEnd(BigDecimal.valueOf(ep.getCreditsSegment().getEnd()));
+            } else {
+                segment.setCreditsStart(null);
+                segment.setCreditsEnd(null);
+            }
+
             segment.setAction(buildActions(ep));
             segment.setStatus(failed ? AnalysisStatus.FAILED : AnalysisStatus.COMPLETED);
 
-            if (isNew) {
-                segment.setCreateTime(now);
-                segment.setUpdateTime(now);
-                episodeSegmentMapper.insert(segment);
-            } else {
-                if (segment.getCreateTime() == null) {
-                    segment.setCreateTime(now);
-                }
-                segment.setUpdateTime(now);
-                episodeSegmentMapper.updateById(segment);
-            }
+            saveOrUpdateEpisodeSegment(segment, now, isNew);
 
             return failed;
         } catch (Exception e) {
+            log.error("Failed to persist episode result for episode {}", ep.getEpisodeNumber(), e);
             updateEpisodeStatus(seriesGuid, ep.getEpisodeNumber(), AnalysisStatus.FAILED, ep.getEpisodeGuid(), ep.getPath());
             return true;
         }
     }
 
-    private void updateEpisodeStatus(String seriesGuid, int episodeNumber, AnalysisStatus status, String guid, String filePath) {
-        EpisodeSegment segment = findEpisodeSegmentBySeriesAndNumber(seriesGuid, episodeNumber);
-        LocalDateTime now = LocalDateTime.now();
-        if (segment == null) {
-            segment = new EpisodeSegment();
-            segment.setSeriesGuid(seriesGuid);
-            segment.setEpisodeNumber(episodeNumber);
-            segment.setGuid(guid);
-            segment.setFilePath(filePath);
-            segment.setStatus(status);
+    private void saveOrUpdateEpisodeSegment(EpisodeSegment segment, LocalDateTime now, boolean isNew) {
+        if (isNew) {
             segment.setCreateTime(now);
             segment.setUpdateTime(now);
             episodeSegmentMapper.insert(segment);
         } else {
-            segment.setGuid(guid);
-            segment.setFilePath(filePath);
-            segment.setStatus(status);
             if (segment.getCreateTime() == null) {
                 segment.setCreateTime(now);
             }
@@ -313,9 +310,30 @@ public class AnalysisService {
         }
     }
 
+    private void updateEpisodeStatus(String seriesGuid, int episodeNumber, AnalysisStatus status, String guid, String filePath) {
+        EpisodeSegment segment = findEpisodeSegmentBySeriesAndNumber(seriesGuid, episodeNumber);
+        LocalDateTime now = LocalDateTime.now();
+        boolean isNew = (segment == null);
+        if (isNew) {
+            segment = new EpisodeSegment();
+            segment.setSeriesGuid(seriesGuid);
+            segment.setEpisodeNumber(episodeNumber);
+        }
+        segment.setGuid(guid);
+        segment.setFilePath(filePath);
+        segment.setStatus(status);
+        saveOrUpdateEpisodeSegment(segment, now, isNew);
+    }
+
     private void hydrateQueueFromExistingSegments(String seriesGuid, List<QueuedEpisode> queue) {
+        List<EpisodeSegment> existingSegments = episodeSegmentMapper.selectList(
+            new QueryWrapper<EpisodeSegment>().eq("series_guid", seriesGuid)
+        );
+        Map<Integer, EpisodeSegment> segmentMap = existingSegments.stream()
+            .collect(Collectors.toMap(EpisodeSegment::getEpisodeNumber, s -> s, (a, b) -> a));
+
         for (QueuedEpisode ep : queue) {
-            EpisodeSegment existing = findEpisodeSegmentBySeriesAndNumber(seriesGuid, ep.getEpisodeNumber());
+            EpisodeSegment existing = segmentMap.get(ep.getEpisodeNumber());
             if (existing != null) {
                 ep.setIntroFingerprint(existing.getIntroFingerprint());
                 ep.setCreditsFingerprint(existing.getCreditsFingerprint());
@@ -351,15 +369,11 @@ public class AnalysisService {
     private void upsertSeries(String seriesGuid, String seasonFolderPath, String tvTitle, Integer seasonNumber, AnalysisStatus status) {
         TvSeasonInfo series = tvSeasonInfoMapper.selectById(seriesGuid);
         LocalDateTime now = LocalDateTime.now();
-        if (series == null) {
+        boolean isNew = (series == null);
+        if (isNew) {
             series = new TvSeasonInfo();
             series.setSeriesGuid(seriesGuid);
-            analysisEntityMapper.updateTvSeasonInfo(series, seasonFolderPath, tvTitle, seasonNumber);
-            series.setStatus(status);
             series.setCreateTime(now);
-            series.setUpdateTime(now);
-            tvSeasonInfoMapper.insert(series);
-            return;
         }
 
         analysisEntityMapper.updateTvSeasonInfo(series, seasonFolderPath, tvTitle, seasonNumber);
@@ -368,75 +382,63 @@ public class AnalysisService {
             series.setCreateTime(now);
         }
         series.setUpdateTime(now);
-        tvSeasonInfoMapper.updateById(series);
+
+        if (isNew) {
+            tvSeasonInfoMapper.insert(series);
+        } else {
+            tvSeasonInfoMapper.updateById(series);
+        }
     }
 
     private void upsertEpisodeSegmentsFromRequest(String seriesGuid, List<EpisodeDetailRequest> episodes, AnalysisStatus status) {
         LocalDateTime now = LocalDateTime.now();
+        List<EpisodeSegment> existingSegments = episodeSegmentMapper.selectList(
+            new QueryWrapper<EpisodeSegment>().eq("series_guid", seriesGuid)
+        );
+        Map<Integer, EpisodeSegment> segmentMap = existingSegments.stream()
+            .collect(Collectors.toMap(EpisodeSegment::getEpisodeNumber, s -> s, (a, b) -> a));
+
         for (EpisodeDetailRequest ep : episodes) {
-            upsertEpisodeSegmentFromRequest(seriesGuid, ep, status, now);
-        }
-    }
-
-    private void upsertEpisodeSegmentFromRequest(String seriesGuid, EpisodeDetailRequest ep, AnalysisStatus status, LocalDateTime now) {
-        if (ep == null || ep.getEpisodeNumber() == null) {
-            return;
-        }
-        EpisodeSegment segment = findEpisodeSegmentBySeriesAndNumber(seriesGuid, ep.getEpisodeNumber());
-        boolean isNew = segment == null;
-        if (isNew) {
-            segment = new EpisodeSegment();
-            segment.setSeriesGuid(seriesGuid);
-        }
-
-        analysisEntityMapper.updateEpisodeFromRequest(segment, ep);
-        segment.setStatus(status);
-
-        if (isNew) {
-            segment.setCreateTime(now);
-            segment.setUpdateTime(now);
-            episodeSegmentMapper.insert(segment);
-        } else {
-            if (segment.getCreateTime() == null) {
-                segment.setCreateTime(now);
+            if (ep == null || ep.getEpisodeNumber() == null) {
+                continue;
             }
-            segment.setUpdateTime(now);
-            episodeSegmentMapper.updateById(segment);
+            EpisodeSegment segment = segmentMap.get(ep.getEpisodeNumber());
+            boolean isNew = segment == null;
+            if (isNew) {
+                segment = new EpisodeSegment();
+                segment.setSeriesGuid(seriesGuid);
+                segment.setEpisodeNumber(ep.getEpisodeNumber());
+            }
+
+            analysisEntityMapper.updateEpisodeFromRequest(segment, ep);
+            segment.setStatus(status);
+            saveOrUpdateEpisodeSegment(segment, now, isNew);
         }
     }
 
     private void upsertEpisodeSegmentsFromQueue(String seriesGuid, List<QueuedEpisode> queue, AnalysisStatus status) {
         transactionTemplate.executeWithoutResult(tx -> {
             LocalDateTime now = LocalDateTime.now();
+            List<EpisodeSegment> existingSegments = episodeSegmentMapper.selectList(
+                new QueryWrapper<EpisodeSegment>().eq("series_guid", seriesGuid)
+            );
+            Map<Integer, EpisodeSegment> segmentMap = existingSegments.stream()
+                .collect(Collectors.toMap(EpisodeSegment::getEpisodeNumber, s -> s, (a, b) -> a));
+
             for (QueuedEpisode ep : queue) {
-                upsertEpisodeSegmentFromQueue(seriesGuid, ep, status, now);
+                EpisodeSegment segment = segmentMap.get(ep.getEpisodeNumber());
+                boolean isNew = segment == null;
+                if (isNew) {
+                    segment = new EpisodeSegment();
+                    segment.setSeriesGuid(seriesGuid);
+                    segment.setEpisodeNumber(ep.getEpisodeNumber());
+                }
+
+                analysisEntityMapper.updateEpisodeFromQueuedEpisode(segment, ep);
+                segment.setStatus(status);
+                saveOrUpdateEpisodeSegment(segment, now, isNew);
             }
         });
-    }
-
-    private void upsertEpisodeSegmentFromQueue(String seriesGuid, QueuedEpisode ep, AnalysisStatus status, LocalDateTime now) {
-        EpisodeSegment segment = findEpisodeSegmentBySeriesAndNumber(seriesGuid, ep.getEpisodeNumber());
-        boolean isNew = segment == null;
-        if (isNew) {
-            segment = new EpisodeSegment();
-            segment.setSeriesGuid(seriesGuid);
-            segment.setEpisodeNumber(ep.getEpisodeNumber());
-        }
-
-        analysisEntityMapper.updateEpisodeFromQueuedEpisode(segment, ep);
-        segment.setStatus(status);
-
-        if (isNew) {
-            segment.setCreateTime(now);
-            segment.setUpdateTime(now);
-            episodeSegmentMapper.insert(segment);
-        } else {
-            if (segment.getCreateTime() == null) {
-                segment.setCreateTime(now);
-            }
-            segment.setUpdateTime(now);
-            episodeSegmentMapper.updateById(segment);
-        }
     }
 
     private EpisodeSegment findEpisodeSegmentBySeriesAndNumber(String seriesGuid, int episodeNumber) {
