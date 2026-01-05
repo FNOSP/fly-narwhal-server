@@ -62,4 +62,15 @@ public class AnalysisController {
             return Result.error("Error: " + e.getMessage());
         }
     }
+
+    @GetMapping("/version")
+    public Result<String> getDbVersion() {
+        try {
+            String version = analysisService.getDatabaseVersion();
+            return Result.success(version);
+        } catch (Exception e) {
+            log.error("Error getting database version", e);
+            return Result.error("Error: " + e.getMessage());
+        }
+    }
 }

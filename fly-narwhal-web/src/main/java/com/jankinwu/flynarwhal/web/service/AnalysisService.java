@@ -12,6 +12,8 @@ import com.jankinwu.flynarwhal.web.entity.EpisodeSegment;
 import com.jankinwu.flynarwhal.web.entity.TvSeasonInfo;
 import com.jankinwu.flynarwhal.core.dto.request.EpisodeDetailRequest;
 import com.jankinwu.flynarwhal.web.mapstruct.AnalysisEntityMapper;
+import com.jankinwu.flynarwhal.web.entity.DbVersion;
+import com.jankinwu.flynarwhal.web.mapper.DbVersionMapper;
 import com.jankinwu.flynarwhal.web.mapper.EpisodeSegmentMapper;
 import com.jankinwu.flynarwhal.web.mapper.TvSeasonInfoMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +25,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
 
@@ -40,6 +43,7 @@ public class AnalysisService {
 
     private final TvSeasonInfoMapper tvSeasonInfoMapper;
     private final EpisodeSegmentMapper episodeSegmentMapper;
+    private final DbVersionMapper dbVersionMapper;
     private final AnalyzerFactory analyzerFactory;
     private final MediaFileScanner mediaFileScanner;
     private final FFmpegWrapper ffmpegWrapper;
@@ -56,17 +60,25 @@ public class AnalysisService {
 
     public AnalysisService(TvSeasonInfoMapper tvSeasonInfoMapper,
                            EpisodeSegmentMapper episodeSegmentMapper,
+                           DbVersionMapper dbVersionMapper,
                            AnalyzerFactory analyzerFactory,
                            MediaFileScanner mediaFileScanner,
                            TransactionTemplate transactionTemplate,
                            AnalysisEntityMapper analysisEntityMapper) {
         this.tvSeasonInfoMapper = tvSeasonInfoMapper;
         this.episodeSegmentMapper = episodeSegmentMapper;
+        this.dbVersionMapper = dbVersionMapper;
         this.analyzerFactory = analyzerFactory;
         this.mediaFileScanner = mediaFileScanner;
         this.ffmpegWrapper = new FFmpegWrapper();
         this.transactionTemplate = transactionTemplate;
         this.analysisEntityMapper = analysisEntityMapper;
+    }
+
+    public String getDatabaseVersion() {
+        return Optional.ofNullable(dbVersionMapper.selectById(1))
+                .map(DbVersion::getVersion)
+                .orElse("0.0.0");
     }
 
     private void processQueue() {
