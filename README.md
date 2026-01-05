@@ -7,6 +7,9 @@
 
 ## 部署教程
 
+### 使用 releases 中打包好的 jar 包
+下载 [releases](https://github.com/FNOSP/fly-narwhal-server/releases) 中的 jar 包
+
 ### 从源码构建
 
 #### 准备工作
@@ -27,17 +30,31 @@
    ./gradlew clean :fly-narwhal-web:bootJar -x test
    ```
 
-#### 本地运行
+### 运行
 1. **使用 Gradle 运行**：
    ```bash
    ./gradlew :fly-narwhal-web:bootRun
    ```
 
-2. **使用 Jar 包运行**：
+2. **使用 Jar 包运行 (前台)**：
    ```bash
-   # 请根据实际构建出的版本号替换 *
-   java -jar fly-narwhal-web/build/libs/fly-narwhal-server-0.0.1-Beta.jar
+   # 请根据实际构建出的版本号替换{version}
+   java -jar fly-narwhal-web/build/libs/fly-narwhal-server-{version}.jar
    ```
+
+3. **使用 Jar 包运行 (后台)**：
+   - **Linux**:
+     ```bash
+     # 请根据实际构建出的版本号替换{version}
+     nohup java -jar fly-narwhal-web/build/libs/fly-narwhal-server-{version}.jar > server.log 2>&1 &
+     ```
+
+4. **停止服务**：
+   - **Linux (通过端口)**:
+     ```bash
+     kill $(lsof -t -i:5365)
+     ```
+
 服务默认运行在 `5365` 端口。
 
 ---
