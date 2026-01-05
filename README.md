@@ -28,9 +28,16 @@
    ```
 
 #### 本地运行
-```bash
-java -jar fly-narwhal-web/build/libs/fly-narwhal-web-0.0.1.jar
-```
+1. **使用 Gradle 运行**：
+   ```bash
+   ./gradlew :fly-narwhal-web:bootRun
+   ```
+
+2. **使用 Jar 包运行**：
+   ```bash
+   # 请根据实际构建出的版本号替换 *
+   java -jar fly-narwhal-web/build/libs/fly-narwhal-server-0.0.1-Beta.jar
+   ```
 服务默认运行在 `5365` 端口。
 
 ---

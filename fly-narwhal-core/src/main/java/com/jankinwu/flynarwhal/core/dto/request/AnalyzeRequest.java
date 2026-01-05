@@ -7,7 +7,7 @@ import java.util.List;
 @Data
 public class AnalyzeRequest {
 
-    private String seriesGuid;
+    private String seasonGuid;
 
     private String seasonPath;
 

@@ -23,7 +23,7 @@ public class AnalysisController {
     public Result<String> analyze(@RequestBody AnalyzeRequest request) {
         try {
             int queueSize = analysisService.enqueueAnalyzeSeason(
-                    request.getSeriesGuid(),
+                    request.getSeasonGuid(),
                     request.getSeasonPath(),
                     request.getEpisodes(),
                     request.getTvTitle(),
