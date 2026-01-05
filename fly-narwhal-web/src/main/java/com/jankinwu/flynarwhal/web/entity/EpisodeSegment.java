@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.jankinwu.flynarwhal.core.data.AnalysisStatus;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
@@ -25,13 +26,13 @@ public class EpisodeSegment {
 
     private Double duration;
 
-    private Integer introStart;
+    private BigDecimal introStart;
 
-    private Integer introEnd;
+    private BigDecimal introEnd;
 
-    private Integer creditsStart;
+    private BigDecimal creditsStart;
 
-    private Integer creditsEnd;
+    private BigDecimal creditsEnd;
 
     private byte[] introFingerprint;
 

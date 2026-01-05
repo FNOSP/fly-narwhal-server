@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.jankinwu.flynarwhal.core.analyzer.AnalyzerFactory;
 import com.jankinwu.flynarwhal.core.analyzer.MediaFileAnalyzer;
 import com.jankinwu.flynarwhal.core.data.*;
+import com.jankinwu.flynarwhal.core.data.SegmentDTO;
 import com.jankinwu.flynarwhal.core.ffmpeg.FFmpegWrapper;
 import com.jankinwu.flynarwhal.core.scanner.MediaFileScanner;
 import com.jankinwu.flynarwhal.core.dto.response.EpisodeSegmentsResponse;
@@ -19,6 +20,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.BlockingDeque;
@@ -152,10 +154,10 @@ public class AnalysisService {
 
         EpisodeSegmentsResponse response = new EpisodeSegmentsResponse();
         if (segment.getIntroStart() != null && segment.getIntroEnd() != null) {
-            response.setIntro(new Segment(segment.getIntroStart().doubleValue(), segment.getIntroEnd().doubleValue(), true));
+            response.setIntro(new SegmentDTO(segment.getIntroStart(), segment.getIntroEnd(), true));
         }
         if (segment.getCreditsStart() != null && segment.getCreditsEnd() != null) {
-            response.setCredits(new Segment(segment.getCreditsStart().doubleValue(), segment.getCreditsEnd().doubleValue(), true));
+            response.setCredits(new SegmentDTO(segment.getCreditsStart(), segment.getCreditsEnd(), true));
         }
 
         return response;
@@ -248,10 +250,10 @@ public class AnalysisService {
             segment.setEpisodeNumber(ep.getEpisodeNumber());
             analysisEntityMapper.updateEpisodeFromQueuedEpisode(segment, ep);
 
-            segment.setIntroStart(ep.getIntroSegment() == null ? null : roundToIntSeconds(ep.getIntroSegment().getStart()));
-            segment.setIntroEnd(ep.getIntroSegment() == null ? null : roundToIntSeconds(ep.getIntroSegment().getEnd()));
-            segment.setCreditsStart(ep.getCreditsSegment() == null ? null : roundToIntSeconds(ep.getCreditsSegment().getStart()));
-            segment.setCreditsEnd(ep.getCreditsSegment() == null ? null : roundToIntSeconds(ep.getCreditsSegment().getEnd()));
+            segment.setIntroStart(new BigDecimal(ep.getIntroSegment() == null ? null : ep.getIntroSegment().getStart()));
+            segment.setIntroEnd(new BigDecimal(ep.getIntroSegment() == null ? null : ep.getIntroSegment().getEnd()));
+            segment.setCreditsStart(new BigDecimal(ep.getCreditsSegment() == null ? null : ep.getCreditsSegment().getStart()));
+            segment.setCreditsEnd(new BigDecimal(ep.getCreditsSegment() == null ? null : ep.getCreditsSegment().getEnd()));
             segment.setAction(buildActions(ep));
             segment.setStatus(failed ? AnalysisStatus.FAILED : AnalysisStatus.COMPLETED);
 
@@ -495,17 +497,6 @@ public class AnalysisService {
             } catch (Exception ignored) {
             }
         }
-    }
-
-    private Integer roundToIntSeconds(double value) {
-        long rounded = Math.round(value);
-        if (rounded > Integer.MAX_VALUE) {
-            return Integer.MAX_VALUE;
-        }
-        if (rounded < Integer.MIN_VALUE) {
-            return Integer.MIN_VALUE;
-        }
-        return (int) rounded;
     }
 
     private record AnalyzeJob(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, LocalDateTime enqueuedAt, String tvTitle, Integer seasonNumber) {

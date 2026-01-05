@@ -7,6 +7,7 @@ plugins {
 dependencies {
     implementation project(':fly-narwhal-core')
     implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
     implementation 'com.baomidou:mybatis-plus-spring-boot3-starter:3.5.9'
     implementation 'org.mapstruct:mapstruct:1.5.5.Final'
     runtimeOnly 'com.h2database:h2'

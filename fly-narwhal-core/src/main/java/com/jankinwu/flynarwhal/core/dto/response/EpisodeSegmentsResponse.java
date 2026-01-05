@@ -1,6 +1,6 @@
 package com.jankinwu.flynarwhal.core.dto.response;
 
-import com.jankinwu.flynarwhal.core.data.Segment;
+import com.jankinwu.flynarwhal.core.data.SegmentDTO;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -11,6 +11,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class EpisodeSegmentsResponse {
-    private Segment intro;
-    private Segment credits;
+    private SegmentDTO intro;
+    private SegmentDTO credits;
 }
