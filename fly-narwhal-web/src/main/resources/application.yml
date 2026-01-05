@@ -1,4 +1,6 @@
 spring:
+  profiles:
+    active: release
   application:
     name: fly-narwhal-server
   datasource:
@@ -10,7 +12,6 @@ spring:
     init:
       mode: never
 
-app:
 server:
   port: 5365
 
