@@ -16,7 +16,7 @@ public class EpisodeSegment {
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    private String seriesGuid;
+    private String seasonGuid;
 
     private String guid;
 

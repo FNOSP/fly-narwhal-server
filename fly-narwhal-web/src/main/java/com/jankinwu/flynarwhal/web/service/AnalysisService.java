@@ -89,11 +89,11 @@ public class AnalysisService {
                 AnalyzeJob job = analyzeJobQueue.takeFirst();
                 transactionTemplate.executeWithoutResult(status -> {
                     try {
-                        analyzeSeasonInternal(job.seriesGuid, job.seasonFolderPath, job.episodes, job.tvTitle, job.seasonNumber);
+                        analyzeSeasonInternal(job.seasonGuid, job.seasonFolderPath, job.episodes, job.tvTitle, job.seasonNumber);
                     } catch (Exception e) {
                         log.error("Error analyzing season internal", e);
                         status.setRollbackOnly();
-                        updateAnalysisStatus(job.seriesGuid, AnalysisStatus.FAILED);
+                        updateAnalysisStatus(job.seasonGuid, AnalysisStatus.FAILED);
                     }
                 });
             } catch (InterruptedException e) {
@@ -105,26 +105,26 @@ public class AnalysisService {
         }
     }
 
-    public int enqueueAnalyzeSeason(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, String tvTitle, Integer seasonNumber) {
+    public int enqueueAnalyzeSeason(String seasonGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, String tvTitle, Integer seasonNumber) {
         List<EpisodeDetailRequest> safeEpisodes = episodes == null ? List.of() : List.copyOf(episodes);
-        registerPending(seriesGuid, seasonFolderPath, tvTitle, seasonNumber, safeEpisodes);
-        enqueueJob(seriesGuid, seasonFolderPath, safeEpisodes, tvTitle, seasonNumber);
+        registerPending(seasonGuid, seasonFolderPath, tvTitle, seasonNumber, safeEpisodes);
+        enqueueJob(seasonGuid, seasonFolderPath, safeEpisodes, tvTitle, seasonNumber);
         return analyzeJobQueue.size();
     }
 
-    private void enqueueJob(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, String tvTitle, Integer seasonNumber) {
-        analyzeJobQueue.addLast(new AnalyzeJob(seriesGuid, seasonFolderPath, episodes, LocalDateTime.now(), tvTitle, seasonNumber));
+    private void enqueueJob(String seasonGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, String tvTitle, Integer seasonNumber) {
+        analyzeJobQueue.addLast(new AnalyzeJob(seasonGuid, seasonFolderPath, episodes, LocalDateTime.now(), tvTitle, seasonNumber));
     }
 
-    private void registerPending(String seriesGuid, String seasonFolderPath, String tvTitle, Integer seasonNumber, List<EpisodeDetailRequest> episodes) {
+    private void registerPending(String seasonGuid, String seasonFolderPath, String tvTitle, Integer seasonNumber, List<EpisodeDetailRequest> episodes) {
         transactionTemplate.executeWithoutResult(tx -> {
-            upsertSeries(seriesGuid, seasonFolderPath, tvTitle, seasonNumber, AnalysisStatus.PENDING);
-            upsertEpisodeSegmentsFromRequest(seriesGuid, episodes, AnalysisStatus.PENDING);
+            upsertSeries(seasonGuid, seasonFolderPath, tvTitle, seasonNumber, AnalysisStatus.PENDING);
+            upsertEpisodeSegmentsFromRequest(seasonGuid, episodes, AnalysisStatus.PENDING);
         });
     }
 
-    private AnalysisStatus getSeasonAnalysisStatus(String seriesGuid) {
-        TvSeasonInfo series = tvSeasonInfoMapper.selectById(seriesGuid);
+    private AnalysisStatus getSeasonAnalysisStatus(String seasonGuid) {
+        TvSeasonInfo series = tvSeasonInfoMapper.selectById(seasonGuid);
         return series != null ? series.getStatus() : null;
     }
 
@@ -142,14 +142,14 @@ public class AnalysisService {
         }
 
         if (guid == null || guid.isBlank()) {
-            throw new IllegalArgumentException("seriesGuid is required when type=SEASON");
+            throw new IllegalArgumentException("seasonGuid is required when type=SEASON");
         }
         return getSeasonAnalysisStatus(guid);
     }
 
-    private void updateAnalysisStatus(String seriesGuid, AnalysisStatus status) {
+    private void updateAnalysisStatus(String seasonGuid, AnalysisStatus status) {
         TvSeasonInfo series = new TvSeasonInfo();
-        series.setSeriesGuid(seriesGuid);
+        series.setSeasonGuid(seasonGuid);
         series.setStatus(status);
         series.setUpdateTime(LocalDateTime.now());
         tvSeasonInfoMapper.updateById(series);
@@ -173,37 +173,37 @@ public class AnalysisService {
         return response;
     }
 
-    private void analyzeSeasonInternal(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, String tvTitle, Integer seasonNumber) {
-        log.info("Starting analysis for series {} in folder {}", seriesGuid, seasonFolderPath);
-        updateAnalysisStatus(seriesGuid, AnalysisStatus.IN_PROGRESS);
+    private void analyzeSeasonInternal(String seasonGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, String tvTitle, Integer seasonNumber) {
+        log.info("Starting analysis for series {} in folder {}", seasonGuid, seasonFolderPath);
+        updateAnalysisStatus(seasonGuid, AnalysisStatus.IN_PROGRESS);
 
         try {
-            upsertSeries(seriesGuid, seasonFolderPath, tvTitle, seasonNumber, AnalysisStatus.IN_PROGRESS);
+            upsertSeries(seasonGuid, seasonFolderPath, tvTitle, seasonNumber, AnalysisStatus.IN_PROGRESS);
 
-            List<QueuedEpisode> queue = buildQueue(seriesGuid, seasonFolderPath, episodes);
+            List<QueuedEpisode> queue = buildQueue(seasonGuid, seasonFolderPath, episodes);
             if (queue.isEmpty()) {
                 log.info("No episodes found in {}", seasonFolderPath);
-                updateAnalysisStatus(seriesGuid, AnalysisStatus.COMPLETED);
+                updateAnalysisStatus(seasonGuid, AnalysisStatus.COMPLETED);
                 return;
             }
             log.info("Found {} episodes", queue.size());
 
-            upsertEpisodeSegmentsFromQueue(seriesGuid, queue, AnalysisStatus.IN_PROGRESS);
-            hydrateQueueFromExistingSegments(seriesGuid, queue);
+            upsertEpisodeSegmentsFromQueue(seasonGuid, queue, AnalysisStatus.IN_PROGRESS);
+            hydrateQueueFromExistingSegments(seasonGuid, queue);
             prepareEpisodesForAnalysis(queue);
             runDefaultAnalysis(queue);
 
-            boolean hadFailedEpisodes = persistResults(seriesGuid, queue);
-            updateAnalysisStatus(seriesGuid, hadFailedEpisodes ? AnalysisStatus.PARTIAL_SUCCESS : AnalysisStatus.COMPLETED);
+            boolean hadFailedEpisodes = persistResults(seasonGuid, queue);
+            updateAnalysisStatus(seasonGuid, hadFailedEpisodes ? AnalysisStatus.PARTIAL_SUCCESS : AnalysisStatus.COMPLETED);
         } catch (Exception e) {
-            log.error("Error during analysis for series {}", seriesGuid, e);
-            updateAnalysisStatus(seriesGuid, AnalysisStatus.FAILED);
+            log.error("Error during analysis for series {}", seasonGuid, e);
+            updateAnalysisStatus(seasonGuid, AnalysisStatus.FAILED);
             throw e;
         }
     }
 
-    private List<QueuedEpisode> buildQueue(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes) {
-        return mediaFileScanner.getEpisodeQueue(seriesGuid, seasonFolderPath, episodes);
+    private List<QueuedEpisode> buildQueue(String seasonGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes) {
+        return mediaFileScanner.getEpisodeQueue(seasonGuid, seasonFolderPath, episodes);
     }
 
     private void prepareEpisodesForAnalysis(List<QueuedEpisode> queue) {
@@ -237,31 +237,31 @@ public class AnalysisService {
         }
     }
 
-    private boolean persistResults(String seriesGuid, List<QueuedEpisode> queue) {
+    private boolean persistResults(String seasonGuid, List<QueuedEpisode> queue) {
         boolean hadFailed = false;
         LocalDateTime now = LocalDateTime.now();
 
         List<EpisodeSegment> existingSegments = episodeSegmentMapper.selectList(
-            new QueryWrapper<EpisodeSegment>().eq("series_guid", seriesGuid)
+            new QueryWrapper<EpisodeSegment>().eq("season_guid", seasonGuid)
         );
         Map<Integer, EpisodeSegment> segmentMap = existingSegments.stream()
             .collect(Collectors.toMap(EpisodeSegment::getEpisodeNumber, s -> s, (a, b) -> a));
 
         for (QueuedEpisode ep : queue) {
             EpisodeSegment existing = segmentMap.get(ep.getEpisodeNumber());
-            hadFailed |= persistEpisodeResult(seriesGuid, ep, now, existing);
+            hadFailed |= persistEpisodeResult(seasonGuid, ep, now, existing);
         }
         return hadFailed;
     }
 
-    private boolean persistEpisodeResult(String seriesGuid, QueuedEpisode ep, LocalDateTime now, EpisodeSegment segment) {
+    private boolean persistEpisodeResult(String seasonGuid, QueuedEpisode ep, LocalDateTime now, EpisodeSegment segment) {
         try {
             boolean failed = ep.getDuration() <= 0;
 
             boolean isNew = (segment == null);
             if (isNew) {
                 segment = new EpisodeSegment();
-                segment.setSeriesGuid(seriesGuid);
+                segment.setSeasonGuid(seasonGuid);
                 segment.setEpisodeNumber(ep.getEpisodeNumber());
             }
 
@@ -291,7 +291,7 @@ public class AnalysisService {
             return failed;
         } catch (Exception e) {
             log.error("Failed to persist episode result for episode {}", ep.getEpisodeNumber(), e);
-            updateEpisodeStatus(seriesGuid, ep.getEpisodeNumber(), AnalysisStatus.FAILED, ep.getEpisodeGuid(), ep.getPath());
+            updateEpisodeStatus(seasonGuid, ep.getEpisodeNumber(), AnalysisStatus.FAILED, ep.getEpisodeGuid(), ep.getPath());
             return true;
         }
     }
@@ -310,13 +310,13 @@ public class AnalysisService {
         }
     }
 
-    private void updateEpisodeStatus(String seriesGuid, int episodeNumber, AnalysisStatus status, String guid, String filePath) {
-        EpisodeSegment segment = findEpisodeSegmentBySeriesAndNumber(seriesGuid, episodeNumber);
+    private void updateEpisodeStatus(String seasonGuid, int episodeNumber, AnalysisStatus status, String guid, String filePath) {
+        EpisodeSegment segment = findEpisodeSegmentBySeriesAndNumber(seasonGuid, episodeNumber);
         LocalDateTime now = LocalDateTime.now();
         boolean isNew = (segment == null);
         if (isNew) {
             segment = new EpisodeSegment();
-            segment.setSeriesGuid(seriesGuid);
+            segment.setSeasonGuid(seasonGuid);
             segment.setEpisodeNumber(episodeNumber);
         }
         segment.setGuid(guid);
@@ -325,9 +325,9 @@ public class AnalysisService {
         saveOrUpdateEpisodeSegment(segment, now, isNew);
     }
 
-    private void hydrateQueueFromExistingSegments(String seriesGuid, List<QueuedEpisode> queue) {
+    private void hydrateQueueFromExistingSegments(String seasonGuid, List<QueuedEpisode> queue) {
         List<EpisodeSegment> existingSegments = episodeSegmentMapper.selectList(
-            new QueryWrapper<EpisodeSegment>().eq("series_guid", seriesGuid)
+            new QueryWrapper<EpisodeSegment>().eq("season_guid", seasonGuid)
         );
         Map<Integer, EpisodeSegment> segmentMap = existingSegments.stream()
             .collect(Collectors.toMap(EpisodeSegment::getEpisodeNumber, s -> s, (a, b) -> a));
@@ -366,13 +366,13 @@ public class AnalysisService {
         }
     }
 
-    private void upsertSeries(String seriesGuid, String seasonFolderPath, String tvTitle, Integer seasonNumber, AnalysisStatus status) {
-        TvSeasonInfo series = tvSeasonInfoMapper.selectById(seriesGuid);
+    private void upsertSeries(String seasonGuid, String seasonFolderPath, String tvTitle, Integer seasonNumber, AnalysisStatus status) {
+        TvSeasonInfo series = tvSeasonInfoMapper.selectById(seasonGuid);
         LocalDateTime now = LocalDateTime.now();
         boolean isNew = (series == null);
         if (isNew) {
             series = new TvSeasonInfo();
-            series.setSeriesGuid(seriesGuid);
+            series.setSeasonGuid(seasonGuid);
             series.setCreateTime(now);
         }
 
@@ -390,10 +390,10 @@ public class AnalysisService {
         }
     }
 
-    private void upsertEpisodeSegmentsFromRequest(String seriesGuid, List<EpisodeDetailRequest> episodes, AnalysisStatus status) {
+    private void upsertEpisodeSegmentsFromRequest(String seasonGuid, List<EpisodeDetailRequest> episodes, AnalysisStatus status) {
         LocalDateTime now = LocalDateTime.now();
         List<EpisodeSegment> existingSegments = episodeSegmentMapper.selectList(
-            new QueryWrapper<EpisodeSegment>().eq("series_guid", seriesGuid)
+            new QueryWrapper<EpisodeSegment>().eq("season_guid", seasonGuid)
         );
         Map<Integer, EpisodeSegment> segmentMap = existingSegments.stream()
             .collect(Collectors.toMap(EpisodeSegment::getEpisodeNumber, s -> s, (a, b) -> a));
@@ -406,7 +406,7 @@ public class AnalysisService {
             boolean isNew = segment == null;
             if (isNew) {
                 segment = new EpisodeSegment();
-                segment.setSeriesGuid(seriesGuid);
+                segment.setSeasonGuid(seasonGuid);
                 segment.setEpisodeNumber(ep.getEpisodeNumber());
             }
 
@@ -416,11 +416,11 @@ public class AnalysisService {
         }
     }
 
-    private void upsertEpisodeSegmentsFromQueue(String seriesGuid, List<QueuedEpisode> queue, AnalysisStatus status) {
+    private void upsertEpisodeSegmentsFromQueue(String seasonGuid, List<QueuedEpisode> queue, AnalysisStatus status) {
         transactionTemplate.executeWithoutResult(tx -> {
             LocalDateTime now = LocalDateTime.now();
             List<EpisodeSegment> existingSegments = episodeSegmentMapper.selectList(
-                new QueryWrapper<EpisodeSegment>().eq("series_guid", seriesGuid)
+                new QueryWrapper<EpisodeSegment>().eq("season_guid", seasonGuid)
             );
             Map<Integer, EpisodeSegment> segmentMap = existingSegments.stream()
                 .collect(Collectors.toMap(EpisodeSegment::getEpisodeNumber, s -> s, (a, b) -> a));
@@ -430,7 +430,7 @@ public class AnalysisService {
                 boolean isNew = segment == null;
                 if (isNew) {
                     segment = new EpisodeSegment();
-                    segment.setSeriesGuid(seriesGuid);
+                    segment.setSeasonGuid(seasonGuid);
                     segment.setEpisodeNumber(ep.getEpisodeNumber());
                 }
 
@@ -441,10 +441,10 @@ public class AnalysisService {
         });
     }
 
-    private EpisodeSegment findEpisodeSegmentBySeriesAndNumber(String seriesGuid, int episodeNumber) {
+    private EpisodeSegment findEpisodeSegmentBySeriesAndNumber(String seasonGuid, int episodeNumber) {
         return episodeSegmentMapper.selectOne(
             new QueryWrapper<EpisodeSegment>()
-                .eq("series_guid", seriesGuid)
+                .eq("season_guid", seasonGuid)
                 .eq("episode_number", episodeNumber)
                 .last("LIMIT 1")
         );
@@ -513,6 +513,6 @@ public class AnalysisService {
         }
     }
 
-    private record AnalyzeJob(String seriesGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, LocalDateTime enqueuedAt, String tvTitle, Integer seasonNumber) {
+    private record AnalyzeJob(String seasonGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, LocalDateTime enqueuedAt, String tvTitle, Integer seasonNumber) {
     }
 }

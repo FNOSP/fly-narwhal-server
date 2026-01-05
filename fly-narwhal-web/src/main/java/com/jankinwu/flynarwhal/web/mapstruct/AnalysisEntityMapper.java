@@ -11,14 +11,14 @@ import org.mapstruct.MappingTarget;
 @Mapper(componentModel = "spring")
 public interface AnalysisEntityMapper {
 
-    @Mapping(target = "seriesGuid", ignore = true)
+    @Mapping(target = "seasonGuid", ignore = true)
     @Mapping(target = "status", ignore = true)
     @Mapping(target = "createTime", ignore = true)
     @Mapping(target = "updateTime", ignore = true)
     void updateTvSeasonInfo(@MappingTarget TvSeasonInfo target, String seasonFolderPath, String tvTitle, Integer seasonNumber);
 
     @Mapping(target = "id", ignore = true)
-    @Mapping(target = "seriesGuid", ignore = true)
+    @Mapping(target = "seasonGuid", ignore = true)
     @Mapping(target = "status", ignore = true)
     @Mapping(target = "duration", ignore = true)
     @Mapping(target = "introStart", ignore = true)
@@ -33,7 +33,7 @@ public interface AnalysisEntityMapper {
     void updateEpisodeFromRequest(@MappingTarget EpisodeSegment target, EpisodeDetailRequest source);
 
     @Mapping(target = "id", ignore = true)
-    @Mapping(target = "seriesGuid", ignore = true)
+    @Mapping(target = "seasonGuid", ignore = true)
     @Mapping(source = "episodeGuid", target = "guid")
     @Mapping(source = "path", target = "filePath")
     @Mapping(target = "status", ignore = true)

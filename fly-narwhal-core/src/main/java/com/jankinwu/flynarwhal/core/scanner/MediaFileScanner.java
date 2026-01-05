@@ -18,11 +18,11 @@ public class MediaFileScanner {
     // Simple extension check, can be expanded
     private static final List<String> VIDEO_EXTENSIONS = List.of(".mkv", ".mp4", ".avi", ".mov", ".webm");
 
-    public List<QueuedEpisode> getEpisodeQueue(String seriesGuid, String folderPath, List<EpisodeDetailRequest> requestEpisodes) {
+    public List<QueuedEpisode> getEpisodeQueue(String seasonGuid, String folderPath, List<EpisodeDetailRequest> requestEpisodes) {
         List<QueuedEpisode> episodes = new ArrayList<>();
         for (EpisodeDetailRequest requestEpisode : requestEpisodes) {
             QueuedEpisode episode = new QueuedEpisode();
-            episode.setSeriesGuid(seriesGuid);
+            episode.setSeasonGuid(seasonGuid);
             episode.setPath(requestEpisode.getFilePath());
             episode.setEpisodeNumber(requestEpisode.getEpisodeNumber());
             episode.setEpisodeGuid(requestEpisode.getGuid());

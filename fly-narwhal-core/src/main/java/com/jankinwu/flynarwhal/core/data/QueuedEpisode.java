@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
 @Builder
 public class QueuedEpisode {
     private String episodeGuid;
-    private String seriesGuid;
+    private String seasonGuid;
     private String path;
     private int episodeNumber;
     private double duration;

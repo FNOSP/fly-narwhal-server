@@ -12,8 +12,8 @@ import java.time.LocalDateTime;
 @TableName("TV_SEASON_INFO")
 public class TvSeasonInfo {
 
-    @TableId(value = "series_guid", type = IdType.INPUT)
-    private String seriesGuid;
+    @TableId(value = "season_guid", type = IdType.INPUT)
+    private String seasonGuid;
 
     private String seasonFolderPath;
 
