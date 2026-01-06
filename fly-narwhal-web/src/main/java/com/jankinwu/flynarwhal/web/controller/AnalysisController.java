@@ -1,6 +1,7 @@
 package com.jankinwu.flynarwhal.web.controller;
 
 import com.jankinwu.flynarwhal.core.dto.request.AnalyzeRequest;
+import com.jankinwu.flynarwhal.core.dto.request.UpdateSeasonStatusRequest;
 import com.jankinwu.flynarwhal.core.dto.response.EpisodeSegmentsResponse;
 import com.jankinwu.flynarwhal.core.dto.response.Result;
 import com.jankinwu.flynarwhal.core.data.AnalysisStatus;
@@ -32,6 +33,17 @@ public class AnalysisController {
             return Result.success();
         } catch (Exception e) {
             log.error("Error analyzing season", e);
+            return Result.error("Error: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/season/status")
+    public Result<Void> updateSeasonStatus(@RequestBody UpdateSeasonStatusRequest request) {
+        try {
+            analysisService.updateAnalysisStatusBatch(request.getSeasonGuids(), request.getStatus());
+            return Result.success();
+        } catch (Exception e) {
+            log.error("Error updating season status", e);
             return Result.error("Error: " + e.getMessage());
         }
     }
