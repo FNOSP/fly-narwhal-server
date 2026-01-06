@@ -1,24 +1,23 @@
 package com.jankinwu.flynarwhal.web.controller;
 
+import com.jankinwu.flynarwhal.core.data.AnalysisStatus;
 import com.jankinwu.flynarwhal.core.dto.request.AnalyzeRequest;
 import com.jankinwu.flynarwhal.core.dto.request.UpdateSeasonStatusRequest;
 import com.jankinwu.flynarwhal.core.dto.response.EpisodeSegmentsResponse;
 import com.jankinwu.flynarwhal.core.dto.response.Result;
-import com.jankinwu.flynarwhal.core.data.AnalysisStatus;
 import com.jankinwu.flynarwhal.web.service.AnalysisService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 @Slf4j
 @RestController
+@RequiredArgsConstructor
 @RequestMapping("/api/analysis")
 public class AnalysisController {
 
     private final AnalysisService analysisService;
 
-    public AnalysisController(AnalysisService analysisService) {
-        this.analysisService = analysisService;
-    }
 
     @PostMapping("/analyze")
     public Result<String> analyze(@RequestBody AnalyzeRequest request) {
@@ -30,6 +29,7 @@ public class AnalysisController {
                     request.getTvTitle(),
                     request.getSeasonNumber()
             );
+            log.info("Analyzing {} season {} with {} episodes. Queue size: {}", request.getTvTitle(), request.getSeasonNumber(), request.getEpisodes().size(), queueSize);
             return Result.success();
         } catch (Exception e) {
             log.error("Error analyzing season", e);
