@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>飞鲸影视 - 客户端下载</title>
+    <style>
+        :root {
+            --primary-color: #007AFF;
+            --bg-color: #F5F5F7;
+            --card-bg: #FFFFFF;
+            --text-main: #1D1D1F;
+            --text-sub: #86868B;
+            --transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .header {
+            margin-bottom: 60px;
+        }
+
+        .logo {
+            max-width: 480px;
+            margin-bottom: 24px;
+            transition: var(--transition);
+        }
+
+        .logo:hover {
+            transform: scale(1.02);
+        }
+
+        h1 {
+            font-size: 40px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+            margin-bottom: 12px;
+        }
+
+        .subtitle {
+            font-size: 18px;
+            color: var(--text-sub);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .download-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            margin-top: 40px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 20px;
+            padding: 32px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02);
+            transition: var(--transition);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08);
+        }
+
+        .os-icon {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 20px;
+            fill: #707070;
+        }
+
+        .os-name {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 24px;
+        }
+
+        .btn-group {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .download-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background-color: var(--primary-color);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 12px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: var(--transition);
+            width: 100%;
+        }
+
+        .download-btn:hover {
+            background-color: #0062CC;
+            filter: brightness(1.1);
+        }
+
+        .download-btn span {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-left: 8px;
+        }
+
+        .footer {
+            margin-top: 80px;
+            color: var(--text-sub);
+            font-size: 14px;
+        }
+
+        @media (max-width: 600px) {
+            h1 { font-size: 32px; }
+            .download-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <img src="img/FNarwhal_login.svg" alt="飞鲸影视" class="logo">
+        <h1>下载客户端</h1>
+        <p class="subtitle">原生丝滑 · 三端覆盖 · 智享影音新体验</p>
+    </div>
+
+    <div class="download-grid">
+        <!-- Windows -->
+        <div class="card">
+            <svg class="os-icon" viewBox="0 0 24 24">
+                <path d="M0 3.449L9.75 2.1V11.4H0V3.449zM0 12.6h9.75v9.3L0 20.551V12.6zM11.25 1.89l12.75-1.83V11.4H11.25V1.89zM11.25 12.6H24v11.25l-12.75-1.83V12.6z"/>
+            </svg>
+            <div class="os-name">Windows</div>
+            <div class="btn-group">
+                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.2/FlyNarwhal_Setup_Windows_amd64_1.6.2.exe" class="download-btn">下载 x86_64<span>(.exe)</span></a>
+                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.2/FlyNarwhal_Setup_Windows_aarch64_1.6.2.exe" class="download-btn">下载 ARM64<span>(.exe)</span></a>
+            </div>
+        </div>
+
+        <!-- macOS -->
+        <div class="card">
+            <svg class="os-icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg">
+                <path d="M849.124134 704.896288c-1.040702 3.157923-17.300015 59.872622-57.250912 118.190843-34.577516 50.305733-70.331835 101.018741-126.801964 101.909018-55.532781 0.976234-73.303516-33.134655-136.707568-33.134655-63.323211 0-83.23061 32.244378-135.712915 34.110889-54.254671 2.220574-96.003518-54.951543-130.712017-105.011682-70.934562-102.549607-125.552507-290.600541-52.30118-416.625816 36.040844-63.055105 100.821243-103.135962 171.364903-104.230899 53.160757-1.004887 103.739712 36.012192 136.028093 36.012192 33.171494 0 94.357018-44.791136 158.90615-38.089503 27.02654 1.151219 102.622262 11.298324 151.328567 81.891102-3.832282 2.607384-90.452081 53.724599-89.487104 157.76107C739.079832 663.275355 847.952448 704.467523 849.124134 704.896288M633.69669 230.749408c29.107945-35.506678 48.235584-84.314291 43.202964-132.785236-41.560558 1.630127-92.196819 27.600615-122.291231 62.896492-26.609031 30.794353-50.062186 80.362282-43.521213 128.270409C557.264926 291.935955 604.745311 264.949324 633.69669 230.749408"></path>
+            </svg>
+            <div class="os-name">macOS</div>
+            <div class="btn-group">
+                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.2/FlyNarwhal_Setup_Linux_amd64_1.6.2.deb" class="download-btn">下载 Intel<span>(.dmg)</span></a>
+                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.2/FlyNarwhal_Setup_MacOS_aarch64_1.6.2.dmg" class="download-btn">下载 Apple Silicon<span>(.dmg)</span></a>
+            </div>
+        </div>
+
+        <!-- Linux -->
+        <div class="card">
+            <svg class="os-icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg">
+                <path d="M512 15.491679C237.797277 15.491679 16.266263 238.571861 16.266263 511.225416s221.531014 495.733737 495.733737 495.733737 495.733737-221.531014 495.733737-495.733737S786.202723 15.491679 512 15.491679z m105.343419 185.900152c17.040847-30.983359 57.319213-40.278366 86.753404-23.237519 30.983359 17.040847 40.278366 57.319213 23.237519 86.753404-17.040847 30.983359-57.319213 40.278366-86.753404 23.237518-30.983359-17.040847-40.278366-55.770045-23.237519-86.753403zM191.322239 574.741301c-35.630862 0-63.515885-27.885023-63.515885-63.515885s27.885023-63.515885 63.515885-63.515885 63.515885 27.885023 63.515885 63.515885-29.434191 63.515885-63.515885 63.515885z m55.770045 6.196672c44.92587-35.630862 44.92587-103.794251 0-139.425114 17.040847-65.065053 58.868381-120.835098 113.089259-158.015128l48.024206 79.007564c-102.245083 72.810893-102.245083 224.629349 0 297.440242l-48.024206 79.007564c-54.220877-35.630862-96.048411-91.400908-113.089259-158.015128z m457.004539 263.358547c-30.983359 17.040847-69.712557 7.74584-86.753404-23.237518-17.040847-30.983359-7.74584-69.712557 23.237519-86.753404 30.983359-17.040847 69.712557-7.74584 86.753404 23.237518 18.590015 30.983359 7.74584 69.712557-23.237519 86.753404z m1.549168-137.875945c-52.67171-20.139183-111.540091 13.942511-120.835098 69.712557-10.844175 3.098336-97.597579 27.885023-193.645991-18.590016l44.92587-80.556732c114.638427 52.67171 246.3177-23.237519 257.161876-148.720121l91.400907 1.549168c-3.098336 68.163389-34.081694 130.130106-79.007564 176.605144zM693.252648 495.733737c-10.844175-123.933434-142.523449-202.940998-257.161876-148.720121l-44.92587-80.556732c96.048411-48.024206 182.801815-21.688351 193.645991-18.590016 9.295008 57.319213 68.163389 89.85174 120.835098 69.712557 46.475038 46.475038 75.909228 108.441755 80.556732 176.605144l-92.950075 1.549168z"></path>
+            </svg>
+            <div class="os-name">Debian / Ubuntu</div>
+            <div class="btn-group">
+                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.2/FlyNarwhal_Setup_Linux_amd64_1.6.2.deb" class="download-btn">下载 x86_64<span>(.deb)</span></a>
+                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.2/FlyNarwhal_Setup_Linux_aarch64_1.6.2.deb" class="download-btn">下载 ARM64<span>(.deb)</span></a>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+</body>
+</html>
