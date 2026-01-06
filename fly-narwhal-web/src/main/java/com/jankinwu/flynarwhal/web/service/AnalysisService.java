@@ -1,6 +1,8 @@
 package com.jankinwu.flynarwhal.web.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.jankinwu.flynarwhal.core.analyzer.AnalyzerFactory;
 import com.jankinwu.flynarwhal.core.analyzer.MediaFileAnalyzer;
 import com.jankinwu.flynarwhal.core.data.*;
@@ -27,6 +29,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.stream.Collectors;
@@ -87,15 +90,16 @@ public class AnalysisService {
         while (!Thread.currentThread().isInterrupted()) {
             try {
                 AnalyzeJob job = analyzeJobQueue.takeFirst();
-                transactionTemplate.executeWithoutResult(status -> {
-                    try {
-                        analyzeSeasonInternal(job.seasonGuid, job.seasonFolderPath, job.episodes, job.tvTitle, job.seasonNumber);
-                    } catch (Exception e) {
-                        log.error("Error analyzing season internal", e);
-                        status.setRollbackOnly();
-                        updateAnalysisStatus(job.seasonGuid, AnalysisStatus.FAILED);
-                    }
-                });
+                try {
+                    analyzeSeasonInternal(job.seasonGuid, job.seasonFolderPath, job.episodes, job.tvTitle, job.seasonNumber);
+                } catch (Exception e) {
+                    log.error("Error analyzing season internal", e);
+//                    status.setRollbackOnly();
+                    updateAnalysisStatus(job.seasonGuid, AnalysisStatus.FAILED);
+                }
+//                transactionTemplate.executeWithoutResult(status -> {
+//
+//                });
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -147,12 +151,56 @@ public class AnalysisService {
         return getSeasonAnalysisStatus(guid);
     }
 
-    private void updateAnalysisStatus(String seasonGuid, AnalysisStatus status) {
+    public void updateAnalysisStatus(String seasonGuid, AnalysisStatus status) {
         TvSeasonInfo series = new TvSeasonInfo();
         series.setSeasonGuid(seasonGuid);
         series.setStatus(status);
         series.setUpdateTime(LocalDateTime.now());
         tvSeasonInfoMapper.updateById(series);
+    }
+
+    public void updateAnalysisStatusBatch(List<String> seasonGuids, AnalysisStatus status) {
+        if (seasonGuids == null || seasonGuids.isEmpty()) {
+            return;
+        }
+
+        // 批量查询已存在的记录
+        List<TvSeasonInfo> existingList = tvSeasonInfoMapper.selectList(
+                new LambdaQueryWrapper<TvSeasonInfo>().in(TvSeasonInfo::getSeasonGuid, seasonGuids)
+        );
+        Set<String> existingGuids = existingList.stream()
+                .map(TvSeasonInfo::getSeasonGuid)
+                .collect(Collectors.toSet());
+
+        List<String> toUpdate = seasonGuids.stream()
+                .filter(existingGuids::contains)
+                .collect(Collectors.toList());
+        List<String> toInsert = seasonGuids.stream()
+                .filter(guid -> !existingGuids.contains(guid))
+                .collect(Collectors.toList());
+
+        LocalDateTime now = LocalDateTime.now();
+
+        // 批量更新已存在的记录
+        if (!toUpdate.isEmpty()) {
+            LambdaUpdateWrapper<TvSeasonInfo> updateWrapper = new LambdaUpdateWrapper<>();
+            updateWrapper.in(TvSeasonInfo::getSeasonGuid, toUpdate)
+                    .set(TvSeasonInfo::getStatus, status)
+                    .set(TvSeasonInfo::getUpdateTime, now);
+            tvSeasonInfoMapper.update(null, updateWrapper);
+        }
+
+        // 批量插入不存在的记录
+        if (!toInsert.isEmpty()) {
+            for (String guid : toInsert) {
+                TvSeasonInfo series = new TvSeasonInfo();
+                series.setSeasonGuid(guid);
+                series.setStatus(status);
+                series.setCreateTime(now);
+                series.setUpdateTime(now);
+                tvSeasonInfoMapper.insert(series);
+            }
+        }
     }
 
     public EpisodeSegmentsResponse getSegmentsByEpisodeGuid(String episodeGuid) {
