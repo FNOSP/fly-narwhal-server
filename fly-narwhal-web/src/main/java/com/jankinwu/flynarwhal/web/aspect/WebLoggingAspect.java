@@ -2,6 +2,7 @@ package com.jankinwu.flynarwhal.web.aspect;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -10,6 +11,8 @@ import org.aspectj.lang.annotation.Pointcut;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+
+import java.util.Arrays;
 
 /**
  * Web接口日志切面，记录请求参数和响应结果
@@ -47,7 +50,7 @@ public class WebLoggingAspect {
         // 记录请求日志
         try {
             log.info("Request: [{} {}] {}.{}() | Args: {}", 
-                    method, uri, className, methodName, objectMapper.writeValueAsString(args));
+                    method, uri, className, methodName, objectMapper.writeValueAsString(sanitizeArgs(args)));
         } catch (Exception e) {
             log.warn("Failed to serialize request args: {}", e.getMessage());
             log.info("Request: [{} {}] {}.{}()", method, uri, className, methodName);
@@ -69,4 +72,26 @@ public class WebLoggingAspect {
             }
         }
     }
+
+    private Object[] sanitizeArgs(Object[] args) {
+        if (args == null) {
+            return null;
+        }
+        return Arrays.stream(args).map(this::sanitizeArg).toArray();
+    }
+
+    private Object sanitizeArg(Object arg) {
+        if (arg == null) {
+            return null;
+        }
+        if (arg instanceof HttpServletRequest request) {
+            return new RequestInfo(request.getMethod(), request.getRequestURI());
+        }
+        if (arg instanceof HttpServletResponse) {
+            return HttpServletResponse.class.getSimpleName();
+        }
+        return arg;
+    }
+
+    private record RequestInfo(String method, String uri) {}
 }
