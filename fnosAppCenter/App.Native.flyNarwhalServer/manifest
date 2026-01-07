@@ -1,10 +1,14 @@
 appname               = App.Native.flyNarwhalServer
 version               = 1.0.0
-display_name          = display-name
-desc                  = app-description
+display_name          = 飞鲸影视-服务端
+desc                  = """
+作为飞鲸影视客户端的后端服务，提供对电视节目的智能片头/片尾检测支持，支持黑帧检测、章节识别、声纹检测等方式来检测片头/片尾。
+"""
 arch                  = x86_64
 source                = thirdparty
-maintainer            = your-name
-distributor           = your-name
+maintainer            = 友人A（Jankin-Wu）
+maintainer_url        = https://github.com/JankinWu
+distributor           = MR_XIAOBO
+distributor_url       = https://github.com/xiaobonet
 desktop_uidir         = ui
 desktop_applaunchname = App.Native.flyNarwhalServer.Application
