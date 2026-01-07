@@ -52,6 +52,13 @@
             transform: scale(1.02);
         }
 
+        .header-title {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
         h1 {
             font-size: 40px;
             font-weight: 600;
@@ -64,6 +71,95 @@
             color: var(--text-sub);
             max-width: 600px;
             margin: 0 auto;
+        }
+
+        .intro {
+            margin-top: 28px;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+        }
+
+        .intro-card {
+            width: 100%;
+            max-width: 1000px;
+            background: var(--card-bg);
+            border-radius: 20px;
+            padding: 18px 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02);
+            transition: var(--transition);
+            text-align: left;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+        }
+
+        .intro-card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08);
+        }
+
+        .intro-main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .intro-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            letter-spacing: 0.2px;
+            color: var(--text-sub);
+        }
+
+        .intro-text {
+            font-size: 14px;
+            color: var(--text-sub);
+            line-height: 1.7;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .intro-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+        }
+
+        .repo-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            background: rgba(255, 255, 255, 0.75);
+            color: var(--text-main);
+            text-decoration: none;
+            font-weight: 600;
+            transition: var(--transition);
+        }
+
+        .repo-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+            border-color: rgba(0, 0, 0, 0.12);
+        }
+
+        .repo-btn svg {
+            width: 18px;
+            height: 18px;
+            fill: currentColor;
+            opacity: 0.9;
+        }
+
+        .repo-btn span {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-sub);
         }
 
         .download-grid {
@@ -143,6 +239,9 @@
         @media (max-width: 600px) {
             h1 { font-size: 32px; }
             .download-grid { grid-template-columns: 1fr; }
+            .intro-card { padding: 18px 16px; flex-direction: column; align-items: stretch; }
+            .intro-actions { justify-content: flex-start; }
+            .repo-btn { justify-content: center; width: 100%; }
         }
     </style>
 </head>
@@ -151,8 +250,28 @@
 <div class="container">
     <div class="header">
         <img src="img/FNarwhal_login.svg" alt="飞鲸影视" class="logo">
-        <h1>下载客户端</h1>
-        <p class="subtitle">原生丝滑 · 三端覆盖 · 智享影音新体验</p>
+        <div class="header-title">
+            <h1>下载客户端</h1>
+            <p class="subtitle">原生丝滑 · 多端覆盖 · 智享影音新体验</p>
+        </div>
+        <div class="intro">
+            <div class="intro-card">
+                <div class="intro-main">
+                    <div class="intro-title">简介</div>
+                    <div class="intro-text">
+                        飞鲸影视客户端（FlyNarwhal）是飞牛影视的第三方客户端（目前仅提供桌面端），提供跨平台原生观影体验，支持智能识别片头片尾。
+                    </div>
+                </div>
+                <div class="intro-actions">
+                    <a class="repo-btn" href="https://github.com/FNOSP/FlyNarwhal" target="_blank" rel="noopener noreferrer">
+                        <svg viewBox="0 0 16 16" aria-hidden="true">
+                            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"></path>
+                        </svg>
+                        GitHub 仓库 <span>FNOSP/FlyNarwhal</span>
+                    </a>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="download-grid">
@@ -163,8 +282,8 @@
             </svg>
             <div class="os-name">Windows</div>
             <div class="btn-group">
-                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.3/FlyNarwhal_Setup_Windows_amd64_1.6.3.exe" class="download-btn">下载 x86_64<span>(.exe)</span></a>
-                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.3/FlyNarwhal_Setup_Windows_aarch64_1.6.3.exe" class="download-btn">下载 ARM64<span>(.exe)</span></a>
+                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.4/FlyNarwhal_Setup_Windows_amd64_1.6.4.exe" class="download-btn">下载 x86_64<span>(.exe)</span></a>
+                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.4/FlyNarwhal_Setup_Windows_aarch64_1.6.4.exe" class="download-btn">下载 ARM64<span>(.exe)</span></a>
             </div>
         </div>
 
@@ -175,8 +294,8 @@
             </svg>
             <div class="os-name">macOS</div>
             <div class="btn-group">
-                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.3/FlyNarwhal_Setup_Linux_amd64_1.6.3.deb" class="download-btn">下载 Intel<span>(.dmg)</span></a>
-                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.3/FlyNarwhal_Setup_MacOS_aarch64_1.6.3.dmg" class="download-btn">下载 Apple Silicon<span>(.dmg)</span></a>
+                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.4/FlyNarwhal_Setup_Linux_amd64_1.6.4.deb" class="download-btn">下载 Intel<span>(.dmg)</span></a>
+                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.4/FlyNarwhal_Setup_MacOS_aarch64_1.6.4.dmg" class="download-btn">下载 Apple Silicon<span>(.dmg)</span></a>
             </div>
         </div>
 
@@ -187,8 +306,9 @@
             </svg>
             <div class="os-name">Debian / Ubuntu</div>
             <div class="btn-group">
-                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.3/FlyNarwhal_Setup_Linux_amd64_1.6.3.deb" class="download-btn">下载 x86_64<span>(.deb)</span></a>
-                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.3/FlyNarwhal_Setup_Linux_aarch64_1.6.3.deb" class="download-btn">下载 ARM64<span>(.deb)</span></a>
+                <h3> 敬请期待 </h3>
+                <!-- <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.3/FlyNarwhal_Setup_Linux_amd64_1.6.3.deb" class="download-btn">下载 x86_64<span>(.deb)</span></a>
+                <a href="h  ttps://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.3/FlyNarwhal_Setup_Linux_aarch64_1.6.3.deb" class="download-btn">下载 ARM64<span>(.deb)</span></a> -->
             </div>
         </div>
     </div>
