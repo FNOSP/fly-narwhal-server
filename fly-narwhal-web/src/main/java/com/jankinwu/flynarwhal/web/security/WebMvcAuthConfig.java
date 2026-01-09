@@ -17,7 +17,8 @@ public class WebMvcAuthConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(fnAuthInterceptor)
                 .addPathPatterns("/api/analysis/**")
-                .addPathPatterns("/api/config/**");
+                .addPathPatterns("/api/config/**")
+                .addPathPatterns("/api/danmu/**");
     }
 }
 

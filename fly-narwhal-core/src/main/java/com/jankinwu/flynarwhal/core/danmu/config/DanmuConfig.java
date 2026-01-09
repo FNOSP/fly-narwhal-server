@@ -1,6 +1,6 @@
-package com.jankinwu.flynarwhal.web.danmu.config;
+package com.jankinwu.flynarwhal.core.danmu.config;
 
-import com.jankinwu.flynarwhal.web.security.RestTemplateFactory;
+import com.jankinwu.flynarwhal.core.util.RestTemplateFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestTemplate;

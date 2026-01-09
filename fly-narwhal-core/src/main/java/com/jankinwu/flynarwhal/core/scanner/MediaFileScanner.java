@@ -28,27 +28,6 @@ public class MediaFileScanner {
             episode.setEpisodeGuid(requestEpisode.getGuid());
             episodes.add(episode);
         }
-//        try (Stream<Path> paths = Files.walk(Paths.get(folderPath))) {
-//            List<File> files = paths
-//                    .filter(Files::isRegularFile)
-//                    .map(Path::toFile)
-//                    .filter(this::isVideoFile)
-//                    .toList();
-//
-//            for (File file : files) {
-//                int index = parseEpisodeIndex(file.getName());
-//                if (index > 0) {
-//                    QueuedEpisode ep = new QueuedEpisode();
-//                    ep.setSeriesGuid(seriesGuid);
-//                    ep.setPath(file.getAbsolutePath());
-//                    ep.setEpisodeIndex(index);
-//                    ep.setEpisodeId(seriesGuid + "-E" + index); // Simple ID generation
-//                    episodes.add(ep);
-//                }
-//            }
-//        } catch (IOException e) {
-//            log.error("Error scanning folder: {}", folderPath, e);
-//        }
         
         episodes.sort(Comparator.comparingInt(QueuedEpisode::getEpisodeNumber));
         return episodes;

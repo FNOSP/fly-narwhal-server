@@ -17,6 +17,8 @@ dependencies {
     implementation 'org.jsoup:jsoup:1.17.2'
     implementation 'org.springframework:spring-context:6.1.1'
     implementation 'org.springframework:spring-web:6.1.1'
+    implementation 'org.springframework:spring-webmvc:6.1.1'
+    implementation 'jakarta.annotation:jakarta.annotation-api:2.1.1'
     implementation 'com.google.protobuf:protobuf-java:3.25.1'
     implementation 'org.brotli:dec:0.1.2'
 }

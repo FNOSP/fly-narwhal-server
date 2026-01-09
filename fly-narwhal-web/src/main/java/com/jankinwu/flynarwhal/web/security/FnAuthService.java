@@ -2,6 +2,7 @@ package com.jankinwu.flynarwhal.web.security;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jankinwu.flynarwhal.core.util.RestTemplateFactory;
 import com.jankinwu.flynarwhal.web.service.FnAuthConfigService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;

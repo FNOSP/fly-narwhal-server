@@ -1,4 +1,4 @@
-package com.jankinwu.flynarwhal.web.security;
+package com.jankinwu.flynarwhal.core.util;
 
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
@@ -16,4 +16,3 @@ public final class RestTemplateFactory {
         return new RestTemplate(factory);
     }
 }
-
