@@ -2,6 +2,7 @@ package com.jankinwu.flynarwhal.web.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.core.dto.response.Result;
+import com.jankinwu.flynarwhal.web.filter.CachedBodyHttpServletRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.NonNull;
@@ -25,6 +26,22 @@ public class FnAuthInterceptor implements HandlerInterceptor {
         String path = request.getRequestURI();
         if (path.startsWith("/api/config/fn-base-url")) {
             return true;
+        }
+
+        String authx = request.getHeader("Authx");
+        if (authx != null && !authx.isBlank()) {
+            byte[] body = null;
+            if (request instanceof CachedBodyHttpServletRequest) {
+                body = ((CachedBodyHttpServletRequest) request).getCachedBody();
+            }
+            
+            boolean ok = fnAuthService.validateAuthx(authx, path, request.getParameterMap(), body);
+            if (ok) {
+                return true;
+            } else {
+                writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "Invalid Signature");
+                return false;
+            }
         }
 
         String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
