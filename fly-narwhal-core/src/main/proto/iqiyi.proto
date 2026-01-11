@@ -1,0 +1,19 @@
+syntax = "proto3";
+package com.jankinwu.flynarwhal.core.danmu.proto;
+
+option java_multiple_files = true;
+option java_package = "com.jankinwu.flynarwhal.core.danmu.proto";
+
+message IqiyiDanmu {
+    repeated IqiyiEntry entry = 1;
+}
+
+message IqiyiEntry {
+    repeated IqiyiBulletInfo bulletInfo = 1;
+}
+
+message IqiyiBulletInfo {
+    string content = 2;
+    int32 showTime = 3;
+    string a8 = 8;
+}

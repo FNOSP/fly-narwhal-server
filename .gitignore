@@ -37,3 +37,4 @@ out/
 .vscode/
 /data/
 /logs/
+/fly-narwhal-web/logs/

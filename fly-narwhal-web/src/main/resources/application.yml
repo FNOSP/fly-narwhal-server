@@ -14,6 +14,8 @@ spring:
 
 server:
   port: 5365
+  tomcat:
+    uri-encoding: UTF-8
 
 mybatis-plus:
   configuration:
@@ -28,3 +30,6 @@ logging:
   config: classpath:logback-spring.xml
   level:
     root: INFO
+
+fly-narwhal:
+  api-secret: ${FLY_NARWHAL_API_SECRET:16CCEB3D-AB42-077D-36A1-F355324E4237}

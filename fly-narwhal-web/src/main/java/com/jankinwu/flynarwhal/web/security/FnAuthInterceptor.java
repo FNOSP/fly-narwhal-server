@@ -2,10 +2,10 @@ package com.jankinwu.flynarwhal.web.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.core.dto.response.Result;
+import com.jankinwu.flynarwhal.web.filter.CachedBodyHttpServletRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.NonNull;
-import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -27,20 +27,25 @@ public class FnAuthInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
-        String cookie = request.getHeader(HttpHeaders.COOKIE);
-
-        try {
-            boolean ok = fnAuthService.validateAndCache(authorization, cookie);
-            if (!ok) {
-                writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized");
+        String authx = request.getHeader("Authx");
+        if (authx != null && !authx.isBlank()) {
+            byte[] body = null;
+            if (request instanceof CachedBodyHttpServletRequest) {
+                body = ((CachedBodyHttpServletRequest) request).getCachedBody();
+            }
+            
+            boolean ok = fnAuthService.validateAuthx(authx, path, request.getParameterMap(), body);
+            if (ok) {
+                return true;
+            } else {
+                writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "Invalid Signature");
                 return false;
             }
-            return true;
-        } catch (IllegalStateException e) {
-            writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, e.getMessage());
-            return false;
         }
+
+        // 如果没有Authx头也没有其他验证方式，直接拒绝访问
+        writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized");
+        return false;
     }
 
     private void writeError(HttpServletResponse response, int status, String message) throws Exception {
