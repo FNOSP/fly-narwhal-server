@@ -6,7 +6,6 @@ import com.jankinwu.flynarwhal.web.filter.CachedBodyHttpServletRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.NonNull;
-import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -44,20 +43,9 @@ public class FnAuthInterceptor implements HandlerInterceptor {
             }
         }
 
-        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
-        String cookie = request.getHeader(HttpHeaders.COOKIE);
-
-        try {
-            boolean ok = fnAuthService.validateAndCache(authorization, cookie);
-            if (!ok) {
-                writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized");
-                return false;
-            }
-            return true;
-        } catch (IllegalStateException e) {
-            writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, e.getMessage());
-            return false;
-        }
+        // 如果没有Authx头也没有其他验证方式，直接拒绝访问
+        writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized");
+        return false;
     }
 
     private void writeError(HttpServletResponse response, int status, String message) throws Exception {
