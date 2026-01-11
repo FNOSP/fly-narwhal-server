@@ -56,7 +56,7 @@ jobs:
           TAG_NAME="${{ steps.release_tag.outputs.tag }}"
 
           # 在此处手动填写发布日志
-          NOTES="1. 增加弹幕拉取功能（支持飞鲸影视客户端 1.7.0 或以上版本）  "
+          NOTES="1. 简化鉴权流程"
 
           # 如果是通过 GitHub 页面手动触发并输入了日志，则优先使用输入的内容
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_body }}" ]; then
