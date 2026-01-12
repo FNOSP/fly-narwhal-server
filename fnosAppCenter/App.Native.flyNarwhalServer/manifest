@@ -11,3 +11,4 @@ distributor_url       = https://github.com/xiaobonet
 desktop_uidir         = ui
 desktop_applaunchname = App.Native.flyNarwhalServer.Application
 install_dep_apps      = java-21-openjdk
+os_min_version        = 1.1.18
