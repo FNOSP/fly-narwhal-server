@@ -1,7 +1,7 @@
 {
     ".url": {
         "App.Native.flyNarwhalServer.Application": {
-            "title": "App.Native.flyNarwhalServer",
+            "title": "飞鲸影视",
             "icon": "images/icon_{0}.png",
             "type": "url",
             "protocol": "",
