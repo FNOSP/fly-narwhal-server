@@ -37,6 +37,8 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build with Gradle
+        env:
+          FLY_NARWHAL_API_SECRET: ${{ secrets.FLY_NARWHAL_API_SECRET }}
         run: ./gradlew :fly-narwhal-web:bootJar -x test
 
       - name: Prepare Release Tag
