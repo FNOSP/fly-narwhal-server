@@ -23,8 +23,13 @@ public class FnAuthService {
 
     public FnAuthService(FnAuthConfigService fnAuthConfigService,
                          ObjectMapper objectMapper,
-                         @Value("${fly-narwhal.api-secret}") String apiSecret) {
-        this.apiSecret = apiSecret;
+                         @Value("${fly-narwhal.api-secret:}") String apiSecret) {
+
+        if (apiSecret == null || apiSecret.isBlank()) {
+            this.apiSecret = SecurityBufferManager.getSecret(0xAF);
+        } else {
+            this.apiSecret = apiSecret.trim();
+        }
     }
 
     public boolean validateAuthx(String authxHeader, String url, Map<String, String[]> parameters, byte[] body) {

@@ -1,3 +1,6 @@
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
+
 plugins {
     id 'java'
     id 'org.springframework.boot'
@@ -36,7 +39,7 @@ tasks.register('generateVersionConfig') {
         def packagePath = new File(dir, "com/jankinwu/flynarwhal/web/config")
         packagePath.mkdirs()
 
-        def buildTime = java.time.OffsetDateTime.now(java.time.ZoneOffset.ofHours(8)).toString()
+        def buildTime = OffsetDateTime.now(ZoneOffset.ofHours(8)).toString()
         def baseVersion = project.ext.baseVersion?.toString() ?: project.version.toString()
         def version = project.version.toString()
 
@@ -93,6 +96,65 @@ sourceSets {
     }
 }
 
+tasks.register('generateSecretConfig') {
+    outputs.dir(generatedVersionSrcDir)
+    outputs.upToDateWhen { false }
+    doLast {
+        def envSecret = System.getenv("FLY_NARWHAL_API_SECRET")
+        def customDeobf = System.getenv("FLY_NARWHAL_CUSTOM_DEOBF")
+        def obfLogic = System.getenv("FLY_NARWHAL_OBF_LOGIC")
+        
+        def dataBytes = []
+        def keyBytes = [0x4A, 0x6E, 0x6B, 0x69, 0x6E] // 默认占位 Key
+        def methodBody = "return new String(_BUF_D, StandardCharsets.UTF_8);"
+        
+        if (envSecret && customDeobf && obfLogic) {
+            // 从环境变量动态执行混淆算法
+            try {
+                def shell = new GroovyShell(new Binding([secret: envSecret.trim()]))
+                def result = shell.evaluate(obfLogic)
+                dataBytes = result.data
+                keyBytes = result.keys
+                methodBody = customDeobf
+            } catch (Exception e) {
+                throw new GradleException("Failed to execute custom obfuscation logic: " + e.message)
+            }
+        } else {
+            // 返回硬编码的默认明文密钥
+            def defaultSecret = "16CCEB3D-AB42-077D-36A1-F355324E4237"
+            dataBytes = defaultSecret.getBytes("UTF-8").collect { it & 0xFF }
+        }
+        
+        def dataStr = dataBytes.collect { "(byte) " + String.format("0x%02x", it) }.join(", ")
+        def keysStr = keyBytes.collect { "(byte) " + String.format("0x%02x", it) }.join(", ")
+
+        def dir = generatedVersionSrcDir.get().asFile
+        def packagePath = new File(dir, "com/jankinwu/flynarwhal/web/security")
+        packagePath.mkdirs()
+
+        def file = new File(packagePath, "SecurityBufferManager.java")
+        file.text = """package com.jankinwu.flynarwhal.web.security;
+
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Internal Security Buffer Manager
+ * Generated at build time.
+ */
+public final class SecurityBufferManager {
+    private static final byte[] _BUF_D = { ${dataStr} };
+    private static final byte[] _BUF_K = { ${keysStr} };
+
+    public static String getSecret(int type) {
+        if (type != 0xAF) return null;
+        ${methodBody}
+    }
+}
+"""
+    }
+}
+
 tasks.named('compileJava') {
     dependsOn(tasks.named('generateVersionConfig'))
+    dependsOn(tasks.named('generateSecretConfig'))
 }
