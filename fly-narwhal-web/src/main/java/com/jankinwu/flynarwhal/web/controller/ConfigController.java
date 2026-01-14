@@ -1,9 +1,12 @@
 package com.jankinwu.flynarwhal.web.controller;
 
+import com.jankinwu.flynarwhal.core.dto.response.Result;
 import com.jankinwu.flynarwhal.web.security.FnAuthService;
+import com.jankinwu.flynarwhal.web.service.ConfigService;
 import com.jankinwu.flynarwhal.web.service.FnAuthConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -12,6 +15,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @RequestMapping("/api/config")
 public class ConfigController {
+
+    private final ConfigService configService;
 
 //    private final FnAuthService fnAuthService;
 //
@@ -36,4 +41,15 @@ public class ConfigController {
 //            return Result.error("Error: " + e.getMessage());
 //        }
 //    }
+
+    @GetMapping("/version")
+    public Result<String> getDbVersion() {
+        try {
+            String version = configService.getDatabaseVersion();
+            return Result.success(version);
+        } catch (Exception e) {
+            log.error("Error getting database version", e);
+            return Result.error("Error: " + e.getMessage());
+        }
+    }
 }

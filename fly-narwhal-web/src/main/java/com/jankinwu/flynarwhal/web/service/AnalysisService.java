@@ -48,7 +48,6 @@ public class AnalysisService {
 
     private final TvSeasonInfoMapper tvSeasonInfoMapper;
     private final EpisodeSegmentMapper episodeSegmentMapper;
-    private final DbVersionMapper dbVersionMapper;
     private final AnalyzerFactory analyzerFactory;
     private final MediaFileScanner mediaFileScanner;
     private final FFmpegWrapper ffmpegWrapper;
@@ -78,12 +77,6 @@ public class AnalysisService {
         this.ffmpegWrapper = new FFmpegWrapper();
         this.transactionTemplate = transactionTemplate;
         this.analysisEntityMapper = analysisEntityMapper;
-    }
-
-    public String getDatabaseVersion() {
-        return Optional.ofNullable(dbVersionMapper.selectById(1))
-                .map(DbVersion::getVersion)
-                .orElse("0.0.0");
     }
 
     private void processQueue() {
