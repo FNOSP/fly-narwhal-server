@@ -1,6 +1,9 @@
 import java.security.MessageDigest
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
+import java.security.MessageDigest
+import org.gradle.api.file.FileSystemOperations
+import org.gradle.process.ExecOperations
 
 plugins {
     id 'java'
@@ -107,6 +110,8 @@ def authxVerifierDirEnv = System.getenv("FLY_NARWHAL_AUTHX_VERIFIER_DIR")
 def authxVerifierSrcDir = authxVerifierDirEnv ? file(authxVerifierDirEnv) : null
 def authxVerifierWorkDir = layout.buildDirectory.dir("authx-verifier/work")
 def authxVerifierResDir = layout.buildDirectory.dir("generated-resources/authx-verifier")
+def execOps = project.services.get(ExecOperations)
+def fsOps = project.services.get(FileSystemOperations)
 
 def md5Hex = { String input ->
     def md = MessageDigest.getInstance("MD5")
@@ -121,7 +126,7 @@ tasks.register('prepareAuthxVerifier') {
         if (workDir.exists()) {
             workDir.deleteDir()
         }
-        copy {
+        fsOps.copy {
             from(authxVerifierSrcDir)
             into(workDir)
         }
@@ -131,7 +136,7 @@ tasks.register('prepareAuthxVerifier') {
             throw new GradleException("FLY_NARWHAL_API_SECRET is required when building authx verifier binaries")
         }
 
-        exec {
+        execOps.exec {
             workingDir(workDir)
             environment("AUTHX_SECRET", secret.trim())
             commandLine("go", "run", "./cmd/gensecret")
@@ -160,7 +165,7 @@ tasks.register('buildAuthxVerifierBinaries') {
             outDir.mkdirs()
             def outFile = new File(outDir, "flynarwhal-authx${t.ext}".toString())
 
-            exec {
+            execOps.exec {
                 workingDir(workDir)
                 environment("CGO_ENABLED", "0")
                 environment("GOOS", t.os)
@@ -200,7 +205,7 @@ tasks.register('verifyAuthxVerifierBinary') {
         }
         bin.setExecutable(true)
 
-        exec {
+        execOps.exec {
             commandLine(bin.absolutePath, "--authx", authx, "--url", url, "--data-md5", dataMd5)
         }
     }
@@ -209,8 +214,8 @@ tasks.register('verifyAuthxVerifierBinary') {
 tasks.named('processResources') {
     if (externalAuthxEnabled && authxVerifierSrcDir != null && authxVerifierSrcDir.exists()) {
         dependsOn(tasks.named('buildAuthxVerifierBinaries'))
-    }
-    from(authxVerifierResDir) {
-        into("")
+        from(authxVerifierResDir) {
+            into("")
+        }
     }
 }

@@ -3,6 +3,7 @@ package com.jankinwu.flynarwhal.web.security;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.web.service.FnAuthConfigService;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -16,6 +17,8 @@ class FnAuthServiceTest {
 
     @Test
     void validateAuthx_acceptsValidSignature_withDefaultSecret() {
+        System.setProperty("fly-narwhal.external-authx.enabled", "false");
+
         // Ensures local dev fallback still validates signatures with the default secret.
         FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "");
 
@@ -35,7 +38,33 @@ class FnAuthServiceTest {
     }
 
     @Test
+    void validateAuthx_acceptsValidSignature_withEnvSecret() {
+        String secret = System.getenv("FLY_NARWHAL_API_SECRET");
+        Assumptions.assumeTrue(secret != null && !secret.isBlank(), "FLY_NARWHAL_API_SECRET is required");
+        System.setProperty("fly-narwhal.external-authx.enabled", "true");
+
+        String trimmedSecret = secret.trim();
+        FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), trimmedSecret);
+
+        String url = "/api/danmu/ping";
+        Map<String, String[]> params = new HashMap<>();
+        params.put("b", new String[]{"2"});
+        params.put("a", new String[]{"1"});
+
+        String nonce = "123456";
+        String timestamp = Long.toString(System.currentTimeMillis());
+        String dataJsonMd5 = md5Hex("a=1&b=2");
+        String signStr = String.join("_", FN_API_KEY, url, nonce, timestamp, dataJsonMd5, trimmedSecret);
+        String sign = md5Hex(signStr);
+
+        String authx = "nonce=" + nonce + "&timestamp=" + timestamp + "&sign=" + sign;
+        Assertions.assertTrue(svc.validateAuthx(authx, url, params, null));
+    }
+
+    @Test
     void validateAuthx_rejectsExpiredTimestamp() {
+        System.setProperty("fly-narwhal.external-authx.enabled", "false");
+
         // Rejects requests outside the allowed timestamp window.
         FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "");
 
