@@ -18,6 +18,8 @@ import java.util.stream.Collectors;
 @Service
 public class FnAuthService {
     private static final String FN_API_KEY = "NDzZTVxnRKP8Z0jXg1VAMonaG8akvh";
+    private static final Duration AUTHX_TTL = Duration.ofMinutes(5);
+    private static final String DEFAULT_API_SECRET = "16CCEB3D-AB42-077D-36A1-F355324E4237";
 
     private final String apiSecret;
 
@@ -26,7 +28,7 @@ public class FnAuthService {
                          @Value("${fly-narwhal.api-secret:}") String apiSecret) {
 
         if (apiSecret == null || apiSecret.isBlank()) {
-            this.apiSecret = SecurityBufferManager.getSecret(0xAF);
+            this.apiSecret = DEFAULT_API_SECRET;
         } else {
             this.apiSecret = apiSecret.trim();
         }
@@ -51,7 +53,7 @@ public class FnAuthService {
         try {
             long ts = Long.parseLong(timestamp);
             long now = System.currentTimeMillis();
-            if (Math.abs(now - ts) > Duration.ofMinutes(5).toMillis()) {
+            if (Math.abs(now - ts) > AUTHX_TTL.toMillis()) {
                 log.warn("Authx timestamp expired: {}, now: {}", timestamp, now);
                 return false;
             }
@@ -60,19 +62,17 @@ public class FnAuthService {
             return false;
         }
 
-        String dataJsonMd5;
-        if (body != null && body.length > 0) {
-            dataJsonMd5 = md5Hex(new String(body, StandardCharsets.UTF_8));
-        } else if (parameters != null && !parameters.isEmpty()) {
-            // Sort parameters by key
-            TreeMap<String, String[]> sortedParams = new TreeMap<>(parameters);
-            String sortedParamsStr = sortedParams.entrySet().stream()
-                    .filter(e -> e.getValue() != null && e.getValue().length > 0)
-                    .map(e -> e.getKey() + "=" + e.getValue()[0])
-                    .collect(Collectors.joining("&"));
-            dataJsonMd5 = md5Hex(sortedParamsStr);
-        } else {
-            dataJsonMd5 = md5Hex("");
+        String dataJsonMd5 = buildDataJsonMd5(parameters, body);
+
+        boolean externalAvailable = ExternalAuthxVerifier.isAvailable();
+        if (externalAvailable) {
+            Boolean ok = ExternalAuthxVerifier.verify(authxHeader, url, dataJsonMd5);
+            if (ok != null) {
+                if (!ok) {
+                    log.warn("Authx signature mismatch! url: {}, sign: {}", url, sign);
+                }
+                return ok;
+            }
         }
 
         String signStr = String.join("_", FN_API_KEY, url, nonce, timestamp, dataJsonMd5, apiSecret);
@@ -83,6 +83,21 @@ public class FnAuthService {
             log.warn("Authx signature mismatch! url: {}, expected: {}, actual: {}", url, expectedSign, sign);
         }
         return ok;
+    }
+
+    private String buildDataJsonMd5(Map<String, String[]> parameters, byte[] body) {
+        if (body != null && body.length > 0) {
+            return md5Hex(new String(body, StandardCharsets.UTF_8));
+        }
+        if (parameters != null && !parameters.isEmpty()) {
+            TreeMap<String, String[]> sortedParams = new TreeMap<>(parameters);
+            String sortedParamsStr = sortedParams.entrySet().stream()
+                    .filter(e -> e.getValue() != null && e.getValue().length > 0)
+                    .map(e -> e.getKey() + "=" + e.getValue()[0])
+                    .collect(Collectors.joining("&"));
+            return md5Hex(sortedParamsStr);
+        }
+        return md5Hex("");
     }
 
     private Map<String, String> parseAuthxHeader(String authxHeader) {

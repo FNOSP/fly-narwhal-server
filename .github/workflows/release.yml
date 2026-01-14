@@ -26,6 +26,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Checkout authx verifier (private)
+        uses: actions/checkout@v4
+        with:
+          repository: Jankin-Wu/fly-narwhal-authx-verifier
+          token: ${{ secrets.AUTHX_VERIFIER_REPO_TOKEN }}
+          path: authx-verifier
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -33,15 +40,20 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
+      - name: Set up Go 1.22
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Build with Gradle
         env:
           FLY_NARWHAL_API_SECRET: ${{ secrets.FLY_NARWHAL_API_SECRET }}
-          FLY_NARWHAL_CUSTOM_DEOBF: ${{ secrets.FLY_NARWHAL_CUSTOM_DEOBF }}
-          FLY_NARWHAL_OBF_LOGIC: ${{ secrets.FLY_NARWHAL_OBF_LOGIC }}
-        run: ./gradlew :fly-narwhal-web:bootJar -x test
+          FLY_NARWHAL_BUILD_AUTHX_VERIFIER: '1'
+          FLY_NARWHAL_AUTHX_VERIFIER_DIR: ${{ github.workspace }}/authx-verifier
+        run: ./gradlew :fly-narwhal-web:bootJar :fly-narwhal-web:verifyAuthxVerifierBinary -x test
 
       - name: Prepare Release Tag
         id: release_tag
@@ -60,7 +72,7 @@ jobs:
           TAG_NAME="${{ steps.release_tag.outputs.tag }}"
 
           # 在此处手动填写发布日志
-          NOTES="1. 优化鉴权流程（需要客户端 v1.7.5 及以上版本）"
+          NOTES="1. 优化鉴权流程（需要客户端 v1.7.6 及以上版本）"
 
           # 如果是通过 GitHub 页面手动触发并输入了日志，则优先使用输入的内容
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_body }}" ]; then
