@@ -18,12 +18,18 @@ final class ExternalAuthxVerifier {
 
     // Checks whether the external verifier executable exists for current OS/arch.
     static boolean isAvailable() {
+        if (!isEnabled()) {
+            return false;
+        }
         ensureExtracted();
         return extractedPath != null;
     }
 
     // Returns true/false when verification was executed; returns null on execution errors.
     static Boolean verify(String authx, String url, String dataJsonMd5) {
+        if (!isEnabled()) {
+            return null;
+        }
         ensureExtracted();
         Path bin = extractedPath;
         if (bin == null) {
@@ -50,16 +56,22 @@ final class ExternalAuthxVerifier {
         }
     }
 
+    private static boolean isEnabled() {
+        String enabled = System.getProperty("fly-narwhal.external-authx.enabled", "true");
+        return Boolean.parseBoolean(enabled);
+    }
+
     private static synchronized void ensureExtracted() {
-        if (attempted) {
+        if (!isEnabled()) {
+            attempted = false;
+            extractedPath = null;
+            return;
+        }
+
+        if (attempted && extractedPath != null) {
             return;
         }
         attempted = true;
-
-        String enabled = System.getProperty("fly-narwhal.external-authx.enabled", "true");
-        if (!Boolean.parseBoolean(enabled)) {
-            return;
-        }
 
         String resourcePath = detectBinaryResourcePath();
         if (resourcePath == null) {

@@ -48,12 +48,40 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Debug environment
+        env:
+          FLY_NARWHAL_API_SECRET: ${{ secrets.FLY_NARWHAL_API_SECRET }}
+          FLY_NARWHAL_BUILD_AUTHX_VERIFIER: '1'
+          FLY_NARWHAL_AUTHX_VERIFIER_DIR: ${{ github.workspace }}/authx-verifier
+        run: |
+          echo "runner.os=${{ runner.os }}"
+          echo "go=$(go version)"
+          echo "java=$(java -version 2>&1 | head -n 1)"
+          echo "gradle=$(./gradlew --version | head -n 10)"
+          echo "authx_verifier_dir=$FLY_NARWHAL_AUTHX_VERIFIER_DIR"
+          echo "authx_verifier_dir_exists=$(test -d "$FLY_NARWHAL_AUTHX_VERIFIER_DIR" && echo yes || echo no)"
+          echo "fly_narwhal_api_secret_set=$(test -n "$FLY_NARWHAL_API_SECRET" && echo yes || echo no)"
+          ls -la "$FLY_NARWHAL_AUTHX_VERIFIER_DIR" || true
+          git -C "$FLY_NARWHAL_AUTHX_VERIFIER_DIR" rev-parse HEAD || true
+
       - name: Build with Gradle
         env:
           FLY_NARWHAL_API_SECRET: ${{ secrets.FLY_NARWHAL_API_SECRET }}
           FLY_NARWHAL_BUILD_AUTHX_VERIFIER: '1'
           FLY_NARWHAL_AUTHX_VERIFIER_DIR: ${{ github.workspace }}/authx-verifier
-        run: ./gradlew :fly-narwhal-web:test :fly-narwhal-web:bootJar :fly-narwhal-web:verifyAuthxVerifierBinary
+        run: ./gradlew --stacktrace --info :fly-narwhal-web:test :fly-narwhal-web:bootJar :fly-narwhal-web:verifyAuthxVerifierBinary
+
+      - name: Upload build reports (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fly-narwhal-web-reports
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            fly-narwhal-web/build/reports/**
+            fly-narwhal-web/build/test-results/**
+            build/reports/problems/**
 
       - name: Prepare Release Tag
         id: release_tag
