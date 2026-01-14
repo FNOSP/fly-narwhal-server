@@ -53,7 +53,7 @@ jobs:
           FLY_NARWHAL_API_SECRET: ${{ secrets.FLY_NARWHAL_API_SECRET }}
           FLY_NARWHAL_BUILD_AUTHX_VERIFIER: '1'
           FLY_NARWHAL_AUTHX_VERIFIER_DIR: ${{ github.workspace }}/authx-verifier
-        run: ./gradlew :fly-narwhal-web:bootJar :fly-narwhal-web:verifyAuthxVerifierBinary -x test
+        run: ./gradlew :fly-narwhal-web:test :fly-narwhal-web:bootJar :fly-narwhal-web:verifyAuthxVerifierBinary
 
       - name: Prepare Release Tag
         id: release_tag
