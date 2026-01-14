@@ -2,6 +2,8 @@ package com.jankinwu.flynarwhal.web.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.web.service.FnAuthConfigService;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -32,6 +34,16 @@ public class FnAuthService {
         } else {
             this.apiSecret = apiSecret.trim();
         }
+    }
+
+    @PostConstruct
+    public void initExternalAuthxVerifier() {
+        ExternalAuthxVerifier.preload();
+    }
+
+    @PreDestroy
+    public void shutdownExternalAuthxVerifier() {
+        ExternalAuthxVerifier.shutdown();
     }
 
     public boolean validateAuthx(String authxHeader, String url, Map<String, String[]> parameters, byte[] body) {
