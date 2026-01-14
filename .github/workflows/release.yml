@@ -39,6 +39,8 @@ jobs:
       - name: Build with Gradle
         env:
           FLY_NARWHAL_API_SECRET: ${{ secrets.FLY_NARWHAL_API_SECRET }}
+          FLY_NARWHAL_CUSTOM_DEOBF: ${{ secrets.FLY_NARWHAL_CUSTOM_DEOBF }}
+          FLY_NARWHAL_OBF_LOGIC: ${{ secrets.FLY_NARWHAL_OBF_LOGIC }}
         run: ./gradlew :fly-narwhal-web:bootJar -x test
 
       - name: Prepare Release Tag
