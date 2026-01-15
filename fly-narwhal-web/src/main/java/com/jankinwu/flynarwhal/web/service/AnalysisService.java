@@ -48,6 +48,7 @@ public class AnalysisService {
 
     private final TvSeasonInfoMapper tvSeasonInfoMapper;
     private final EpisodeSegmentMapper episodeSegmentMapper;
+    private final DbVersionMapper dbVersionMapper;
     private final AnalyzerFactory analyzerFactory;
     private final MediaFileScanner mediaFileScanner;
     private final FFmpegWrapper ffmpegWrapper;

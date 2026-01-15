@@ -10,6 +10,11 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.jankinwu.flynarwhal.web.dto.request.ServerUpdateRequest;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
 @Slf4j
 @RestController
 @RequiredArgsConstructor
@@ -17,6 +22,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class ConfigController {
 
     private final ConfigService configService;
+
+    @PostMapping("/update/start")
+    public SseEmitter startUpdate(@RequestBody ServerUpdateRequest request) {
+        return configService.startUpdate(request.getDownloadUrl(), request.getHash(), request.getProxyUrl());
+    }
 
 //    private final FnAuthService fnAuthService;
 //

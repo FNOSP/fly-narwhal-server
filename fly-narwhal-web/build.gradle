@@ -113,10 +113,38 @@ def authxVerifierResDir = layout.buildDirectory.dir("generated-resources/authx-v
 def execOps = project.services.get(ExecOperations)
 def fsOps = project.services.get(FileSystemOperations)
 
+def updaterSrcDir = rootProject.file("fly-narwhal-updater")
+def updaterResDir = layout.buildDirectory.dir("generated-resources/updater")
+
 def md5Hex = { String input ->
     def md = MessageDigest.getInstance("MD5")
     def digest = md.digest(input.getBytes("UTF-8"))
     return digest.collect { String.format("%02x", it) }.join("")
+}
+
+tasks.register('buildUpdaterBinaries') {
+    onlyIf { updaterSrcDir != null && updaterSrcDir.exists() }
+    outputs.dir(updaterResDir)
+    doLast {
+        def outDir = new File(updaterResDir.get().asFile, "updater")
+        outDir.mkdirs()
+
+        def targets = [
+            [os: "linux", arch: "amd64", out: "updater-linux-amd64"],
+            [os: "linux", arch: "arm64", out: "updater-linux-aarch64"]
+        ]
+
+        for (def t : targets) {
+            def outFile = new File(outDir, t.out.toString())
+            execOps.exec {
+                workingDir(updaterSrcDir)
+                environment("CGO_ENABLED", "0")
+                environment("GOOS", t.os)
+                environment("GOARCH", t.arch)
+                commandLine("go", "build", "-trimpath", "-ldflags", "-s -w", "-o", outFile.absolutePath, "./cmd/main.go")
+            }
+        }
+    }
 }
 
 tasks.register('prepareAuthxVerifier') {
@@ -212,10 +240,22 @@ tasks.register('verifyAuthxVerifierBinary') {
 }
 
 tasks.named('processResources') {
+    dependsOn(tasks.named('buildUpdaterBinaries'))
+    from(updaterResDir) {
+        into("")
+    }
     if (externalAuthxEnabled && authxVerifierSrcDir != null && authxVerifierSrcDir.exists()) {
         dependsOn(tasks.named('buildAuthxVerifierBinaries'))
         from(authxVerifierResDir) {
             into("")
         }
     }
+}
+
+tasks.named('bootJar') {
+    dependsOn(tasks.named('buildUpdaterBinaries'))
+}
+
+tasks.matching { it.name == "bootRun" }.configureEach {
+    dependsOn(tasks.named('buildUpdaterBinaries'))
 }
