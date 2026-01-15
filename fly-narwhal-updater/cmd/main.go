@@ -15,7 +15,11 @@ import (
 var logFile *os.File
 
 func main() {
-	initLog()
+	oldJarArg := ""
+	if len(os.Args) >= 3 {
+		oldJarArg = os.Args[2]
+	}
+	initLog(oldJarArg)
 	if logFile != nil {
 		defer logFile.Close()
 	}
@@ -124,8 +128,8 @@ func logf(format string, args ...interface{}) {
 	}
 }
 
-func initLog() {
-	logDir := resolveLogDir()
+func initLog(oldJar string) {
+	logDir := resolveLogDir(oldJar)
 	if logDir == "" {
 		return
 	}
@@ -145,7 +149,19 @@ func initLog() {
 	logf("Log file: %s\n", logFilePath)
 }
 
-func resolveLogDir() string {
+func resolveLogDir(oldJar string) string {
+	if oldJar != "" {
+		oldJarPath := oldJar
+		if !filepath.IsAbs(oldJarPath) {
+			if wd, err := os.Getwd(); err == nil && wd != "" {
+				oldJarPath = filepath.Join(wd, oldJarPath)
+			}
+		}
+		if jarDir := filepath.Dir(oldJarPath); jarDir != "" && jarDir != "." {
+			return filepath.Join(jarDir, "logs")
+		}
+	}
+
 	exe, err := os.Executable()
 	if err == nil && exe != "" {
 		if exeDir := filepath.Dir(exe); exeDir != "" {

@@ -234,15 +234,43 @@ public class configServiceImpl implements ConfigService {
             throw new IOException("Unable to resolve current jar path");
         }
 
+        File currentJarFile = new File(currentJarPath);
+        if (!currentJarFile.isAbsolute()) {
+            String userDir = System.getProperty("user.dir");
+            if (userDir != null && !userDir.isBlank()) {
+                currentJarFile = new File(userDir, currentJarPath);
+            }
+        }
+        try {
+            currentJarFile = currentJarFile.getCanonicalFile();
+        } catch (IOException ignored) {
+        }
+        if (!currentJarFile.exists()) {
+            throw new IOException("Current jar not found: " + currentJarFile.getAbsolutePath());
+        }
+
         long pid = ProcessHandle.current().pid();
-        
-        log.info("Starting updater: {} {} {} {}", updater.getAbsolutePath(), pid, currentJarPath, newJar.getAbsolutePath());
-        
-        new ProcessBuilder(
+
+        String resolvedJarPath = currentJarFile.getAbsolutePath();
+        log.info("Starting updater: {} {} {} {}", updater.getAbsolutePath(), pid, resolvedJarPath, newJar.getAbsolutePath());
+
+        File jarDir = currentJarFile.getParentFile();
+        File updaterLog = jarDir != null ? new File(jarDir, "updater-run.log") : null;
+
+        ProcessBuilder pb = new ProcessBuilder(
                 updater.getAbsolutePath(),
                 String.valueOf(pid),
-                currentJarPath,
+                resolvedJarPath,
                 newJar.getAbsolutePath()
-        ).start();
+        );
+        if (jarDir != null) {
+            pb.directory(jarDir);
+        }
+        if (updaterLog != null) {
+            pb.redirectErrorStream(true);
+            pb.redirectOutput(ProcessBuilder.Redirect.appendTo(updaterLog));
+        }
+        Process process = pb.start();
+        log.info("Updater process started, pid={}", process.pid());
     }
 }
