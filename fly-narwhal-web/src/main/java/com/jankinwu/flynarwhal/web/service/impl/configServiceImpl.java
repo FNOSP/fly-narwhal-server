@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StreamUtils;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.boot.system.ApplicationHome;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -21,6 +22,8 @@ import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 @RequiredArgsConstructor
@@ -29,6 +32,7 @@ public class configServiceImpl implements ConfigService {
 
     private final DbVersionMapper dbVersionMapper;
     private final ExecutorService updateExecutor = Executors.newSingleThreadExecutor();
+    private final AtomicBoolean updateInProgress = new AtomicBoolean(false);
 
     @Override
     public String getDatabaseVersion() {
@@ -40,8 +44,14 @@ public class configServiceImpl implements ConfigService {
     @Override
     public SseEmitter startUpdate(String downloadUrl, String hash, String proxyUrl) {
         SseEmitter emitter = new SseEmitter(30 * 60 * 1000L); // 30 mins timeout
+        if (!updateInProgress.compareAndSet(false, true)) {
+            sendEvent(emitter, "error", "Update already in progress");
+            emitter.complete();
+            return emitter;
+        }
 
-        updateExecutor.submit(() -> {
+        try {
+            updateExecutor.submit(() -> {
             try {
                 // 1. Download
                 sendEvent(emitter, "update_status", "Downloading update...");
@@ -52,6 +62,7 @@ public class configServiceImpl implements ConfigService {
                 if (!verifyHash(newJar, hash)) {
                     sendEvent(emitter, "error", "Hash verification failed");
                     emitter.complete();
+                    updateInProgress.set(false);
                     return;
                 }
 
@@ -61,6 +72,7 @@ public class configServiceImpl implements ConfigService {
                 if (updater == null) {
                     sendEvent(emitter, "error", "Unsupported architecture or updater missing");
                     emitter.complete();
+                    updateInProgress.set(false);
                     return;
                 }
 
@@ -84,8 +96,14 @@ public class configServiceImpl implements ConfigService {
                 } catch (Exception ex) {
                     // ignore
                 }
+                updateInProgress.set(false);
             }
         });
+        } catch (RejectedExecutionException e) {
+            sendEvent(emitter, "error", "Update executor rejected task");
+            emitter.complete();
+            updateInProgress.set(false);
+        }
 
         return emitter;
     }
@@ -181,16 +199,39 @@ public class configServiceImpl implements ConfigService {
     }
 
     private void startUpdaterProcess(File updater, File newJar) throws IOException {
-        String currentJarPath = new File(
-                getClass().getProtectionDomain().getCodeSource().getLocation().getPath()
-        ).getAbsolutePath();
-        
-        // Handle decoded URL path if needed (spaces etc), but usually simple path works for getPath()
-        // Better to use toURI().getPath() if possible but need try-catch
+        String currentJarPath = null;
         try {
-             currentJarPath = new File(getClass().getProtectionDomain().getCodeSource().getLocation().toURI()).getAbsolutePath();
-        } catch (Exception e) {
-            // fallback
+            String[] args = ProcessHandle.current().info().arguments().orElse(null);
+            if (args != null) {
+                for (int i = 0; i < args.length - 1; i++) {
+                    if ("-jar".equals(args[i])) {
+                        currentJarPath = args[i + 1];
+                        break;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        if (currentJarPath == null || currentJarPath.isBlank() || !new File(currentJarPath).exists()) {
+            try {
+                File source = new ApplicationHome(configServiceImpl.class).getSource();
+                if (source != null) {
+                    currentJarPath = source.getAbsolutePath();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        if (currentJarPath == null || currentJarPath.isBlank() || !new File(currentJarPath).exists()) {
+            try {
+                currentJarPath = new File(getClass().getProtectionDomain().getCodeSource().getLocation().toURI()).getAbsolutePath();
+            } catch (Exception ignored) {
+            }
+        }
+
+        if (currentJarPath == null || currentJarPath.isBlank()) {
+            throw new IOException("Unable to resolve current jar path");
         }
 
         long pid = ProcessHandle.current().pid();
