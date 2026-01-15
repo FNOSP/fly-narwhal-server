@@ -59,15 +59,17 @@ func main() {
 			fmt.Printf("Fatal: Failed to copy new jar: %v\n", err)
 			return
 		}
-		os.Remove(newJar)
+		err := os.Remove(newJar)
+		if err != nil {
+			return
+		}
 	}
 
 	// 4. Start new jar
 	fmt.Printf("Starting application: %s\n", oldJar)
-	
-	cmd := exec.Command("java", "-jar", oldJar)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("nohup java -jar %s > /dev/null 2>&1 &", oldJar))
+
 	// Detach process
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true,

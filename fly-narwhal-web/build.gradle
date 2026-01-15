@@ -1,9 +1,6 @@
 import java.security.MessageDigest
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
-import java.security.MessageDigest
-import org.gradle.api.file.FileSystemOperations
-import org.gradle.process.ExecOperations
 
 plugins {
     id 'java'

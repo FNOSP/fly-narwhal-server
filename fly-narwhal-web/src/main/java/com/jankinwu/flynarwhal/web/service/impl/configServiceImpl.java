@@ -16,12 +16,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -142,9 +139,16 @@ public class configServiceImpl implements ConfigService {
             sb.append(String.format("%02x", b));
         }
         String calculatedHash = sb.toString();
-        
-        log.info("Calculated hash: {}, Expected: {}", calculatedHash, expectedHash);
-        return calculatedHash.equalsIgnoreCase(expectedHash);
+
+
+        // Remove "sha256:" prefix if present in expectedHash
+        String cleanExpectedHash = expectedHash;
+        if (expectedHash.toLowerCase().startsWith("sha256:")) {
+            cleanExpectedHash = expectedHash.substring(7);
+        }
+        log.info("Calculated hash: {}, Expected: {}", calculatedHash, cleanExpectedHash);
+
+        return calculatedHash.equalsIgnoreCase(cleanExpectedHash);
     }
 
     private File extractUpdater() throws IOException {
