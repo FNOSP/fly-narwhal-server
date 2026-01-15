@@ -80,12 +80,6 @@ public class AnalysisService {
         this.analysisEntityMapper = analysisEntityMapper;
     }
 
-    public String getDatabaseVersion() {
-        return Optional.ofNullable(dbVersionMapper.selectById(1))
-                .map(DbVersion::getVersion)
-                .orElse("0.0.0");
-    }
-
     private void processQueue() {
         while (!Thread.currentThread().isInterrupted()) {
             try {
