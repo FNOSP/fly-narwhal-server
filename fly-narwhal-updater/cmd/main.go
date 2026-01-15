@@ -33,6 +33,29 @@ func main() {
 	oldJar := os.Args[2]
 	newJar := os.Args[3]
 
+	// Cleanup on exit
+	defer func() {
+		logf("Cleaning up temporary files...\n")
+		// Remove newJar if it still exists (e.g., if rename failed or process failed)
+		if _, err := os.Stat(newJar); err == nil {
+			if err := os.Remove(newJar); err != nil {
+				logf("Warning: Failed to cleanup new jar %s: %v\n", newJar, err)
+			} else {
+				logf("Cleaned up new jar: %s\n", newJar)
+			}
+		}
+		// Self cleanup
+		self, err := os.Executable()
+		if err == nil {
+			// On Linux, we can remove the running binary
+			if err := os.Remove(self); err != nil {
+				logf("Warning: Failed to cleanup updater %s: %v\n", self, err)
+			} else {
+				logf("Cleaned up updater: %s\n", self)
+			}
+		}
+	}()
+
 	pid, err := strconv.Atoi(pidStr)
 	if err != nil {
 		logf("Invalid PID: %v\n", err)

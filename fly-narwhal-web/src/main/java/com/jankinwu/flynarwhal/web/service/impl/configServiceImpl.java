@@ -255,8 +255,6 @@ public class configServiceImpl implements ConfigService {
         log.info("Starting updater: {} {} {} {}", updater.getAbsolutePath(), pid, resolvedJarPath, newJar.getAbsolutePath());
 
         File jarDir = currentJarFile.getParentFile();
-        File updaterLog = jarDir != null ? new File(jarDir, "updater-run.log") : null;
-
         ProcessBuilder pb = new ProcessBuilder(
                 updater.getAbsolutePath(),
                 String.valueOf(pid),
@@ -265,10 +263,6 @@ public class configServiceImpl implements ConfigService {
         );
         if (jarDir != null) {
             pb.directory(jarDir);
-        }
-        if (updaterLog != null) {
-            pb.redirectErrorStream(true);
-            pb.redirectOutput(ProcessBuilder.Redirect.appendTo(updaterLog));
         }
         Process process = pb.start();
         log.info("Updater process started, pid={}", process.pid());
