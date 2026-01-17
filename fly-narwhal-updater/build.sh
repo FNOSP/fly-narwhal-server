@@ -2,7 +2,11 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_PATH="$0"
+if [[ "$SCRIPT_PATH" != /* ]]; then
+  SCRIPT_PATH="$PWD/$SCRIPT_PATH"
+fi
+SCRIPT_DIR="${SCRIPT_PATH%/*}"
 cd "$SCRIPT_DIR"
 
 DEFAULT_OUTPUT_DIR="../fly-narwhal-web/src/main/resources/updater"
@@ -27,7 +31,7 @@ if [[ -z "$GO_BIN" || ! -x "$GO_BIN" ]]; then
   exit 1
 fi
 
-mkdir -p "$OUTPUT_DIR"
+/bin/mkdir -p "$OUTPUT_DIR"
 
 echo "Building for Linux amd64..."
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 "$GO_BIN" build -trimpath -ldflags "-s -w" -o "$OUTPUT_DIR/updater-linux-amd64" ./cmd/main.go

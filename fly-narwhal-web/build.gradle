@@ -128,8 +128,11 @@ tasks.register('buildUpdaterBinaries') {
 
         execOps.exec {
             workingDir(updaterSrcDir)
+            def currentPath = System.getenv("PATH")
+            def basePath = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"
+            environment("PATH", (currentPath == null || currentPath.trim().isEmpty()) ? basePath : (currentPath + ":" + basePath))
             environment("OUTPUT_DIR", outDir.absolutePath)
-            commandLine("bash", "./build.sh")
+            commandLine("/bin/bash", "./build.sh")
         }
 
         def expected = [
