@@ -126,20 +126,22 @@ tasks.register('buildUpdaterBinaries') {
         def outDir = new File(updaterResDir.get().asFile, "updater")
         outDir.mkdirs()
 
-        def targets = [
-            [os: "linux", arch: "amd64", out: "updater-linux-amd64"],
-            [os: "linux", arch: "arm64", out: "updater-linux-aarch64"]
-        ]
+        execOps.exec {
+            workingDir(updaterSrcDir)
+            environment("OUTPUT_DIR", outDir.absolutePath)
+            commandLine("bash", "./build.sh")
+        }
 
-        for (def t : targets) {
-            def outFile = new File(outDir, t.out.toString())
-            execOps.exec {
-                workingDir(updaterSrcDir)
-                environment("CGO_ENABLED", "0")
-                environment("GOOS", t.os)
-                environment("GOARCH", t.arch)
-                commandLine("go", "build", "-trimpath", "-ldflags", "-s -w", "-o", outFile.absolutePath, "./cmd/main.go")
+        def expected = [
+            "updater-linux-amd64",
+            "updater-linux-aarch64"
+        ]
+        for (def name : expected) {
+            def bin = new File(outDir, name.toString())
+            if (!bin.exists()) {
+                throw new GradleException("Missing updater binary: " + bin.absolutePath)
             }
+            bin.setExecutable(true)
         }
     }
 }
