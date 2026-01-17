@@ -7,6 +7,9 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.HashMap;
@@ -75,6 +78,32 @@ class FnAuthServiceTest {
 
         String authx = "nonce=" + nonce + "&timestamp=" + timestamp + "&sign=" + sign;
         Assertions.assertFalse(svc.validateAuthx(authx, url, Map.of(), null));
+    }
+
+    @Test
+    void getOrGenerateAuthCode_checksLocalFileEveryCall() throws Exception {
+        Path authCodePath = Paths.get("auth_code");
+
+        try {
+            Files.deleteIfExists(authCodePath);
+
+            FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "");
+
+            String first = svc.getOrGenerateAuthCode();
+            Assertions.assertNotEquals("exists", first);
+            Assertions.assertTrue(Files.exists(authCodePath));
+
+            String second = svc.getOrGenerateAuthCode();
+            Assertions.assertEquals("exists", second);
+
+            Files.deleteIfExists(authCodePath);
+
+            String third = svc.getOrGenerateAuthCode();
+            Assertions.assertNotEquals("exists", third);
+            Assertions.assertNotEquals(first, third);
+        } finally {
+            Files.deleteIfExists(authCodePath);
+        }
     }
 
     private static String md5Hex(String input) {

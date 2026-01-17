@@ -47,22 +47,26 @@ public class FnAuthService {
     private void loadAuthCode() {
         try {
             java.io.File f = new java.io.File(AUTH_CODE_FILE);
-            if (f.exists() && f.isFile()) {
-                byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
-                this.authCode = new String(bytes, StandardCharsets.UTF_8).trim();
-                log.info("Loaded auth code from file");
+            if (!f.exists() || !f.isFile()) {
+                this.authCode = null;
+                return;
             }
+
+            byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
+            String loaded = new String(bytes, StandardCharsets.UTF_8).trim();
+            if (loaded.isBlank()) {
+                this.authCode = null;
+                return;
+            }
+
+            this.authCode = loaded;
+            log.info("Loaded auth code from file");
         } catch (Exception e) {
             log.error("Failed to load auth code", e);
         }
     }
 
     public synchronized String getOrGenerateAuthCode() {
-        if (this.authCode != null && !this.authCode.isBlank()) {
-            return "exists";
-        }
-        
-        // Double check file
         loadAuthCode();
         if (this.authCode != null && !this.authCode.isBlank()) {
             return "exists";

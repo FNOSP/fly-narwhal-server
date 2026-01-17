@@ -266,11 +266,135 @@
             transform: translateY(-2px);
             box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
         }
+
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            z-index: 9999;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .modal {
+            width: 100%;
+            max-width: 560px;
+            background: var(--card-bg);
+            border-radius: 18px;
+            box-shadow: 0 18px 60px rgba(0, 0, 0, 0.25);
+            overflow: hidden;
+        }
+
+        .modal-header {
+            padding: 18px 20px 0 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .modal-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 20px;
+            line-height: 1;
+            color: var(--text-sub);
+            padding: 4px 8px;
+            border-radius: 10px;
+            transition: var(--transition);
+        }
+
+        .modal-close:hover {
+            background: rgba(0, 0, 0, 0.04);
+            color: var(--text-main);
+        }
+
+        .modal-body {
+            padding: 16px 20px 20px 20px;
+            text-align: left;
+        }
+
+        .modal-desc {
+            color: var(--text-sub);
+            font-size: 13px;
+            line-height: 1.7;
+            margin-bottom: 14px;
+        }
+
+        .auth-code-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .auth-code-input {
+            flex: 1;
+            min-width: 0;
+            padding: 12px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 0, 0, 0.12);
+            outline: none;
+            font-size: 13px;
+            background: rgba(245, 245, 247, 0.7);
+            color: var(--text-main);
+        }
+
+        .copy-btn {
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 0, 0, 0.12);
+            background: rgba(255, 255, 255, 0.9);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: var(--transition);
+            white-space: nowrap;
+        }
+
+        .copy-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .copy-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+            box-shadow: none;
+            transform: none;
+        }
     </style>
 </head>
 <body>
 
 <button class="auth-btn" onclick="getAuthCode()">获取授权码</button>
+
+<div id="authModal" class="modal-overlay" aria-hidden="true" onclick="handleOverlayClick(event)">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
+        <div class="modal-header">
+            <div id="authModalTitle" class="modal-title">授权码</div>
+            <button class="modal-close" onclick="closeAuthModal()" aria-label="关闭">×</button>
+        </div>
+        <div class="modal-body">
+            <div id="authModalDesc" class="modal-desc"></div>
+            <div id="authCodeRow" class="auth-code-row" style="display: none;">
+                <input id="authCodeInput" class="auth-code-input" type="text" readonly />
+                <button id="copyBtn" class="copy-btn" onclick="copyAuthCode()">复制</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <div class="container">
     <div class="header">
@@ -344,23 +468,96 @@
 </div>
 
 <script>
+    let lastAuthCode = '';
+
+    function openAuthModal(title, desc, authCode) {
+        const overlay = document.getElementById('authModal');
+        const titleEl = document.getElementById('authModalTitle');
+        const descEl = document.getElementById('authModalDesc');
+        const rowEl = document.getElementById('authCodeRow');
+        const inputEl = document.getElementById('authCodeInput');
+        const copyBtn = document.getElementById('copyBtn');
+
+        titleEl.textContent = title;
+        descEl.textContent = desc;
+
+        if (authCode && authCode.trim().length > 0) {
+            lastAuthCode = authCode.trim();
+            inputEl.value = lastAuthCode;
+            rowEl.style.display = 'flex';
+            copyBtn.disabled = false;
+        } else {
+            lastAuthCode = '';
+            inputEl.value = '';
+            rowEl.style.display = 'none';
+            copyBtn.disabled = true;
+        }
+
+        overlay.classList.add('show');
+        overlay.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeAuthModal() {
+        const overlay = document.getElementById('authModal');
+        overlay.classList.remove('show');
+        overlay.setAttribute('aria-hidden', 'true');
+    }
+
+    function handleOverlayClick(e) {
+        if (e.target && e.target.id === 'authModal') {
+            closeAuthModal();
+        }
+    }
+
+    async function copyAuthCode() {
+        if (!lastAuthCode) {
+            return;
+        }
+
+        const copyBtn = document.getElementById('copyBtn');
+        copyBtn.disabled = true;
+
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(lastAuthCode);
+            } else {
+                const inputEl = document.getElementById('authCodeInput');
+                inputEl.focus();
+                inputEl.select();
+                document.execCommand('copy');
+                inputEl.setSelectionRange(0, 0);
+            }
+            copyBtn.textContent = '已复制';
+            setTimeout(() => {
+                copyBtn.textContent = '复制';
+                copyBtn.disabled = false;
+            }, 1200);
+        } catch (e) {
+            copyBtn.textContent = '复制失败';
+            setTimeout(() => {
+                copyBtn.textContent = '复制';
+                copyBtn.disabled = false;
+            }, 1500);
+        }
+    }
+
     async function getAuthCode() {
         try {
             const response = await fetch('/api/config/auth-code', {
                 method: 'POST'
             });
             const result = await response.json();
-            if (result.code === 0) {
+            if (result.code === 200) {
                 if (result.data === 'exists') {
-                    alert('授权码已存在，请勿重复获取。');
+                    openAuthModal('授权码', '授权码已存在，请勿重复获取。', '');
                 } else {
-                    alert('授权码：' + result.data + '\n此授权码只展示一次，请立即复制并妥善保存！');
+                    openAuthModal('授权码', '此授权码只展示一次，请立即复制并妥善保存！', result.data);
                 }
             } else {
-                alert('获取失败：' + result.msg);
+                openAuthModal('获取失败', result.msg || '未知错误', '');
             }
         } catch (e) {
-            alert('请求失败：' + e);
+            openAuthModal('请求失败', String(e), '');
         }
     }
 </script>
