@@ -22,8 +22,10 @@ public class FnAuthService {
     private static final String FN_API_KEY = "NDzZTVxnRKP8Z0jXg1VAMonaG8akvh";
     private static final Duration AUTHX_TTL = Duration.ofMinutes(5);
     private static final String DEFAULT_API_SECRET = "16CCEB3D-AB42-077D-36A1-F355324E4237";
+    private static final String AUTH_CODE_FILE = "auth_code";
 
     private final String apiSecret;
+    private volatile String authCode;
 
     public FnAuthService(FnAuthConfigService fnAuthConfigService,
                          ObjectMapper objectMapper,
@@ -38,7 +40,46 @@ public class FnAuthService {
 
     @PostConstruct
     public void initExternalAuthxVerifier() {
+        loadAuthCode();
         ExternalAuthxVerifier.preload();
+    }
+
+    private void loadAuthCode() {
+        try {
+            java.io.File f = new java.io.File(AUTH_CODE_FILE);
+            if (f.exists() && f.isFile()) {
+                byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
+                this.authCode = new String(bytes, StandardCharsets.UTF_8).trim();
+                log.info("Loaded auth code from file");
+            }
+        } catch (Exception e) {
+            log.error("Failed to load auth code", e);
+        }
+    }
+
+    public synchronized String getOrGenerateAuthCode() {
+        if (this.authCode != null && !this.authCode.isBlank()) {
+            return "exists";
+        }
+        
+        // Double check file
+        loadAuthCode();
+        if (this.authCode != null && !this.authCode.isBlank()) {
+            return "exists";
+        }
+
+        String uuid = java.util.UUID.randomUUID().toString().replace("-", "").toLowerCase();
+        String newCode = "flynarwhal_" + uuid;
+
+        try {
+            java.nio.file.Files.write(java.nio.file.Paths.get(AUTH_CODE_FILE), newCode.getBytes(StandardCharsets.UTF_8));
+            this.authCode = newCode;
+            log.info("Generated and saved new auth code");
+            return newCode;
+        } catch (Exception e) {
+            log.error("Failed to write auth code file", e);
+            throw new RuntimeException("Failed to save auth code");
+        }
     }
 
     @PreDestroy
@@ -78,7 +119,7 @@ public class FnAuthService {
 
         boolean externalAvailable = ExternalAuthxVerifier.isAvailable();
         if (externalAvailable) {
-            Boolean ok = ExternalAuthxVerifier.verify(authxHeader, url, dataJsonMd5);
+            Boolean ok = ExternalAuthxVerifier.verify(authxHeader, url, dataJsonMd5, this.authCode);
             if (ok != null) {
                 if (!ok) {
                     log.warn("Authx signature mismatch! url: {}, sign: {}", url, sign);
@@ -88,6 +129,9 @@ public class FnAuthService {
         }
 
         String signStr = String.join("_", FN_API_KEY, url, nonce, timestamp, dataJsonMd5, apiSecret);
+        if (this.authCode != null && !this.authCode.isBlank()) {
+            signStr += "_" + this.authCode;
+        }
         String expectedSign = md5Hex(signStr);
 
         boolean ok = expectedSign.equalsIgnoreCase(sign);

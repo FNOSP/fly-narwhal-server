@@ -40,7 +40,7 @@ final class ExternalAuthxVerifier {
     }
 
     // Returns true/false when verification was executed; returns null on execution errors.
-    static Boolean verify(String authx, String url, String dataJsonMd5) {
+    static Boolean verify(String authx, String url, String dataJsonMd5, String authCode) {
         if (!isEnabled()) {
             return null;
         }
@@ -56,7 +56,7 @@ final class ExternalAuthxVerifier {
                     "fly-narwhal.external-authx.timeout-ms",
                     Long.toString(DEFAULT_TIMEOUT.toMillis())
             ));
-            return p.verify(authx, url, dataJsonMd5, Duration.ofMillis(timeoutMs));
+            return p.verify(authx, url, dataJsonMd5, authCode, Duration.ofMillis(timeoutMs));
         } catch (Throwable ignored) {
             return null;
         }
@@ -230,7 +230,7 @@ final class ExternalAuthxVerifier {
             return closed;
         }
 
-        private Boolean verify(String authx, String url, String dataJsonMd5, Duration timeout) throws Exception {
+        private Boolean verify(String authx, String url, String dataJsonMd5, String authCode, Duration timeout) throws Exception {
             if (closed) {
                 return null;
             }
@@ -244,7 +244,7 @@ final class ExternalAuthxVerifier {
                         return null;
                     }
                     borrowed.set(w);
-                    Boolean ok = w.verify(authx, url, dataJsonMd5);
+                    Boolean ok = w.verify(authx, url, dataJsonMd5, authCode);
                     if (ok == null) {
                         w.close();
                         w = Worker.start(binPath);
@@ -330,7 +330,7 @@ final class ExternalAuthxVerifier {
             return closed;
         }
 
-        private Boolean verify(String authx, String url, String dataJsonMd5) {
+        private Boolean verify(String authx, String url, String dataJsonMd5, String authCode) {
             if (closed) {
                 return null;
             }
@@ -340,6 +340,8 @@ final class ExternalAuthxVerifier {
                 stdin.write(url);
                 stdin.write('\t');
                 stdin.write(dataJsonMd5);
+                stdin.write('\t');
+                stdin.write(authCode == null ? "" : authCode);
                 stdin.write('\n');
                 stdin.flush();
 

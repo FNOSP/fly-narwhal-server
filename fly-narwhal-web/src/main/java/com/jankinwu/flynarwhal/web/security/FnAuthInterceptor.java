@@ -23,7 +23,7 @@ public class FnAuthInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull Object handler) throws Exception {
         String path = request.getRequestURI();
-        if (path.startsWith("/api/config/fn-base-url")) {
+        if (path.startsWith("/api/config/auth-code")) {
             return true;
         }
 

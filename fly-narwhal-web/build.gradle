@@ -240,11 +240,13 @@ tasks.named('processResources') {
     dependsOn(tasks.named('buildUpdaterBinaries'))
     from(updaterResDir) {
         into("")
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     }
     if (externalAuthxEnabled && authxVerifierSrcDir != null && authxVerifierSrcDir.exists()) {
         dependsOn(tasks.named('buildAuthxVerifierBinaries'))
         from(authxVerifierResDir) {
             into("")
+            duplicatesStrategy = DuplicatesStrategy.EXCLUDE
         }
     }
 }
