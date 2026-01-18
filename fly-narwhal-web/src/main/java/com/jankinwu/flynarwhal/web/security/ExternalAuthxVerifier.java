@@ -40,7 +40,7 @@ final class ExternalAuthxVerifier {
     }
 
     // Returns true/false when verification was executed; returns null on execution errors.
-    static Boolean verify(String authx, String url, String dataJsonMd5, String authCode) {
+    static Boolean verify(String authx, String url, String dataJsonMd5, String signx, String publicKeyBase64) {
         if (!isEnabled()) {
             return null;
         }
@@ -56,7 +56,7 @@ final class ExternalAuthxVerifier {
                     "fly-narwhal.external-authx.timeout-ms",
                     Long.toString(DEFAULT_TIMEOUT.toMillis())
             ));
-            return p.verify(authx, url, dataJsonMd5, authCode, Duration.ofMillis(timeoutMs));
+            return p.verify(authx, url, dataJsonMd5, signx, publicKeyBase64, Duration.ofMillis(timeoutMs));
         } catch (Throwable ignored) {
             return null;
         }
@@ -230,7 +230,7 @@ final class ExternalAuthxVerifier {
             return closed;
         }
 
-        private Boolean verify(String authx, String url, String dataJsonMd5, String authCode, Duration timeout) throws Exception {
+        private Boolean verify(String authx, String url, String dataJsonMd5, String signx, String publicKeyBase64, Duration timeout) throws Exception {
             if (closed) {
                 return null;
             }
@@ -244,7 +244,7 @@ final class ExternalAuthxVerifier {
                         return null;
                     }
                     borrowed.set(w);
-                    Boolean ok = w.verify(authx, url, dataJsonMd5, authCode);
+                    Boolean ok = w.verify(authx, url, dataJsonMd5, signx, publicKeyBase64);
                     if (ok == null) {
                         w.close();
                         w = Worker.start(binPath);
@@ -330,7 +330,7 @@ final class ExternalAuthxVerifier {
             return closed;
         }
 
-        private Boolean verify(String authx, String url, String dataJsonMd5, String authCode) {
+        private Boolean verify(String authx, String url, String dataJsonMd5, String signx, String publicKeyBase64) {
             if (closed) {
                 return null;
             }
@@ -341,7 +341,9 @@ final class ExternalAuthxVerifier {
                 stdin.write('\t');
                 stdin.write(dataJsonMd5);
                 stdin.write('\t');
-                stdin.write(authCode == null ? "" : authCode);
+                stdin.write(signx == null ? "" : signx);
+                stdin.write('\t');
+                stdin.write(publicKeyBase64 == null ? "" : publicKeyBase64);
                 stdin.write('\n');
                 stdin.flush();
 

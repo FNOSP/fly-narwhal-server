@@ -28,13 +28,14 @@ public class FnAuthInterceptor implements HandlerInterceptor {
         }
 
         String authx = request.getHeader("Authx");
+        String signx = request.getHeader("Signx");
         if (authx != null && !authx.isBlank()) {
             byte[] body = null;
             if (request instanceof CachedBodyHttpServletRequest) {
                 body = ((CachedBodyHttpServletRequest) request).getCachedBody();
             }
             
-            boolean ok = fnAuthService.validateAuthx(authx, path, request.getParameterMap(), body);
+            boolean ok = fnAuthService.validateAuthx(authx, signx, path, request.getParameterMap(), body);
             if (ok) {
                 return true;
             } else {

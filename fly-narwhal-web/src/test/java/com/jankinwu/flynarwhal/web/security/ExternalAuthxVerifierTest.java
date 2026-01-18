@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 final class ExternalAuthxVerifierTest {
     private static final String FN_API_KEY = "NDzZTVxnRKP8Z0jXg1VAMonaG8akvh";
     private static final String TEST_SECRET = "unit-test-secret";
+    private static final String TEST_PUBLIC_KEY_BASE64 = "ZHVtbXktcHVibGljLWtleQ==";
     private static Path verifierBin;
 
     @BeforeAll
@@ -61,24 +62,10 @@ final class ExternalAuthxVerifierTest {
         String nonce = "123456";
         String timestamp = Long.toString(System.currentTimeMillis());
         String sign = md5Hex(String.join("_", FN_API_KEY, url, nonce, timestamp, dataMd5, TEST_SECRET));
+        String signx = sha256Hex(String.join("_", timestamp, nonce, sign, dataMd5, url, TEST_PUBLIC_KEY_BASE64));
         String authx = "nonce=" + nonce + "&timestamp=" + timestamp + "&sign=" + sign;
 
-        Boolean ok = ExternalAuthxVerifier.verify(authx, url, dataMd5, null);
-        assertNotNull(ok);
-        assertEquals(true, ok);
-    }
-
-    @Test
-    void verify_shouldReturnTrueForValidSignatureWithAuthCode() {
-        String url = "/api/danmu/ping";
-        String dataMd5 = md5Hex("");
-        String nonce = "123456";
-        String timestamp = Long.toString(System.currentTimeMillis());
-        String authCode = "flynarwhal_123456";
-        String sign = md5Hex(String.join("_", FN_API_KEY, url, nonce, timestamp, dataMd5, TEST_SECRET, authCode));
-        String authx = "nonce=" + nonce + "&timestamp=" + timestamp + "&sign=" + sign;
-
-        Boolean ok = ExternalAuthxVerifier.verify(authx, url, dataMd5, authCode);
+        Boolean ok = ExternalAuthxVerifier.verify(authx, url, dataMd5, signx, TEST_PUBLIC_KEY_BASE64);
         assertNotNull(ok);
         assertEquals(true, ok);
     }
@@ -90,8 +77,38 @@ final class ExternalAuthxVerifierTest {
         String nonce = "123456";
         String timestamp = Long.toString(System.currentTimeMillis());
         String authx = "nonce=" + nonce + "&timestamp=" + timestamp + "&sign=deadbeef";
+        String signx = sha256Hex(String.join("_", timestamp, nonce, "deadbeef", dataMd5, url, TEST_PUBLIC_KEY_BASE64));
 
-        Boolean ok = ExternalAuthxVerifier.verify(authx, url, dataMd5, null);
+        Boolean ok = ExternalAuthxVerifier.verify(authx, url, dataMd5, signx, TEST_PUBLIC_KEY_BASE64);
+        assertNotNull(ok);
+        assertEquals(false, ok);
+    }
+
+    @Test
+    void verify_shouldReturnFalseForInvalidSignx() {
+        String url = "/api/danmu/ping";
+        String dataMd5 = md5Hex("");
+        String nonce = "123456";
+        String timestamp = Long.toString(System.currentTimeMillis());
+        String sign = md5Hex(String.join("_", FN_API_KEY, url, nonce, timestamp, dataMd5, TEST_SECRET));
+        String authx = "nonce=" + nonce + "&timestamp=" + timestamp + "&sign=" + sign;
+
+        Boolean ok = ExternalAuthxVerifier.verify(authx, url, dataMd5, "deadbeef", TEST_PUBLIC_KEY_BASE64);
+        assertNotNull(ok);
+        assertEquals(false, ok);
+    }
+
+    @Test
+    void verify_shouldReturnFalseForMissingPublicKey() {
+        String url = "/api/danmu/ping";
+        String dataMd5 = md5Hex("");
+        String nonce = "123456";
+        String timestamp = Long.toString(System.currentTimeMillis());
+        String sign = md5Hex(String.join("_", FN_API_KEY, url, nonce, timestamp, dataMd5, TEST_SECRET));
+        String signx = sha256Hex(String.join("_", timestamp, nonce, sign, dataMd5, url, TEST_PUBLIC_KEY_BASE64));
+        String authx = "nonce=" + nonce + "&timestamp=" + timestamp + "&sign=" + sign;
+
+        Boolean ok = ExternalAuthxVerifier.verify(authx, url, dataMd5, signx, "");
         assertNotNull(ok);
         assertEquals(false, ok);
     }
@@ -103,12 +120,13 @@ final class ExternalAuthxVerifierTest {
         String nonce = "123456";
         String timestamp = Long.toString(System.currentTimeMillis());
         String sign = md5Hex(String.join("_", FN_API_KEY, url, nonce, timestamp, dataMd5, TEST_SECRET));
+        String signx = sha256Hex(String.join("_", timestamp, nonce, sign, dataMd5, url, TEST_PUBLIC_KEY_BASE64));
         String authx = "nonce=" + nonce + "&timestamp=" + timestamp + "&sign=" + sign;
 
         ExecutorService executor = Executors.newFixedThreadPool(8);
         try {
             List<Callable<Boolean>> tasks = java.util.stream.IntStream.range(0, 50)
-                    .mapToObj(i -> (Callable<Boolean>) () -> ExternalAuthxVerifier.verify(authx, url, dataMd5, null))
+                    .mapToObj(i -> (Callable<Boolean>) () -> ExternalAuthxVerifier.verify(authx, url, dataMd5, signx, TEST_PUBLIC_KEY_BASE64))
                     .toList();
             List<Future<Boolean>> results = executor.invokeAll(tasks);
             for (Future<Boolean> f : results) {
@@ -200,5 +218,14 @@ final class ExternalAuthxVerifierTest {
             throw new IllegalStateException(e);
         }
     }
-}
 
+    private static String sha256Hex(String s) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(s.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+}

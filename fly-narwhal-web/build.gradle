@@ -222,6 +222,12 @@ tasks.register('verifyAuthxVerifierBinary') {
         def signStr = ["NDzZTVxnRKP8Z0jXg1VAMonaG8akvh", url, nonce, now, dataMd5, secret.trim()].join("_")
         def sign = md5Hex(signStr)
         def authx = "nonce=${nonce}&timestamp=${now}&sign=${sign}"
+        def publicKey = "dummy-public-key"
+        def signxStr = [now, nonce, sign, dataMd5, url, publicKey].join("_")
+        def signx = MessageDigest.getInstance("SHA-256")
+            .digest(signxStr.getBytes("UTF-8"))
+            .collect { String.format("%02x", it) }
+            .join("")
 
         def os = System.getProperty("os.name", "").toLowerCase()
         def arch = System.getProperty("os.arch", "").toLowerCase()
@@ -236,7 +242,14 @@ tasks.register('verifyAuthxVerifierBinary') {
         bin.setExecutable(true)
 
         execOps.exec {
-            commandLine(bin.absolutePath, "--authx", authx, "--url", url, "--data-md5", dataMd5)
+            commandLine(
+                bin.absolutePath,
+                "--authx", authx,
+                "--url", url,
+                "--data-md5", dataMd5,
+                "--signx", signx,
+                "--public-key", publicKey
+            )
         }
     }
 }

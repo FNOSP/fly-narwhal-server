@@ -549,7 +549,7 @@
             const result = await response.json();
             if (result.code === 200) {
                 if (result.data === 'exists') {
-                    openAuthModal('授权码', '授权码已存在，请勿重复获取。', '');
+                    openAuthModal('授权码', '授权码已存在。如需重新生成，请删除飞鲸服务端 jar 文件所在目录下的 auth_code 文件后再次获取。', '');
                 } else {
                     openAuthModal('授权码', '此授权码只展示一次，请立即复制并妥善保存！', result.data);
                 }
