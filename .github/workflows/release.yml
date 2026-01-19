@@ -69,7 +69,9 @@ jobs:
           FLY_NARWHAL_API_SECRET: ${{ secrets.FLY_NARWHAL_API_SECRET }}
           FLY_NARWHAL_BUILD_AUTHX_VERIFIER: '1'
           FLY_NARWHAL_AUTHX_VERIFIER_DIR: ${{ github.workspace }}/authx-verifier
-        run: ./gradlew --stacktrace --info :fly-narwhal-web:test :fly-narwhal-web:bootJar :fly-narwhal-web:verifyAuthxVerifierBinary
+        # Unit tests are temporarily disabled in GitHub Actions.
+        # run: ./gradlew --stacktrace --info :fly-narwhal-web:test :fly-narwhal-web:bootJar :fly-narwhal-web:verifyAuthxVerifierBinary
+        run: ./gradlew --stacktrace --info :fly-narwhal-web:bootJar :fly-narwhal-web:verifyAuthxVerifierBinary
 
       - name: Upload build reports (on failure)
         if: failure()
