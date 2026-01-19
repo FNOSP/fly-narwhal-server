@@ -17,6 +17,7 @@ import java.util.Base64;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 import java.math.BigInteger;
 import java.security.interfaces.XECPrivateKey;
@@ -35,7 +36,7 @@ public class FnAuthService {
     private static final int FN1_AUTH_CODE_PAYLOAD_LEN = 33;
 
     private final String apiSecret;
-    private final Object responseKeyLock = new Object();
+    private final ReentrantReadWriteLock responseKeyRwLock = new ReentrantReadWriteLock();
     private ResponseKeys responseKeys;
 
     public FnAuthService(FnAuthConfigService fnAuthConfigService,
@@ -51,7 +52,7 @@ public class FnAuthService {
 
     @PostConstruct
     public void initExternalAuthxVerifier() {
-        loadResponseKeys();
+        ensureResponseKeysLoaded();
         ExternalAuthxVerifier.preload();
     }
 
@@ -66,30 +67,52 @@ public class FnAuthService {
     }
 
     private ResponseKeys getResponseKeysSnapshot() {
-        synchronized (responseKeyLock) {
+        var readLock = responseKeyRwLock.readLock();
+        readLock.lock();
+        try {
             return responseKeys;
+        } finally {
+            readLock.unlock();
         }
     }
 
     private void setResponseKeys(ResponseKeys keys) {
-        synchronized (responseKeyLock) {
+        var writeLock = responseKeyRwLock.writeLock();
+        writeLock.lock();
+        try {
             responseKeys = keys;
+        } finally {
+            writeLock.unlock();
         }
     }
 
-    private void loadResponseKeys() {
+    private void ensureResponseKeysLoaded() {
+        if (getResponseKeysSnapshot() != null) {
+            return;
+        }
+        ResponseKeys loaded = loadResponseKeysFromFile();
+        var writeLock = responseKeyRwLock.writeLock();
+        writeLock.lock();
+        try {
+            if (responseKeys == null) {
+                responseKeys = loaded;
+            }
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    private ResponseKeys loadResponseKeysFromFile() {
         try {
             java.io.File f = new java.io.File(AUTH_CODE_FILE);
             if (!f.exists() || !f.isFile()) {
-                setResponseKeys(null);
-                return;
+                return null;
             }
 
             byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
             String loaded = new String(bytes, StandardCharsets.UTF_8).trim();
             if (loaded.isBlank()) {
-                setResponseKeys(null);
-                return;
+                return null;
             }
 
             String privateKeyBase64;
@@ -98,7 +121,7 @@ public class FnAuthService {
             if (delimIdx >= 0) {
                 privateKeyBase64 = loaded.substring(0, delimIdx).trim();
                 publicPart = loaded.substring(delimIdx + AUTH_CODE_DELIM.length()).trim();
-                if (publicPart != null && publicPart.isBlank()) {
+                if (publicPart.isBlank()) {
                     publicPart = null;
                 }
             } else {
@@ -106,51 +129,56 @@ public class FnAuthService {
             }
 
             if (publicPart == null || !isFn1AuthCode(publicPart)) {
-                setResponseKeys(null);
-                return;
+                return null;
             }
 
-            setResponseKeys(new ResponseKeys(privateKeyBase64, publicPart));
             log.info("Loaded response FN1 private key from file");
+            return new ResponseKeys(privateKeyBase64, publicPart);
         } catch (Exception e) {
             log.error("Failed to load response private key", e);
-            setResponseKeys(null);
+            return null;
         }
     }
 
-    public synchronized String getOrGenerateAuthCode() {
-        loadResponseKeys();
-        ResponseKeys existing = getResponseKeysSnapshot();
-        if (existing != null && existing.authCode != null && !existing.authCode.isBlank()) {
-            return existing.authCode;
-        }
+    public String getOrGenerateAuthCode() {
+        var writeLock = responseKeyRwLock.writeLock();
+        writeLock.lock();
+        try {
+            responseKeys = loadResponseKeysFromFile();
+            ResponseKeys current = responseKeys;
+            if (current != null && current.authCode != null && !current.authCode.isBlank()) {
+                return current.authCode;
+            }
 
-        if (ExternalAuthxVerifier.isAvailable()) {
-            ExternalAuthxVerifier.GeneratedAuthCode generated = ExternalAuthxVerifier.generateAuthCode();
-            if (generated != null) {
-                try {
-                    String content = generated.privateKeyBase64() + AUTH_CODE_DELIM + generated.authCode();
-                    java.nio.file.Files.write(java.nio.file.Paths.get(AUTH_CODE_FILE), content.getBytes(StandardCharsets.UTF_8));
-                    setResponseKeys(new ResponseKeys(generated.privateKeyBase64(), generated.authCode()));
-                    log.info("Generated and saved new response FN1 private key");
-                    return generated.authCode();
-                } catch (Exception e) {
-                    log.error("Failed to write private key file", e);
-                    throw new RuntimeException("Failed to save auth code");
+            if (ExternalAuthxVerifier.isAvailable()) {
+                ExternalAuthxVerifier.GeneratedAuthCode generated = ExternalAuthxVerifier.generateAuthCode();
+                if (generated != null) {
+                    try {
+                        String content = generated.privateKeyBase64() + AUTH_CODE_DELIM + generated.authCode();
+                        java.nio.file.Files.write(java.nio.file.Paths.get(AUTH_CODE_FILE), content.getBytes(StandardCharsets.UTF_8));
+                        responseKeys = new ResponseKeys(generated.privateKeyBase64(), generated.authCode());
+                        log.info("Generated and saved new response FN1 private key");
+                        return generated.authCode();
+                    } catch (Exception e) {
+                        log.error("Failed to write private key file", e);
+                        throw new RuntimeException("Failed to save auth code");
+                    }
                 }
             }
-        }
 
-        try {
-            GeneratedFn1 generated = generateFn1AuthCodeInternal();
-            String content = generated.privateKeyBase64 + AUTH_CODE_DELIM + generated.authCode;
-            java.nio.file.Files.write(java.nio.file.Paths.get(AUTH_CODE_FILE), content.getBytes(StandardCharsets.UTF_8));
-            setResponseKeys(new ResponseKeys(generated.privateKeyBase64, generated.authCode));
-            log.info("Generated and saved new response FN1 private key");
-            return generated.authCode;
-        } catch (Exception e) {
-            log.error("Failed to write private key file", e);
-            throw new RuntimeException("Failed to save auth code");
+            try {
+                GeneratedFn1 generated = generateFn1AuthCodeInternal();
+                String content = generated.privateKeyBase64 + AUTH_CODE_DELIM + generated.authCode;
+                java.nio.file.Files.write(java.nio.file.Paths.get(AUTH_CODE_FILE), content.getBytes(StandardCharsets.UTF_8));
+                responseKeys = new ResponseKeys(generated.privateKeyBase64, generated.authCode);
+                log.info("Generated and saved new response FN1 private key");
+                return generated.authCode;
+            } catch (Exception e) {
+                log.error("Failed to write private key file", e);
+                throw new RuntimeException("Failed to save auth code");
+            }
+        } finally {
+            writeLock.unlock();
         }
     }
 
@@ -192,7 +220,7 @@ public class FnAuthService {
 
         String dataJsonMd5 = buildDataJsonMd5(parameters, body);
 
-//        loadResponseKeys();
+        ensureResponseKeysLoaded();
         ResponseKeys keys = getResponseKeysSnapshot();
         if (keys == null || keys.authCode == null || keys.authCode.isBlank()) {
             log.warn("Missing response auth code in auth_code file; delete auth_code and regenerate");
@@ -227,13 +255,13 @@ public class FnAuthService {
     }
 
     public String getResponseAuthCodeOrNull() {
-//        loadResponseKeys();
+        ensureResponseKeysLoaded();
         ResponseKeys keys = getResponseKeysSnapshot();
         return keys == null ? null : keys.authCode;
     }
 
     public String getResponseFn1PrivateKeyBase64OrNull() {
-//        loadResponseKeys();
+        ensureResponseKeysLoaded();
         ResponseKeys keys = getResponseKeysSnapshot();
         return keys == null ? null : keys.fn1PrivateKeyBase64;
     }
