@@ -112,7 +112,7 @@ public class FnAuthService {
             if (generated != null) {
                 try {
                     String content = generated.privateKeyBase64() + AUTH_CODE_DELIM + generated.authCode();
-                    java.nio.file.Files.write(java.nio.file.Paths.get(AUTH_CODE_FILE), content.getBytes(StandardCharsets.UTF_8));
+                    java.nio.file.Files.writeString(java.nio.file.Paths.get(AUTH_CODE_FILE), content);
                     this.responseFn1PrivateKeyBase64 = generated.privateKeyBase64();
                     this.responseAuthCode = generated.authCode();
                     log.info("Generated and saved new response FN1 private key");
@@ -127,7 +127,7 @@ public class FnAuthService {
         try {
             GeneratedFn1 generated = generateFn1AuthCodeInternal();
             String content = generated.privateKeyBase64 + AUTH_CODE_DELIM + generated.authCode;
-            java.nio.file.Files.write(java.nio.file.Paths.get(AUTH_CODE_FILE), content.getBytes(StandardCharsets.UTF_8));
+            java.nio.file.Files.writeString(java.nio.file.Paths.get(AUTH_CODE_FILE), content);
             this.responseFn1PrivateKeyBase64 = generated.privateKeyBase64;
             this.responseAuthCode = generated.authCode;
             log.info("Generated and saved new response FN1 private key");
@@ -176,7 +176,7 @@ public class FnAuthService {
 
         String dataJsonMd5 = buildDataJsonMd5(parameters, body);
 
-        loadResponseKeys();
+//        loadResponseKeys();
         if (responseAuthCode == null || responseAuthCode.isBlank()) {
             log.warn("Missing response auth code in auth_code file; delete auth_code and regenerate");
             return false;
@@ -210,12 +210,12 @@ public class FnAuthService {
     }
 
     public String getResponseAuthCodeOrNull() {
-        loadResponseKeys();
+//        loadResponseKeys();
         return responseAuthCode;
     }
 
     public String getResponseFn1PrivateKeyBase64OrNull() {
-        loadResponseKeys();
+//        loadResponseKeys();
         return responseFn1PrivateKeyBase64;
     }
 
