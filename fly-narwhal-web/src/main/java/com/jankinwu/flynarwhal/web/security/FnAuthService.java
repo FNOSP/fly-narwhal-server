@@ -5,6 +5,7 @@ import com.jankinwu.flynarwhal.web.service.FnAuthConfigService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -42,6 +43,7 @@ public class FnAuthService {
     private final ReentrantReadWriteLock responseKeyLock = new ReentrantReadWriteLock();
     private ResponseKeys responseKeys;
 
+    @Autowired
     public FnAuthService(FnAuthConfigService fnAuthConfigService,
                          ObjectMapper objectMapper,
                          @Value("${fly-narwhal.api-secret:}") String apiSecret) {
