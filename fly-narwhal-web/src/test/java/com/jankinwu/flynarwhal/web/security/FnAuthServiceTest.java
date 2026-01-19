@@ -31,7 +31,12 @@ class FnAuthServiceTest {
 
         Path authCodePath = Paths.get("auth_code");
         try {
+            Files.deleteIfExists(authCodePath);
             String authCode = svc.getOrGenerateAuthCode();
+            if ("exists".equals(authCode)) {
+                authCode = svc.getResponseAuthCodeOrNull();
+            }
+            Assertions.assertNotNull(authCode);
 
             String url = "/api/danmu/ping";
             Map<String, String[]> params = new HashMap<>();
@@ -63,7 +68,12 @@ class FnAuthServiceTest {
 
         Path authCodePath = Paths.get("auth_code");
         try {
+            Files.deleteIfExists(authCodePath);
             String authCode = svc.getOrGenerateAuthCode();
+            if ("exists".equals(authCode)) {
+                authCode = svc.getResponseAuthCodeOrNull();
+            }
+            Assertions.assertNotNull(authCode);
 
             String url = "/api/danmu/ping";
             Map<String, String[]> params = new HashMap<>();
@@ -130,6 +140,7 @@ class FnAuthServiceTest {
 
     @Test
     void getOrGenerateAuthCode_checksLocalFileEveryCall() throws Exception {
+        System.setProperty("fly-narwhal.external-authx.enabled", "false");
         Path authCodePath = Paths.get("auth_code");
 
         try {
@@ -143,7 +154,8 @@ class FnAuthServiceTest {
             String forced = mutateFn1AuthCode(first);
             Files.writeString(authCodePath, TEST_FN1_PRIVATE_KEY_BASE64 + "|" + forced, StandardCharsets.UTF_8);
             String second = svc.getOrGenerateAuthCode();
-            Assertions.assertEquals(forced, second);
+            Assertions.assertEquals("exists", second);
+            Assertions.assertEquals(forced, svc.getResponseAuthCodeOrNull());
 
             Files.deleteIfExists(authCodePath);
 

@@ -159,7 +159,14 @@ final class ExternalAuthxVerifier {
     }
 
     private static boolean isEnabled() {
-        return BuildVersionConfiguration.BUILD_AUTHX_VERIFIER;
+        if (!BuildVersionConfiguration.BUILD_AUTHX_VERIFIER) {
+            return false;
+        }
+        String enabled = System.getProperty("fly-narwhal.external-authx.enabled");
+        if (enabled == null || enabled.isBlank()) {
+            return true;
+        }
+        return Boolean.parseBoolean(enabled);
     }
 
     private static synchronized void ensureExtracted() {
