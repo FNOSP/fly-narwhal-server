@@ -3,6 +3,8 @@ package com.jankinwu.flynarwhal.web.security;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import com.jankinwu.flynarwhal.web.config.BuildVersionConfiguration;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -48,6 +50,10 @@ final class ExternalAuthxVerifierTest {
 
     @BeforeAll
     static void beforeAll() throws Exception {
+        Assumptions.assumeTrue(
+                BuildVersionConfiguration.BUILD_AUTHX_VERIFIER,
+                "External authx verifier is disabled when FLY_NARWHAL_BUILD_AUTHX_VERIFIER=0"
+        );
         ExternalAuthxVerifier.shutdown();
         Assumptions.assumeFalse(
                 System.getProperty("os.name", "").toLowerCase().contains("windows"),

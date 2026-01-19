@@ -1,6 +1,7 @@
 package com.jankinwu.flynarwhal.web.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jankinwu.flynarwhal.web.config.BuildVersionConfiguration;
 import com.jankinwu.flynarwhal.web.service.FnAuthConfigService;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
@@ -185,6 +186,10 @@ class FnAuthServiceTest {
 
     @Test
     void getOrGenerateAuthCode_shouldUseExternalVerifierWhenAvailable() throws Exception {
+        Assumptions.assumeTrue(
+                BuildVersionConfiguration.BUILD_AUTHX_VERIFIER,
+                "External authx verifier is disabled when FLY_NARWHAL_BUILD_AUTHX_VERIFIER=0"
+        );
         System.setProperty("fly-narwhal.external-authx.enabled", "true");
         System.setProperty("fly-narwhal.external-authx.pool-size", "1");
         System.setProperty("fly-narwhal.external-authx.timeout-ms", Long.toString(Duration.ofSeconds(2).toMillis()));
@@ -218,6 +223,10 @@ class FnAuthServiceTest {
 
     @Test
     void validateAuthx_shouldAcceptWhenExternalVerifierReturnsTrue() throws Exception {
+        Assumptions.assumeTrue(
+                BuildVersionConfiguration.BUILD_AUTHX_VERIFIER,
+                "External authx verifier is disabled when FLY_NARWHAL_BUILD_AUTHX_VERIFIER=0"
+        );
         System.setProperty("fly-narwhal.external-authx.enabled", "true");
         System.setProperty("fly-narwhal.external-authx.pool-size", "1");
         System.setProperty("fly-narwhal.external-authx.timeout-ms", Long.toString(Duration.ofSeconds(2).toMillis()));

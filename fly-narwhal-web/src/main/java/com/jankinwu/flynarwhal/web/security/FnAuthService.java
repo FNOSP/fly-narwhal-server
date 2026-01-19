@@ -132,19 +132,24 @@ public class FnAuthService {
             return "exists";
         }
 
-        if (ExternalAuthxVerifier.isAvailable()) {
+        if (ExternalAuthxVerifier.isExternalOnlyMode()) {
+            if (!ExternalAuthxVerifier.isAvailable()) {
+                throw new IllegalStateException("External authx verifier is required but not available");
+            }
             ExternalAuthxVerifier.GeneratedAuthCode generated = ExternalAuthxVerifier.generateAuthCode();
-            if (generated != null) {
-                try {
-                    String content = generated.privateKeyBase64() + AUTH_CODE_DELIM + generated.authCode();
-                    java.nio.file.Files.write(java.nio.file.Paths.get(AUTH_CODE_FILE), content.getBytes(StandardCharsets.UTF_8));
-                    setResponseKeys(new ResponseKeys(generated.privateKeyBase64(), generated.authCode()));
-                    log.info("Generated and saved new response FN1 private key");
-                    return generated.authCode();
-                } catch (Exception e) {
-                    log.error("Failed to write private key file", e);
-                    throw new RuntimeException("Failed to save auth code");
-                }
+            if (generated == null || generated.privateKeyBase64() == null || generated.privateKeyBase64().isBlank()
+                    || generated.authCode() == null || generated.authCode().isBlank()) {
+                throw new IllegalStateException("External authx verifier is required but failed to generate auth code");
+            }
+            try {
+                String content = generated.privateKeyBase64() + AUTH_CODE_DELIM + generated.authCode();
+                java.nio.file.Files.write(java.nio.file.Paths.get(AUTH_CODE_FILE), content.getBytes(StandardCharsets.UTF_8));
+                setResponseKeys(new ResponseKeys(generated.privateKeyBase64(), generated.authCode()));
+                log.info("Generated and saved new response FN1 private key");
+                return generated.authCode();
+            } catch (Exception e) {
+                log.error("Failed to write private key file", e);
+                throw new RuntimeException("Failed to save auth code");
             }
         }
 
@@ -216,6 +221,18 @@ public class FnAuthService {
         }
 
         boolean externalAvailable = isFn1AuthCode(keys.authCode) && ExternalAuthxVerifier.isAvailable();
+        if (ExternalAuthxVerifier.isExternalOnlyMode()) {
+            if (!externalAvailable) {
+                log.warn("External authx verifier is required but unavailable");
+                return false;
+            }
+            Boolean ok = ExternalAuthxVerifier.verify(authxHeader, url, dataJsonMd5, signxHeader, keys.authCode);
+            if (ok == null || !ok) {
+                log.warn("Authx signature mismatch! url: {}, sign: {}", url, sign);
+                return false;
+            }
+            return true;
+        }
         if (externalAvailable) {
             Boolean ok = ExternalAuthxVerifier.verify(authxHeader, url, dataJsonMd5, signxHeader, keys.authCode);
             if (ok != null) {

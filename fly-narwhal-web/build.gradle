@@ -44,6 +44,7 @@ tasks.register('generateVersionConfig') {
         def buildTime = OffsetDateTime.now(ZoneOffset.ofHours(8)).toString()
         def baseVersion = project.ext.baseVersion?.toString() ?: project.version.toString()
         def version = project.version.toString()
+        def buildAuthxVerifier = "1".equals(System.getenv("FLY_NARWHAL_BUILD_AUTHX_VERIFIER"))
 
         def file = new File(packagePath, "BuildVersionConfiguration.java")
         file.text =
@@ -57,6 +58,7 @@ tasks.register('generateVersionConfig') {
             "    public static final String VERSION = \"" + version + "\";\n" +
             "    public static final String BASE_VERSION = \"" + baseVersion + "\";\n" +
             "    public static final String BUILD_TIME = \"" + buildTime + "\";\n" +
+            "    public static final boolean BUILD_AUTHX_VERIFIER = " + buildAuthxVerifier + ";\n" +
             "\n" +
             "    @Bean\n" +
             "    public BuildVersionInfo buildVersionInfo() {\n" +

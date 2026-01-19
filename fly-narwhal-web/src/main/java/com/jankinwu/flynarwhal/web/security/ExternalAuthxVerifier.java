@@ -1,5 +1,7 @@
 package com.jankinwu.flynarwhal.web.security;
 
+import com.jankinwu.flynarwhal.web.config.BuildVersionConfiguration;
+
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.InputStream;
@@ -148,9 +150,16 @@ final class ExternalAuthxVerifier {
         attempted = false;
     }
 
+    static boolean isExternalOnlyMode() {
+        return isEnabled();
+    }
+
+    static boolean isInternalOnlyMode() {
+        return !isEnabled();
+    }
+
     private static boolean isEnabled() {
-        String enabled = System.getProperty("fly-narwhal.external-authx.enabled", "true");
-        return Boolean.parseBoolean(enabled);
+        return BuildVersionConfiguration.BUILD_AUTHX_VERIFIER;
     }
 
     private static synchronized void ensureExtracted() {

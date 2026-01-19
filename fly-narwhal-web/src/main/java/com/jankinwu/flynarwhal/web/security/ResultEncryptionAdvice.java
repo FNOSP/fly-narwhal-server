@@ -109,8 +109,10 @@ public class ResultEncryptionAdvice implements ResponseBodyAdvice<Object> {
                 return body;
             }
 
-            String encrypted = ExternalAuthxVerifier.encryptResponse(dataJson, authCode, fn1PrivateKeyBase64, keyx.trim());
-            if (encrypted == null || encrypted.isBlank()) {
+            String encrypted;
+            if (ExternalAuthxVerifier.isExternalOnlyMode()) {
+                encrypted = ExternalAuthxVerifier.encryptResponse(dataJson, authCode, fn1PrivateKeyBase64, keyx.trim());
+            } else {
                 encrypted = encryptResponseInternal(dataJson, authCode, fn1PrivateKeyBase64, keyx.trim());
             }
             if (encrypted == null || encrypted.isBlank()) {
