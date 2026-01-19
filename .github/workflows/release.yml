@@ -100,7 +100,7 @@ jobs:
           TAG_NAME="${{ steps.release_tag.outputs.tag }}"
 
           # 在此处手动填写发布日志
-          NOTES="1. 实现服务端自动更新功能（需要客户端 v1.7.7 及以上版本）"
+          NOTES="1. 实现授权码生成和通信数据加密功能（需要客户端 1.8.0 及以上版本）"
 
           # 如果是通过 GitHub 页面手动触发并输入了日志，则优先使用输入的内容
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_body }}" ]; then
