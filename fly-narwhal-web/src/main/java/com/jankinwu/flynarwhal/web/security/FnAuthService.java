@@ -143,7 +143,7 @@ public class FnAuthService {
             }
             try {
                 String content = generated.privateKeyBase64() + AUTH_CODE_DELIM + generated.authCode();
-                java.nio.file.Files.write(java.nio.file.Paths.get(AUTH_CODE_FILE), content.getBytes(StandardCharsets.UTF_8));
+                java.nio.file.Files.writeString(java.nio.file.Paths.get(AUTH_CODE_FILE), content);
                 setResponseKeys(new ResponseKeys(generated.privateKeyBase64(), generated.authCode()));
                 log.info("Generated and saved new response FN1 private key");
                 return generated.authCode();
@@ -156,7 +156,7 @@ public class FnAuthService {
         try {
             GeneratedFn1 generated = generateFn1AuthCodeInternal();
             String content = generated.privateKeyBase64 + AUTH_CODE_DELIM + generated.authCode;
-            java.nio.file.Files.write(java.nio.file.Paths.get(AUTH_CODE_FILE), content.getBytes(StandardCharsets.UTF_8));
+            java.nio.file.Files.writeString(java.nio.file.Paths.get(AUTH_CODE_FILE), content);
             setResponseKeys(new ResponseKeys(generated.privateKeyBase64, generated.authCode));
             log.info("Generated and saved new response FN1 private key");
             return generated.authCode;
@@ -206,7 +206,7 @@ public class FnAuthService {
 
         ResponseKeys keys = getResponseKeysSnapshot();
         if (keys == null || keys.authCode == null || keys.authCode.isBlank()) {
-            loadResponseKeys();
+//            loadResponseKeys();
             keys = getResponseKeysSnapshot();
         }
         if (keys == null || keys.authCode == null || keys.authCode.isBlank()) {
@@ -256,7 +256,7 @@ public class FnAuthService {
     public String getResponseAuthCodeOrNull() {
         ResponseKeys keys = getResponseKeysSnapshot();
         if (keys == null || keys.authCode == null || keys.authCode.isBlank()) {
-            loadResponseKeys();
+//            loadResponseKeys();
             keys = getResponseKeysSnapshot();
         }
         return keys == null ? null : keys.authCode;
@@ -265,7 +265,7 @@ public class FnAuthService {
     public String getResponseFn1PrivateKeyBase64OrNull() {
         ResponseKeys keys = getResponseKeysSnapshot();
         if (keys == null || keys.fn1PrivateKeyBase64 == null || keys.fn1PrivateKeyBase64.isBlank()) {
-            loadResponseKeys();
+//            loadResponseKeys();
             keys = getResponseKeysSnapshot();
         }
         return keys == null ? null : keys.fn1PrivateKeyBase64;

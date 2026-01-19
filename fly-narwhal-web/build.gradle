@@ -1,6 +1,7 @@
 import java.security.MessageDigest
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 plugins {
     id 'java'
@@ -41,7 +42,7 @@ tasks.register('generateVersionConfig') {
         def packagePath = new File(dir, "com/jankinwu/flynarwhal/web/config")
         packagePath.mkdirs()
 
-        def buildTime = OffsetDateTime.now(ZoneOffset.ofHours(8)).toString()
+        def buildTime = OffsetDateTime.now(ZoneOffset.ofHours(8)).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
         def baseVersion = project.ext.baseVersion?.toString() ?: project.version.toString()
         def version = project.version.toString()
         def buildAuthxVerifier = "1".equals(System.getenv("FLY_NARWHAL_BUILD_AUTHX_VERIFIER"))
