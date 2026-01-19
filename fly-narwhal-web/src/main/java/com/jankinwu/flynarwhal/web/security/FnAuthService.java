@@ -9,20 +9,18 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
-import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
-import java.security.PrivateKey;
-import java.security.PublicKey;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
-import java.security.spec.PKCS8EncodedKeySpec;
-import java.security.spec.X509EncodedKeySpec;
+import java.math.BigInteger;
+import java.security.interfaces.XECPrivateKey;
+import java.security.interfaces.XECPublicKey;
 
 @Slf4j
 @Service
@@ -32,12 +30,13 @@ public class FnAuthService {
     private static final String DEFAULT_API_SECRET = "16CCEB3D-AB42-077D-36A1-F355324E4237";
     private static final String AUTH_CODE_FILE = "auth_code";
     private static final String AUTH_CODE_DELIM = "|";
-    private static final String KEY_ALGO = "RSA";
-    private static final int KEY_SIZE = 2048;
+    private static final String AUTH_CODE_PREFIX = "FN1";
+    private static final String AUTH_CODE_PREFIX_DELIM = "_";
+    private static final int FN1_AUTH_CODE_PAYLOAD_LEN = 33;
 
     private final String apiSecret;
-    private volatile PrivateKey responsePrivateKey;
-    private volatile String responsePublicKeyBase64;
+    private volatile String responseFn1PrivateKeyBase64;
+    private volatile String responseAuthCode;
 
     public FnAuthService(FnAuthConfigService fnAuthConfigService,
                          ObjectMapper objectMapper,
@@ -60,57 +59,79 @@ public class FnAuthService {
         try {
             java.io.File f = new java.io.File(AUTH_CODE_FILE);
             if (!f.exists() || !f.isFile()) {
-                this.responsePrivateKey = null;
-                this.responsePublicKeyBase64 = null;
+                this.responseFn1PrivateKeyBase64 = null;
+                this.responseAuthCode = null;
                 return;
             }
 
             byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
             String loaded = new String(bytes, StandardCharsets.UTF_8).trim();
             if (loaded.isBlank()) {
-                this.responsePrivateKey = null;
-                this.responsePublicKeyBase64 = null;
+                this.responseFn1PrivateKeyBase64 = null;
+                this.responseAuthCode = null;
                 return;
             }
 
             String privateKeyBase64;
-            String publicKeyBase64 = null;
+            String publicPart = null;
             int delimIdx = loaded.indexOf(AUTH_CODE_DELIM);
             if (delimIdx >= 0) {
                 privateKeyBase64 = loaded.substring(0, delimIdx).trim();
-                publicKeyBase64 = loaded.substring(delimIdx + AUTH_CODE_DELIM.length()).trim();
-                if (publicKeyBase64 != null && publicKeyBase64.isBlank()) {
-                    publicKeyBase64 = null;
+                publicPart = loaded.substring(delimIdx + AUTH_CODE_DELIM.length()).trim();
+                if (publicPart != null && publicPart.isBlank()) {
+                    publicPart = null;
                 }
             } else {
                 privateKeyBase64 = loaded.trim();
             }
 
-            this.responsePrivateKey = decodePrivateKey(privateKeyBase64);
-            this.responsePublicKeyBase64 = publicKeyBase64;
-            log.info("Loaded response private key from file");
+            if (publicPart == null || !isFn1AuthCode(publicPart)) {
+                this.responseFn1PrivateKeyBase64 = null;
+                this.responseAuthCode = null;
+                return;
+            }
+
+            this.responseFn1PrivateKeyBase64 = privateKeyBase64;
+            this.responseAuthCode = publicPart;
+            log.info("Loaded response FN1 private key from file");
         } catch (Exception e) {
             log.error("Failed to load response private key", e);
+            this.responseFn1PrivateKeyBase64 = null;
+            this.responseAuthCode = null;
         }
     }
 
     public synchronized String getOrGenerateAuthCode() {
         loadResponseKeys();
-        if (this.responsePrivateKey != null) {
-            return "exists";
+        if (this.responseAuthCode != null && !this.responseAuthCode.isBlank()) {
+            return this.responseAuthCode;
         }
 
-        KeyPair pair = generateKeyPair();
-        String publicKey = Base64.getEncoder().encodeToString(pair.getPublic().getEncoded());
-        String privateKey = Base64.getEncoder().encodeToString(pair.getPrivate().getEncoded());
+        if (ExternalAuthxVerifier.isAvailable()) {
+            ExternalAuthxVerifier.GeneratedAuthCode generated = ExternalAuthxVerifier.generateAuthCode();
+            if (generated != null) {
+                try {
+                    String content = generated.privateKeyBase64() + AUTH_CODE_DELIM + generated.authCode();
+                    java.nio.file.Files.write(java.nio.file.Paths.get(AUTH_CODE_FILE), content.getBytes(StandardCharsets.UTF_8));
+                    this.responseFn1PrivateKeyBase64 = generated.privateKeyBase64();
+                    this.responseAuthCode = generated.authCode();
+                    log.info("Generated and saved new response FN1 private key");
+                    return generated.authCode();
+                } catch (Exception e) {
+                    log.error("Failed to write private key file", e);
+                    throw new RuntimeException("Failed to save auth code");
+                }
+            }
+        }
 
         try {
-            String content = privateKey + AUTH_CODE_DELIM + publicKey;
+            GeneratedFn1 generated = generateFn1AuthCodeInternal();
+            String content = generated.privateKeyBase64 + AUTH_CODE_DELIM + generated.authCode;
             java.nio.file.Files.write(java.nio.file.Paths.get(AUTH_CODE_FILE), content.getBytes(StandardCharsets.UTF_8));
-            this.responsePrivateKey = pair.getPrivate();
-            this.responsePublicKeyBase64 = publicKey;
-            log.info("Generated and saved new response private key");
-            return publicKey;
+            this.responseFn1PrivateKeyBase64 = generated.privateKeyBase64;
+            this.responseAuthCode = generated.authCode;
+            log.info("Generated and saved new response FN1 private key");
+            return generated.authCode;
         } catch (Exception e) {
             log.error("Failed to write private key file", e);
             throw new RuntimeException("Failed to save auth code");
@@ -156,20 +177,20 @@ public class FnAuthService {
         String dataJsonMd5 = buildDataJsonMd5(parameters, body);
 
         loadResponseKeys();
-        if (responsePublicKeyBase64 == null || responsePublicKeyBase64.isBlank()) {
-            log.warn("Missing response public key in auth_code file; delete auth_code and regenerate");
+        if (responseAuthCode == null || responseAuthCode.isBlank()) {
+            log.warn("Missing response auth code in auth_code file; delete auth_code and regenerate");
             return false;
         }
-        String signxStr = String.join("_", timestamp, nonce, sign, dataJsonMd5, url, responsePublicKeyBase64);
+        String signxStr = String.join("_", timestamp, nonce, sign, dataJsonMd5, url, responseAuthCode);
         String expectedSignx = sha256Hex(signxStr);
         if (!expectedSignx.equalsIgnoreCase(signxHeader)) {
             log.warn("Signx signature mismatch! url: {}, expected: {}, actual: {}", url, expectedSignx, signxHeader);
             return false;
         }
 
-        boolean externalAvailable = ExternalAuthxVerifier.isAvailable();
+        boolean externalAvailable = isFn1AuthCode(responseAuthCode) && ExternalAuthxVerifier.isAvailable();
         if (externalAvailable) {
-            Boolean ok = ExternalAuthxVerifier.verify(authxHeader, url, dataJsonMd5, signxHeader, responsePublicKeyBase64);
+            Boolean ok = ExternalAuthxVerifier.verify(authxHeader, url, dataJsonMd5, signxHeader, responseAuthCode);
             if (ok != null) {
                 if (!ok) {
                     log.warn("Authx signature mismatch! url: {}, sign: {}", url, sign);
@@ -188,41 +209,76 @@ public class FnAuthService {
         return ok;
     }
 
-    public PrivateKey getResponsePrivateKeyOrNull() {
+    public String getResponseAuthCodeOrNull() {
         loadResponseKeys();
-        return responsePrivateKey;
+        return responseAuthCode;
     }
 
-    private static KeyPair generateKeyPair() {
+    public String getResponseFn1PrivateKeyBase64OrNull() {
+        loadResponseKeys();
+        return responseFn1PrivateKeyBase64;
+    }
+
+    private static GeneratedFn1 generateFn1AuthCodeInternal() {
         try {
-            KeyPairGenerator generator = KeyPairGenerator.getInstance(KEY_ALGO);
-            generator.initialize(KEY_SIZE);
-            return generator.generateKeyPair();
+            KeyPair pair = KeyPairGenerator.getInstance("X25519").generateKeyPair();
+            XECPublicKey pub = (XECPublicKey) pair.getPublic();
+            XECPrivateKey priv = (XECPrivateKey) pair.getPrivate();
+
+            byte[] pubRaw = x25519PublicKeyToRaw32(pub);
+            byte[] payload = new byte[FN1_AUTH_CODE_PAYLOAD_LEN];
+            payload[0] = 1;
+            System.arraycopy(pubRaw, 0, payload, 1, pubRaw.length);
+
+            String authCode = AUTH_CODE_PREFIX + AUTH_CODE_PREFIX_DELIM
+                    + Base64.getUrlEncoder().withoutPadding().encodeToString(payload);
+
+            byte[] scalar = priv.getScalar().orElseThrow(() -> new IllegalStateException("X25519 private scalar unavailable"));
+            byte[] scalar32 = toFixedLenLittleEndian(scalar, 32);
+            String privateKeyBase64 = Base64.getEncoder().encodeToString(scalar32);
+
+            return new GeneratedFn1(privateKeyBase64, authCode);
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to generate RSA key pair", e);
+            throw new IllegalStateException("Failed to generate FN1 auth code", e);
         }
     }
 
-    private static PrivateKey decodePrivateKey(String privateKeyBase64) {
-        try {
-            byte[] bytes = Base64.getDecoder().decode(privateKeyBase64);
-            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(bytes);
-            KeyFactory kf = KeyFactory.getInstance(KEY_ALGO);
-            return kf.generatePrivate(spec);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid private key content", e);
+    private static byte[] toFixedLenLittleEndian(byte[] in, int len) {
+        if (in.length == len) {
+            return in;
         }
+        byte[] out = new byte[len];
+        int copy = Math.min(in.length, len);
+        System.arraycopy(in, 0, out, 0, copy);
+        return out;
     }
 
-    public static PublicKey decodePublicKey(String publicKeyBase64) {
-        try {
-            byte[] bytes = Base64.getDecoder().decode(publicKeyBase64);
-            X509EncodedKeySpec spec = new X509EncodedKeySpec(bytes);
-            KeyFactory kf = KeyFactory.getInstance(KEY_ALGO);
-            return kf.generatePublic(spec);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid public key content", e);
+    private static byte[] x25519PublicKeyToRaw32(XECPublicKey pub) {
+        byte[] be = bigIntToFixedLen(pub.getU(), 32);
+        byte[] raw = new byte[32];
+        for (int i = 0; i < 32; i++) {
+            raw[i] = be[31 - i];
         }
+        return raw;
+    }
+
+    private static byte[] bigIntToFixedLen(BigInteger v, int len) {
+        byte[] b = v.toByteArray();
+        int offset = (b.length > 0 && b[0] == 0) ? 1 : 0;
+        int effective = b.length - offset;
+        if (effective > len) {
+            throw new IllegalArgumentException("BigInteger too large");
+        }
+        byte[] out = new byte[len];
+        System.arraycopy(b, offset, out, len - effective, effective);
+        return out;
+    }
+
+    private record GeneratedFn1(String privateKeyBase64, String authCode) {
+    }
+
+    public static boolean isFn1AuthCode(String authCode) {
+        return authCode != null && authCode.startsWith(AUTH_CODE_PREFIX + AUTH_CODE_PREFIX_DELIM);
     }
 
     private String buildDataJsonMd5(Map<String, String[]> parameters, byte[] body) {

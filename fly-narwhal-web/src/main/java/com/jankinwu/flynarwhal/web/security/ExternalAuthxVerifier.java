@@ -8,7 +8,9 @@ import java.io.OutputStreamWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.Locale;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -57,6 +59,72 @@ final class ExternalAuthxVerifier {
                     Long.toString(DEFAULT_TIMEOUT.toMillis())
             ));
             return p.verify(authx, url, dataJsonMd5, signx, publicKeyBase64, Duration.ofMillis(timeoutMs));
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    static GeneratedAuthCode generateAuthCode() {
+        if (!isEnabled()) {
+            return null;
+        }
+        ensureExtracted();
+        ensurePoolStarted();
+        VerifierPool p = pool;
+        if (p == null || p.isClosed()) {
+            return null;
+        }
+        try {
+            long timeoutMs = Long.parseLong(System.getProperty(
+                    "fly-narwhal.external-authx.timeout-ms",
+                    Long.toString(DEFAULT_TIMEOUT.toMillis())
+            ));
+            String resp = p.request("GEN\n", Duration.ofMillis(timeoutMs));
+            if (resp == null || resp.isBlank()) {
+                return null;
+            }
+            String[] parts = resp.split("\t", 3);
+            if (parts.length == 3 && "OK".equals(parts[0])) {
+                if (parts[1].isBlank() || parts[2].isBlank()) {
+                    return null;
+                }
+                return new GeneratedAuthCode(parts[1], parts[2]);
+            }
+            return null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    static String encryptResponse(String plaintextJson, String authCode, String privateKeyBase64, String keyxBase64Url) {
+        if (!isEnabled()) {
+            return null;
+        }
+        if (plaintextJson == null || authCode == null || privateKeyBase64 == null || keyxBase64Url == null) {
+            return null;
+        }
+        ensureExtracted();
+        ensurePoolStarted();
+        VerifierPool p = pool;
+        if (p == null || p.isClosed()) {
+            return null;
+        }
+        try {
+            String plaintextB64 = Base64.getEncoder().encodeToString(plaintextJson.getBytes(StandardCharsets.UTF_8));
+            String line = String.join("\t", "ENC", authCode, privateKeyBase64, keyxBase64Url, plaintextB64) + "\n";
+            long timeoutMs = Long.parseLong(System.getProperty(
+                    "fly-narwhal.external-authx.timeout-ms",
+                    Long.toString(DEFAULT_TIMEOUT.toMillis())
+            ));
+            String resp = p.request(line, Duration.ofMillis(timeoutMs));
+            if (resp == null || resp.isBlank()) {
+                return null;
+            }
+            String[] parts = resp.split("\t", 2);
+            if (parts.length == 2 && "OK".equals(parts[0]) && !parts[1].isBlank()) {
+                return parts[1];
+            }
+            return null;
         } catch (Throwable ignored) {
             return null;
         }
@@ -277,6 +345,51 @@ final class ExternalAuthxVerifier {
             }
         }
 
+        private String request(String line, Duration timeout) throws Exception {
+            if (closed) {
+                return null;
+            }
+            AtomicReference<Worker> borrowed = new AtomicReference<>();
+            Callable<String> task = () -> {
+                Worker w = null;
+                try {
+                    w = workers.poll(timeout.toMillis(), TimeUnit.MILLISECONDS);
+                    if (w == null) {
+                        return null;
+                    }
+                    borrowed.set(w);
+                    String out = w.request(line);
+                    if (out == null) {
+                        w.close();
+                        w = Worker.start(binPath);
+                        out = null;
+                    }
+                    return out;
+                } finally {
+                    borrowed.set(null);
+                    if (w != null && !w.isClosed()) {
+                        workers.offer(w);
+                    } else if (!closed) {
+                        Worker replacement = Worker.start(binPath);
+                        if (replacement != null) {
+                            workers.offer(replacement);
+                        }
+                    }
+                }
+            };
+            Future<String> f = executor.submit(task);
+            try {
+                return f.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            } catch (Throwable t) {
+                f.cancel(true);
+                Worker w = borrowed.get();
+                if (w != null) {
+                    w.close();
+                }
+                return null;
+            }
+        }
+
         private void close() {
             closed = true;
             executor.shutdownNow();
@@ -365,6 +478,28 @@ final class ExternalAuthxVerifier {
             }
         }
 
+        private String request(String line) {
+            if (closed) {
+                return null;
+            }
+            try {
+                stdin.write(line);
+                if (!line.endsWith("\n")) {
+                    stdin.write('\n');
+                }
+                stdin.flush();
+                String out = stdout.readLine();
+                if (out == null) {
+                    close();
+                    return null;
+                }
+                return out;
+            } catch (Throwable ignored) {
+                close();
+                return null;
+            }
+        }
+
         private void close() {
             if (closed) {
                 return;
@@ -387,5 +522,8 @@ final class ExternalAuthxVerifier {
             } catch (Throwable ignored) {
             }
         }
+    }
+
+    record GeneratedAuthCode(String privateKeyBase64, String authCode) {
     }
 }
