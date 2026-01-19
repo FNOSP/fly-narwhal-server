@@ -22,6 +22,8 @@ import java.util.stream.Collectors;
 import java.math.BigInteger;
 import java.security.interfaces.XECPrivateKey;
 import java.security.interfaces.XECPublicKey;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 @Slf4j
 @Service
@@ -36,6 +38,7 @@ public class FnAuthService {
     private static final int FN1_AUTH_CODE_PAYLOAD_LEN = 33;
 
     private final String apiSecret;
+    private final Path authCodeFilePath;
     private final ReentrantReadWriteLock responseKeyLock = new ReentrantReadWriteLock();
     private ResponseKeys responseKeys;
 
@@ -48,6 +51,19 @@ public class FnAuthService {
         } else {
             this.apiSecret = apiSecret.trim();
         }
+        this.authCodeFilePath = Paths.get(AUTH_CODE_FILE);
+    }
+
+    FnAuthService(FnAuthConfigService fnAuthConfigService,
+                  ObjectMapper objectMapper,
+                  String apiSecret,
+                  Path authCodeFilePath) {
+        if (apiSecret == null || apiSecret.isBlank()) {
+            this.apiSecret = DEFAULT_API_SECRET;
+        } else {
+            this.apiSecret = apiSecret.trim();
+        }
+        this.authCodeFilePath = authCodeFilePath == null ? Paths.get(AUTH_CODE_FILE) : authCodeFilePath;
     }
 
     @PostConstruct
@@ -86,13 +102,12 @@ public class FnAuthService {
 
     private void loadResponseKeys() {
         try {
-            java.io.File f = new java.io.File(AUTH_CODE_FILE);
-            if (!f.exists() || !f.isFile()) {
+            if (!java.nio.file.Files.exists(authCodeFilePath) || !java.nio.file.Files.isRegularFile(authCodeFilePath)) {
                 setResponseKeys(null);
                 return;
             }
 
-            byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
+            byte[] bytes = java.nio.file.Files.readAllBytes(authCodeFilePath);
             String loaded = new String(bytes, StandardCharsets.UTF_8).trim();
             if (loaded.isBlank()) {
                 setResponseKeys(null);
@@ -143,7 +158,7 @@ public class FnAuthService {
             }
             try {
                 String content = generated.privateKeyBase64() + AUTH_CODE_DELIM + generated.authCode();
-                java.nio.file.Files.writeString(java.nio.file.Paths.get(AUTH_CODE_FILE), content);
+                java.nio.file.Files.writeString(authCodeFilePath, content);
                 setResponseKeys(new ResponseKeys(generated.privateKeyBase64(), generated.authCode()));
                 log.info("Generated and saved new response FN1 private key");
                 return generated.authCode();
@@ -156,7 +171,7 @@ public class FnAuthService {
         try {
             GeneratedFn1 generated = generateFn1AuthCodeInternal();
             String content = generated.privateKeyBase64 + AUTH_CODE_DELIM + generated.authCode;
-            java.nio.file.Files.writeString(java.nio.file.Paths.get(AUTH_CODE_FILE), content);
+            java.nio.file.Files.writeString(authCodeFilePath, content);
             setResponseKeys(new ResponseKeys(generated.privateKeyBase64, generated.authCode));
             log.info("Generated and saved new response FN1 private key");
             return generated.authCode;

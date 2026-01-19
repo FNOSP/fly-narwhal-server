@@ -6,30 +6,38 @@ import com.jankinwu.flynarwhal.web.service.FnAuthConfigService;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 
+@Execution(ExecutionMode.SAME_THREAD)
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
+@ResourceLock("auth_code_file")
+@ResourceLock("external_authx_verifier_state")
 class FnAuthServiceTest {
     private static final String FN_API_KEY = "NDzZTVxnRKP8Z0jXg1VAMonaG8akvh";
     private static final String TEST_FN1_AUTH_CODE = buildTestFn1AuthCode();
     private static final String TEST_FN1_PRIVATE_KEY_BASE64 = buildTestFn1PrivateKeyBase64();
 
     @Test
-    void validateAuthx_acceptsValidSignature_withDefaultSecret() throws Exception {
+    void validateAuthx_acceptsValidSignature_withDefaultSecret(@TempDir Path tempDir) throws Exception {
         System.setProperty("fly-narwhal.external-authx.enabled", "false");
 
         // Ensures local dev fallback still validates signatures with the default secret.
-        FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "");
+        Path authCodePath = tempDir.resolve("auth_code");
+        FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "", authCodePath);
 
-        Path authCodePath = Paths.get("auth_code");
         try {
             Files.deleteIfExists(authCodePath);
             String authCode = svc.getOrGenerateAuthCode();
@@ -58,15 +66,15 @@ class FnAuthServiceTest {
     }
 
     @Test
-    void validateAuthx_acceptsValidSignature_withEnvSecret() throws Exception {
+    void validateAuthx_acceptsValidSignature_withEnvSecret(@TempDir Path tempDir) throws Exception {
         String secret = System.getenv("FLY_NARWHAL_API_SECRET");
         Assumptions.assumeTrue(secret != null && !secret.isBlank(), "FLY_NARWHAL_API_SECRET is required");
         System.setProperty("fly-narwhal.external-authx.enabled", "false");
 
         String trimmedSecret = secret.trim();
-        FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), trimmedSecret);
+        Path authCodePath = tempDir.resolve("auth_code");
+        FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), trimmedSecret, authCodePath);
 
-        Path authCodePath = Paths.get("auth_code");
         try {
             Files.deleteIfExists(authCodePath);
             String authCode = svc.getOrGenerateAuthCode();
@@ -95,11 +103,12 @@ class FnAuthServiceTest {
     }
 
     @Test
-    void validateAuthx_rejectsExpiredTimestamp() {
+    void validateAuthx_rejectsExpiredTimestamp(@TempDir Path tempDir) {
         System.setProperty("fly-narwhal.external-authx.enabled", "false");
 
         // Rejects requests outside the allowed timestamp window.
-        FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "");
+        Path authCodePath = tempDir.resolve("auth_code");
+        FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "", authCodePath);
 
         String url = "/api/danmu/ping";
         String nonce = "123456";
@@ -111,12 +120,12 @@ class FnAuthServiceTest {
     }
 
     @Test
-    void validateAuthx_rejectsInvalidSignx() throws Exception {
+    void validateAuthx_rejectsInvalidSignx(@TempDir Path tempDir) throws Exception {
         System.setProperty("fly-narwhal.external-authx.enabled", "false");
 
-        FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "");
+        Path authCodePath = tempDir.resolve("auth_code");
+        FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "", authCodePath);
 
-        Path authCodePath = Paths.get("auth_code");
         try {
             svc.getOrGenerateAuthCode();
 
@@ -139,14 +148,14 @@ class FnAuthServiceTest {
     }
 
     @Test
-    void getOrGenerateAuthCode_checksLocalFileEveryCall() throws Exception {
+    void getOrGenerateAuthCode_checksLocalFileEveryCall(@TempDir Path tempDir) throws Exception {
         System.setProperty("fly-narwhal.external-authx.enabled", "false");
-        Path authCodePath = Paths.get("auth_code");
+        Path authCodePath = tempDir.resolve("auth_code");
 
         try {
             Files.deleteIfExists(authCodePath);
 
-            FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "");
+            FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "", authCodePath);
 
             String first = svc.getOrGenerateAuthCode();
             Assertions.assertTrue(Files.exists(authCodePath));
@@ -168,14 +177,15 @@ class FnAuthServiceTest {
     }
 
     @Test
-    void validateAuthx_acceptsValidSignature_withFn1AuthCodeFromFile() throws Exception {
+    void validateAuthx_acceptsValidSignature_withFn1AuthCodeFromFile(@TempDir Path tempDir) throws Exception {
         System.setProperty("fly-narwhal.external-authx.enabled", "false");
 
-        FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "");
+        Path authCodePath = tempDir.resolve("auth_code");
+        FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "", authCodePath);
 
-        Path authCodePath = Paths.get("auth_code");
         try {
             Files.writeString(authCodePath, TEST_FN1_PRIVATE_KEY_BASE64 + "|" + TEST_FN1_AUTH_CODE, StandardCharsets.UTF_8);
+            Assertions.assertEquals("exists", svc.getOrGenerateAuthCode());
 
             String url = "/api/danmu/ping";
             Map<String, String[]> params = new HashMap<>();
@@ -197,7 +207,7 @@ class FnAuthServiceTest {
     }
 
     @Test
-    void getOrGenerateAuthCode_shouldUseExternalVerifierWhenAvailable() throws Exception {
+    void getOrGenerateAuthCode_shouldUseExternalVerifierWhenAvailable(@TempDir Path tempDir) throws Exception {
         Assumptions.assumeTrue(
                 BuildVersionConfiguration.BUILD_AUTHX_VERIFIER,
                 "External authx verifier is disabled when FLY_NARWHAL_BUILD_AUTHX_VERIFIER=0"
@@ -206,7 +216,7 @@ class FnAuthServiceTest {
         System.setProperty("fly-narwhal.external-authx.pool-size", "1");
         System.setProperty("fly-narwhal.external-authx.timeout-ms", Long.toString(Duration.ofSeconds(2).toMillis()));
 
-        Path authCodePath = Paths.get("auth_code");
+        Path authCodePath = tempDir.resolve("auth_code");
         Path verifierBin = null;
         try {
             Files.deleteIfExists(authCodePath);
@@ -218,7 +228,7 @@ class FnAuthServiceTest {
             setStaticField(ExternalAuthxVerifier.class, "extractedPath", verifierBin);
             ExternalAuthxVerifier.preload();
 
-            FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "");
+            FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "", authCodePath);
             String authCode = svc.getOrGenerateAuthCode();
             Assertions.assertEquals(TEST_FN1_AUTH_CODE, authCode);
 
@@ -234,7 +244,7 @@ class FnAuthServiceTest {
     }
 
     @Test
-    void validateAuthx_shouldAcceptWhenExternalVerifierReturnsTrue() throws Exception {
+    void validateAuthx_shouldAcceptWhenExternalVerifierReturnsTrue(@TempDir Path tempDir) throws Exception {
         Assumptions.assumeTrue(
                 BuildVersionConfiguration.BUILD_AUTHX_VERIFIER,
                 "External authx verifier is disabled when FLY_NARWHAL_BUILD_AUTHX_VERIFIER=0"
@@ -243,7 +253,7 @@ class FnAuthServiceTest {
         System.setProperty("fly-narwhal.external-authx.pool-size", "1");
         System.setProperty("fly-narwhal.external-authx.timeout-ms", Long.toString(Duration.ofSeconds(2).toMillis()));
 
-        Path authCodePath = Paths.get("auth_code");
+        Path authCodePath = tempDir.resolve("auth_code");
         Path verifierBin = null;
         try {
             ExternalAuthxVerifier.shutdown();
@@ -255,7 +265,7 @@ class FnAuthServiceTest {
 
             Files.writeString(authCodePath, TEST_FN1_PRIVATE_KEY_BASE64 + "|" + TEST_FN1_AUTH_CODE, StandardCharsets.UTF_8);
 
-            FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "");
+            FnAuthService svc = new FnAuthService(new FnAuthConfigService(), new ObjectMapper(), "", authCodePath);
 
             String url = "/api/danmu/ping";
             String nonce = "123456";
@@ -275,11 +285,6 @@ class FnAuthServiceTest {
         }
     }
 
-    private static void writeAuthCodeFile(String privateKeyBase64, String publicKeyBase64) throws Exception {
-        Path authCodePath = Paths.get("auth_code");
-        Files.writeString(authCodePath, privateKeyBase64 + "|" + publicKeyBase64, StandardCharsets.UTF_8);
-    }
-    
     private static String buildTestFn1AuthCode() {
         byte[] payload = new byte[33];
         payload[0] = 1;

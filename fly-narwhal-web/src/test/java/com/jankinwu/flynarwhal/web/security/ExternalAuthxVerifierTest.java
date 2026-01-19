@@ -39,7 +39,14 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
+@Execution(ExecutionMode.SAME_THREAD)
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
+@ResourceLock("external_authx_verifier_state")
 final class ExternalAuthxVerifierTest {
     private static final String FN_API_KEY = "NDzZTVxnRKP8Z0jXg1VAMonaG8akvh";
     private static final String TEST_SECRET = "unit-test-secret";
