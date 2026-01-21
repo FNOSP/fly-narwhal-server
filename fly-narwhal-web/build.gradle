@@ -1,6 +1,7 @@
 import java.security.MessageDigest
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 plugins {
     id 'java'
@@ -41,9 +42,10 @@ tasks.register('generateVersionConfig') {
         def packagePath = new File(dir, "com/jankinwu/flynarwhal/web/config")
         packagePath.mkdirs()
 
-        def buildTime = OffsetDateTime.now(ZoneOffset.ofHours(8)).toString()
+        def buildTime = OffsetDateTime.now(ZoneOffset.ofHours(8)).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
         def baseVersion = project.ext.baseVersion?.toString() ?: project.version.toString()
         def version = project.version.toString()
+        def buildAuthxVerifier = "1".equals(System.getenv("FLY_NARWHAL_BUILD_AUTHX_VERIFIER"))
 
         def file = new File(packagePath, "BuildVersionConfiguration.java")
         file.text =
@@ -57,6 +59,7 @@ tasks.register('generateVersionConfig') {
             "    public static final String VERSION = \"" + version + "\";\n" +
             "    public static final String BASE_VERSION = \"" + baseVersion + "\";\n" +
             "    public static final String BUILD_TIME = \"" + buildTime + "\";\n" +
+            "    public static final boolean BUILD_AUTHX_VERIFIER = " + buildAuthxVerifier + ";\n" +
             "\n" +
             "    @Bean\n" +
             "    public BuildVersionInfo buildVersionInfo() {\n" +
@@ -126,20 +129,25 @@ tasks.register('buildUpdaterBinaries') {
         def outDir = new File(updaterResDir.get().asFile, "updater")
         outDir.mkdirs()
 
-        def targets = [
-            [os: "linux", arch: "amd64", out: "updater-linux-amd64"],
-            [os: "linux", arch: "arm64", out: "updater-linux-aarch64"]
-        ]
+        execOps.exec {
+            workingDir(updaterSrcDir)
+            def currentPath = System.getenv("PATH")
+            def basePath = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"
+            environment("PATH", (currentPath == null || currentPath.trim().isEmpty()) ? basePath : (currentPath + ":" + basePath))
+            environment("OUTPUT_DIR", outDir.absolutePath)
+            commandLine("/bin/bash", "./build.sh")
+        }
 
-        for (def t : targets) {
-            def outFile = new File(outDir, t.out.toString())
-            execOps.exec {
-                workingDir(updaterSrcDir)
-                environment("CGO_ENABLED", "0")
-                environment("GOOS", t.os)
-                environment("GOARCH", t.arch)
-                commandLine("go", "build", "-trimpath", "-ldflags", "-s -w", "-o", outFile.absolutePath, "./cmd/main.go")
+        def expected = [
+            "updater-linux-amd64",
+            "updater-linux-aarch64"
+        ]
+        for (def name : expected) {
+            def bin = new File(outDir, name.toString())
+            if (!bin.exists()) {
+                throw new GradleException("Missing updater binary: " + bin.absolutePath)
             }
+            bin.setExecutable(true)
         }
     }
 }
@@ -217,6 +225,12 @@ tasks.register('verifyAuthxVerifierBinary') {
         def signStr = ["NDzZTVxnRKP8Z0jXg1VAMonaG8akvh", url, nonce, now, dataMd5, secret.trim()].join("_")
         def sign = md5Hex(signStr)
         def authx = "nonce=${nonce}&timestamp=${now}&sign=${sign}"
+        def publicKey = "dummy-public-key"
+        def signxStr = [now, nonce, sign, dataMd5, url, publicKey].join("_")
+        def signx = MessageDigest.getInstance("SHA-256")
+            .digest(signxStr.getBytes("UTF-8"))
+            .collect { String.format("%02x", it) }
+            .join("")
 
         def os = System.getProperty("os.name", "").toLowerCase()
         def arch = System.getProperty("os.arch", "").toLowerCase()
@@ -231,7 +245,14 @@ tasks.register('verifyAuthxVerifierBinary') {
         bin.setExecutable(true)
 
         execOps.exec {
-            commandLine(bin.absolutePath, "--authx", authx, "--url", url, "--data-md5", dataMd5)
+            commandLine(
+                bin.absolutePath,
+                "--authx", authx,
+                "--url", url,
+                "--data-md5", dataMd5,
+                "--signx", signx,
+                "--public-key", publicKey
+            )
         }
     }
 }
@@ -240,11 +261,13 @@ tasks.named('processResources') {
     dependsOn(tasks.named('buildUpdaterBinaries'))
     from(updaterResDir) {
         into("")
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     }
     if (externalAuthxEnabled && authxVerifierSrcDir != null && authxVerifierSrcDir.exists()) {
         dependsOn(tasks.named('buildAuthxVerifierBinaries'))
         from(authxVerifierResDir) {
             into("")
+            duplicatesStrategy = DuplicatesStrategy.EXCLUDE
         }
     }
 }

@@ -86,5 +86,7 @@ docker compose -f docker-compose.nvidia.yml build
 docker compose -f docker-compose.nvidia.yml up -d
 ```
 
-## 开源参考
-本项目参考了 [intro-skipper](https://github.com/intro-skipper/intro-skipper) 的设计思路。
+## 🙏 特别感谢
+本项目参考或使用了以下开源项目：
+- [intro-skipper](https://github.com/intro-skipper/intro-skipper) - 自动检测并跳过片头/片尾字幕的 Jellyfin 插件。
+- [fnos-tv](https://github.com/thshu/fnos-tv) - 基于飞牛影视接口开发的网页端
