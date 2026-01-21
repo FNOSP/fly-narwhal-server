@@ -23,18 +23,19 @@ public class FnAuthInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull Object handler) throws Exception {
         String path = request.getRequestURI();
-        if (path.startsWith("/api/config/fn-base-url")) {
+        if (path.startsWith("/api/config/auth-code")) {
             return true;
         }
 
         String authx = request.getHeader("Authx");
+        String signx = request.getHeader("Signx");
         if (authx != null && !authx.isBlank()) {
             byte[] body = null;
             if (request instanceof CachedBodyHttpServletRequest) {
                 body = ((CachedBodyHttpServletRequest) request).getCachedBody();
             }
             
-            boolean ok = fnAuthService.validateAuthx(authx, path, request.getParameterMap(), body);
+            boolean ok = fnAuthService.validateAuthx(authx, signx, path, request.getParameterMap(), body);
             if (ok) {
                 return true;
             } else {

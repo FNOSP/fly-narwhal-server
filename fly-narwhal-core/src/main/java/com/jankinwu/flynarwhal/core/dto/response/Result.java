@@ -12,20 +12,21 @@ public class Result<T> {
     private String msg;
     private T data;
     private boolean isSuccess;
+    private Boolean encrypted;
 
     public static <T> Result<T> success(T data) {
-        return new Result<>(200, "Success", data, true);
+        return new Result<>(200, "Success", data, true, null);
     }
 
     public static <T> Result<T> success() {
-        return new Result<>(200, "Success", null, true);
+        return new Result<>(200, "Success", null, true, null);
     }
 
     public static <T> Result<T> error(int code, String msg) {
-        return new Result<>(code, msg, null, false);
+        return new Result<>(code, msg, null, false, null);
     }
 
     public static <T> Result<T> error(String msg) {
-        return new Result<>(500, msg, null, false);
+        return new Result<>(500, msg, null, false, null);
     }
 }

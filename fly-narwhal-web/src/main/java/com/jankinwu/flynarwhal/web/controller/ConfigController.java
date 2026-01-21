@@ -28,9 +28,13 @@ public class ConfigController {
         return configService.startUpdate(request.getDownloadUrl(), request.getHash(), request.getProxyUrl());
     }
 
-//    private final FnAuthService fnAuthService;
-//
+    private final FnAuthService fnAuthService;
 //    private final FnAuthConfigService fnAuthConfigService;
+
+    @PostMapping("/auth-code")
+    public Result<String> getAuthCode() {
+        return Result.success(fnAuthService.getOrGenerateAuthCode());
+    }
 
 //    @PostMapping("/fn-base-url")
 //    public Result<Void> setFnBaseUrl(@RequestBody SetFnBaseUrlRequest request, HttpServletRequest httpRequest) {
