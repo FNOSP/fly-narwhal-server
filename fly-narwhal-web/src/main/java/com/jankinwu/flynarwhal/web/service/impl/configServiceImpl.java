@@ -131,7 +131,7 @@ public class configServiceImpl implements ConfigService {
         log.info("Downloading update from: {}", finalUrl);
         RestTemplate restTemplate = RestTemplateFactory.create(Duration.ofSeconds(30), Duration.ofMinutes(10));
         
-        File tempFile = File.createTempFile("fly-narwhal-update-", ".jar");
+        File tempFile = new File("/var/apps/App.Native.flyNarwhalServer/target/server/fly-narwhal-update.jar");
         restTemplate.execute(finalUrl, org.springframework.http.HttpMethod.GET, null, response -> {
             StreamUtils.copy(response.getBody(), new FileOutputStream(tempFile));
             return null;
@@ -188,7 +188,7 @@ public class configServiceImpl implements ConfigService {
                 return null;
             }
             
-            File tempUpdater = File.createTempFile("updater-", "");
+            File tempUpdater = new File("/var/apps/App.Native.flyNarwhalServer/target/server/updater");
             tempUpdater.deleteOnExit();
             try (FileOutputStream fos = new FileOutputStream(tempUpdater)) {
                 StreamUtils.copy(is, fos);

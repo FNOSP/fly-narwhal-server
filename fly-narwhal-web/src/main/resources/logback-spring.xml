@@ -5,7 +5,7 @@
 <!-- debug:当此属性设置为true时，将打印出logback内部日志信息，实时查看logback运行状态。默认值为false。 -->
 <configuration scan="true" scanPeriod="60 seconds">
     <!-- name的值是变量的名称，value的值时变量定义的值。通过定义的值会被插入到logger上下文中。定义变量后，可以使“${}”来使用变量。 -->
-    <property name="loggingPath" value="./logs" />
+    <property name="loggingPath" value="/var/apps/App.Native.flyNarwhalServer/shares/logs" />
 
     <!-- 彩色日志 -->
     <!-- 彩色日志依赖的渲染类 -->
@@ -49,9 +49,9 @@
             <!--单个日志文件的最大体积-->
             <maxFileSize>50MB</maxFileSize>
             <!-- 日志最大的历史 30天 -->
-            <maxHistory>90</maxHistory>
+            <maxHistory>5</maxHistory>
             <!--控制所有归档日志文件的总大小-->
-            <totalSizeCap>10GB</totalSizeCap>
+            <totalSizeCap>1GB</totalSizeCap>
             <!--是否在应用启动的时候删除历史日志-->
             <!--<cleanHistoryOnStart>true</cleanHistoryOnStart>-->
         </rollingPolicy>
@@ -91,33 +91,12 @@
             <!--单个日志文件的最大体积-->
             <maxFileSize>50MB</maxFileSize>
             <!-- 日志最大的历史 30天 -->
-            <maxHistory>30</maxHistory>
+            <maxHistory>5</maxHistory>
             <!--控制所有归档日志文件的总大小-->
             <totalSizeCap>1GB</totalSizeCap>
             <!--是否在应用启动的时候删除历史日志-->
             <!--<cleanHistoryOnStart>true</cleanHistoryOnStart>-->
         </rollingPolicy>
-    </appender>
-
-    <springProperty scope="context" name="lokiUrl" source="loki.url"/>
-    <springProperty name="application" source="spring.application.name" />
-    <property name="PATTERN" value="${application} %d{yyyy-MM-dd HH:mm:ss} [%-4level] %logger{}:%L [%thread] %msg%n" />
-    <property name="LOKI_URL" value="${lokiUrl}"/>
-    <appender name="lokiAppender" class="com.github.loki4j.logback.Loki4jAppender">
-        <batchTimeoutMs>1000</batchTimeoutMs>
-        <http class="com.github.loki4j.logback.ApacheHttpSender">
-            <url>${LOKI_URL}/push</url>
-        </http>
-        <format>
-            <!--页面上显示的标签-->
-            <label>
-                <pattern>system=${application},level=%level,logType=%X{log_file_type:-logType}</pattern>
-            </label>
-            <message>
-                <pattern>${PATTERN}</pattern>
-            </message>
-            <sortByTime>true</sortByTime>
-        </format>
     </appender>
 
     <!-- 默认配置：打印到控制台 -->

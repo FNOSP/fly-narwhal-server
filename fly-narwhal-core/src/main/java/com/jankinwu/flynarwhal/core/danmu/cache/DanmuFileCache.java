@@ -34,7 +34,7 @@ public class DanmuFileCache {
     private final int maxFiles;
 
     public DanmuFileCache(
-            @Value("${danmu.cache.dir:./data/danmu-cache}") String baseDir,
+            @Value("${danmu.cache.dir:/var/apps/App.Native.flyNarwhalServer/shares/data/danmu-cache}") String baseDir,
             @Value("${danmu.cache.max-files:100}") int maxFiles
     ) {
         this.baseDir = Paths.get(baseDir);

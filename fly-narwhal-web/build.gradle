@@ -60,6 +60,7 @@ tasks.register('generateVersionConfig') {
             "    public static final String BASE_VERSION = \"" + baseVersion + "\";\n" +
             "    public static final String BUILD_TIME = \"" + buildTime + "\";\n" +
             "    public static final boolean BUILD_AUTHX_VERIFIER = " + buildAuthxVerifier + ";\n" +
+            "    public static final boolean IS_FN_APP = true;\n" +
             "\n" +
             "    @Bean\n" +
             "    public BuildVersionInfo buildVersionInfo() {\n" +

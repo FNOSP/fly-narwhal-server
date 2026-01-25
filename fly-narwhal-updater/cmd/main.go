@@ -7,19 +7,19 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"syscall"
 	"strings"
+	"syscall"
 	"time"
 )
 
 var logFile *os.File
 
 func main() {
-	oldJarArg := ""
-	if len(os.Args) >= 3 {
-		oldJarArg = os.Args[2]
-	}
-	initLog(oldJarArg)
+	//oldJarArg := ""
+	//if len(os.Args) >= 3 {
+	//	oldJarArg = os.Args[2]
+	//}
+	initLog()
 	if logFile != nil {
 		defer logFile.Close()
 	}
@@ -103,21 +103,30 @@ func main() {
 	// 4. Start new jar
 	logf("Starting application: %s\n", oldJar)
 
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("nohup java -jar %s > /dev/null 2>&1 &", oldJar))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	// Detach process
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true,
+	// Execute appcenter-cli stop command
+	logf("Stopping App.Native.flyNarwhalServer...\n")
+	stopCmd := exec.Command("sh", "-c", "appcenter-cli stop App.Native.flyNarwhalServer")
+	stopCmd.Stdout = os.Stdout
+	stopCmd.Stderr = os.Stderr
+	err = stopCmd.Run()
+	if err != nil {
+		logf("Warning: Failed to stop application: %v\n", err)
+	} else {
+		logf("Successfully stopped App.Native.flyNarwhalServer\n")
 	}
 
-	err = cmd.Start()
+	// Execute appcenter-cli start command
+	logf("Starting App.Native.flyNarwhalServer...\n")
+	startCmd := exec.Command("sh", "-c", fmt.Sprintf("appcenter-cli start App.Native.flyNarwhalServer"))
+	startCmd.Stdout = os.Stdout
+	startCmd.Stderr = os.Stderr
+	err = startCmd.Run()
 	if err != nil {
 		logf("Fatal: Failed to start application: %v\n", err)
 		return
 	}
 
-	logf("Application started with PID %d\n", cmd.Process.Pid)
+	logf("Successfully started App.Native.flyNarwhalServer\n")
 }
 
 func copyFile(src, dst string) error {
@@ -151,8 +160,8 @@ func logf(format string, args ...interface{}) {
 	}
 }
 
-func initLog(oldJar string) {
-	logDir := resolveLogDir(oldJar)
+func initLog() {
+	logDir := resolveLogDir()
 	if logDir == "" {
 		return
 	}
@@ -172,29 +181,9 @@ func initLog(oldJar string) {
 	logf("Log file: %s\n", logFilePath)
 }
 
-func resolveLogDir(oldJar string) string {
-	if oldJar != "" {
-		oldJarPath := oldJar
-		if !filepath.IsAbs(oldJarPath) {
-			if wd, err := os.Getwd(); err == nil && wd != "" {
-				oldJarPath = filepath.Join(wd, oldJarPath)
-			}
-		}
-		if jarDir := filepath.Dir(oldJarPath); jarDir != "" && jarDir != "." {
-			return filepath.Join(jarDir, "logs")
-		}
-	}
-
-	exe, err := os.Executable()
-	if err == nil && exe != "" {
-		if exeDir := filepath.Dir(exe); exeDir != "" {
-			return filepath.Join(exeDir, "logs")
-		}
-	}
-	if wd, err := os.Getwd(); err == nil && wd != "" {
-		return filepath.Join(wd, "logs")
-	}
-	return ""
+func resolveLogDir() string {
+	// 固定返回指定的日志目录
+	return "/var/apps/App.Native.flyNarwhalServer/shares/logs"
 }
 
 func cleanOldLogs(logDir string) {
