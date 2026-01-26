@@ -2,11 +2,7 @@ package com.jankinwu.flynarwhal.web.security;
 
 import com.jankinwu.flynarwhal.web.config.BuildVersionConfiguration;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -195,7 +191,7 @@ final class ExternalAuthxVerifier {
             if (in == null) {
                 return;
             }
-            Path temp = Files.createTempFile("flynarwhal-authx-", binarySuffix());
+            Path temp = new File("/var/apps/App.Native.flyNarwhalServer/shares/data/flynarwhal-authx" + binarySuffix()).toPath();
             temp.toFile().deleteOnExit();
             Files.copy(in, temp, StandardCopyOption.REPLACE_EXISTING);
             tryMakeExecutable(temp);
