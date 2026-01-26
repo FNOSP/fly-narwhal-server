@@ -1,0 +1,28 @@
+{
+    "data-share":
+    {
+        "shares":
+        [
+            {
+                "name": "App.Native.flyNarwhalServer/logs",
+                "permission":
+                {
+                    "rw":
+                    [
+                        "App.Native.flyNarwhalServer"
+                    ]
+                }
+            },
+            {
+                "name": "App.Native.flyNarwhalServer/data",
+                "permission":
+                {
+                    "rw":
+                    [
+                        "App.Native.flyNarwhalServer"
+                    ]
+                }
+            }
+        ]
+    }
+}

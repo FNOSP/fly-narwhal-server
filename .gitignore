@@ -39,3 +39,6 @@ out/
 /logs/
 /fly-narwhal-web/logs/
 /fly-narwhal-web/src/main/resources/updater/
+
+### macOS ###
+.DS_Store
