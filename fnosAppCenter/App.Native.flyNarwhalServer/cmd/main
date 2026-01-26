@@ -6,8 +6,11 @@ PID_FILE="${TRIM_PKGVAR}/app.pid"
 # 设置 Java 环境变量
 PATH=/var/apps/java-21-openjdk/target/bin:$PATH
 
+LANG=C.UTF-8
+LC_ALL=C.UTF-8
+
 # write the command to start your program here 
-CMD="java -Xms${wizard_min_memory}m -Xmx${wizard_max_memory}m -jar /var/apps/App.Native.flyNarwhalServer/target/server/fly-narwhal-server.jar --server.port=${wizard_server_port}"
+CMD="java -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Xms${wizard_min_memory}m -Xmx${wizard_max_memory}m -jar /var/apps/App.Native.flyNarwhalServer/target/server/fly-narwhal-server.jar --server.port=${wizard_server_port}"
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
