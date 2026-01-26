@@ -15,7 +15,28 @@ on:
         type: string
 
 jobs:
+  check_tag_source:
+    runs-on: ubuntu-latest
+    outputs:
+      is_dev: ${{ steps.tag_source.outputs.is_dev }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check tag source
+        id: tag_source
+        run: |
+          git fetch --all --tags
+          if git merge-base --is-ancestor "${GITHUB_SHA}" "origin/dev"; then
+            echo "is_dev=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_dev=false" >> "$GITHUB_OUTPUT"
+          fi
+
   release:
+    needs: check_tag_source
+    if: needs.check_tag_source.outputs.is_dev == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
