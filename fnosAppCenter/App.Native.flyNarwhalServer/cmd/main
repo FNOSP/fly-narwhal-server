@@ -3,8 +3,11 @@
 LOG_FILE="${TRIM_PKGVAR}/info.log"
 PID_FILE="${TRIM_PKGVAR}/app.pid"
 
+# 设置 Java 环境变量
+PATH=/var/apps/java-21-openjdk/target/bin:$PATH
+
 # write the command to start your program here 
-CMD=""
+CMD="java -Xms${wizard_min_memory}m -Xmx${wizard_max_memory}m -jar /var/apps/App.Native.flyNarwhalServer/target/server/fly-narwhal-server.jar --server.port=${wizard_server_port}"
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
@@ -20,8 +23,9 @@ start_process() {
     bash -c "${CMD}" >> ${LOG_FILE} 2>&1 &
     # write pid to pidfile
     printf "%s" "$!" > ${PID_FILE}
-    # log_msg "CMD = ${CMD}"
-    # log_msg "pid = $!"
+    # 开启日志监控 查看启动命令和PID信息 方便调试
+    log_msg "CMD = ${CMD}"
+    log_msg "pid = $!"
     return 0
 }
 
