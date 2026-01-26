@@ -71,7 +71,7 @@ if [ $CURL_EXIT_CODE -ne 0 ]; then
             ;;
         7)  # 无法连接到5333端口（服务未启动/端口错误）
             echo "Status: 503 Service Unavailable"
-            ERROR_MSG="无法连接到 localhost:5333（服务未启动或端口错误）"
+            ERROR_MSG="无法连接到服务端程序（服务未启动或端口错误）"
             ;;
         22) # 目标URL返回4xx/5xx错误
             echo "Status: 404 Not Found"
