@@ -6,20 +6,18 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.jankinwu.flynarwhal.core.analyzer.AnalyzerFactory;
 import com.jankinwu.flynarwhal.core.analyzer.MediaFileAnalyzer;
 import com.jankinwu.flynarwhal.core.data.*;
-import com.jankinwu.flynarwhal.core.data.SegmentDTO;
+import com.jankinwu.flynarwhal.core.dto.request.EpisodeDetailRequest;
+import com.jankinwu.flynarwhal.core.dto.response.EpisodeSegmentsResponse;
 import com.jankinwu.flynarwhal.core.ffmpeg.FFmpegWrapper;
 import com.jankinwu.flynarwhal.core.scanner.MediaFileScanner;
-import com.jankinwu.flynarwhal.core.dto.response.EpisodeSegmentsResponse;
 import com.jankinwu.flynarwhal.web.entity.EpisodeSegment;
 import com.jankinwu.flynarwhal.web.entity.TvSeasonInfo;
-import com.jankinwu.flynarwhal.core.dto.request.EpisodeDetailRequest;
-import com.jankinwu.flynarwhal.web.mapstruct.AnalysisEntityMapper;
-import com.jankinwu.flynarwhal.web.entity.DbVersion;
 import com.jankinwu.flynarwhal.web.mapper.DbVersionMapper;
 import com.jankinwu.flynarwhal.web.mapper.EpisodeSegmentMapper;
 import com.jankinwu.flynarwhal.web.mapper.TvSeasonInfoMapper;
-import lombok.extern.slf4j.Slf4j;
+import com.jankinwu.flynarwhal.web.mapstruct.AnalysisEntityMapper;
 import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Import;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -28,7 +26,6 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
@@ -171,7 +168,7 @@ public class AnalysisService {
                 .collect(Collectors.toList());
         List<String> toInsert = seasonGuids.stream()
                 .filter(guid -> !existingGuids.contains(guid))
-                .collect(Collectors.toList());
+                .toList();
 
         LocalDateTime now = LocalDateTime.now();
 
@@ -235,8 +232,8 @@ public class AnalysisService {
             prepareEpisodesForAnalysis(queue);
             runDefaultAnalysis(queue);
 
-            boolean hadFailedEpisodes = persistResults(seasonGuid, queue);
-            updateAnalysisStatus(seasonGuid, hadFailedEpisodes ? AnalysisStatus.PARTIAL_SUCCESS : AnalysisStatus.COMPLETED);
+            PersistSummary summary = persistResults(seasonGuid, queue);
+            updateAnalysisStatus(seasonGuid, resolveSeasonStatus(summary));
         } catch (Exception e) {
             log.error("Error during analysis for series {}", seasonGuid, e);
             updateAnalysisStatus(seasonGuid, AnalysisStatus.FAILED);
@@ -279,8 +276,8 @@ public class AnalysisService {
         }
     }
 
-    private boolean persistResults(String seasonGuid, List<QueuedEpisode> queue) {
-        boolean hadFailed = false;
+    private PersistSummary persistResults(String seasonGuid, List<QueuedEpisode> queue) {
+        int failedCount = 0;
         LocalDateTime now = LocalDateTime.now();
 
         List<EpisodeSegment> existingSegments = episodeSegmentMapper.selectList(
@@ -291,9 +288,24 @@ public class AnalysisService {
 
         for (QueuedEpisode ep : queue) {
             EpisodeSegment existing = segmentMap.get(ep.getEpisodeNumber());
-            hadFailed |= persistEpisodeResult(seasonGuid, ep, now, existing);
+            if (persistEpisodeResult(seasonGuid, ep, now, existing)) {
+                failedCount++;
+            }
         }
-        return hadFailed;
+        return new PersistSummary(failedCount, queue.size());
+    }
+
+    private AnalysisStatus resolveSeasonStatus(PersistSummary summary) {
+        if (summary.total == 0) {
+            return AnalysisStatus.COMPLETED;
+        }
+        if (summary.failedCount == summary.total) {
+            return AnalysisStatus.FAILED;
+        }
+        if (summary.failedCount > 0) {
+            return AnalysisStatus.PARTIAL_SUCCESS;
+        }
+        return AnalysisStatus.COMPLETED;
     }
 
     private boolean persistEpisodeResult(String seasonGuid, QueuedEpisode ep, LocalDateTime now, EpisodeSegment segment) {
@@ -350,6 +362,9 @@ public class AnalysisService {
             segment.setUpdateTime(now);
             episodeSegmentMapper.updateById(segment);
         }
+    }
+
+    private record PersistSummary(int failedCount, int total) {
     }
 
     private void updateEpisodeStatus(String seasonGuid, int episodeNumber, AnalysisStatus status, String guid, String filePath) {
