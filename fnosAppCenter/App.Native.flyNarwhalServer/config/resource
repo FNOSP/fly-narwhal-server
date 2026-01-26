@@ -4,7 +4,7 @@
         "shares":
         [
             {
-                "name": "App.Native.flyNarwhalServer",
+                "name": "App.Native.flyNarwhalServer/logs",
                 "permission":
                 {
                     "rw":
