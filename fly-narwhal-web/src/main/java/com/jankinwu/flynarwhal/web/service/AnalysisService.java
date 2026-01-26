@@ -29,7 +29,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
+import java.util.HexFormat;
 import java.util.stream.Collectors;
+import java.nio.charset.StandardCharsets;
 
 @Service
 @Slf4j
@@ -102,6 +104,8 @@ public class AnalysisService {
 
     public int enqueueAnalyzeSeason(String seasonGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, String tvTitle, Integer seasonNumber) {
         List<EpisodeDetailRequest> safeEpisodes = episodes == null ? List.of() : List.copyOf(episodes);
+        logPathEncoding("enqueueAnalyzeSeason.seasonFolderPath", seasonFolderPath);
+        logEpisodePaths("enqueueAnalyzeSeason.requestEpisodes", safeEpisodes);
         registerPending(seasonGuid, seasonFolderPath, tvTitle, seasonNumber, safeEpisodes);
         enqueueJob(seasonGuid, seasonFolderPath, safeEpisodes, tvTitle, seasonNumber);
         return analyzeJobQueue.size();
@@ -112,6 +116,8 @@ public class AnalysisService {
     }
 
     private void registerPending(String seasonGuid, String seasonFolderPath, String tvTitle, Integer seasonNumber, List<EpisodeDetailRequest> episodes) {
+        logPathEncoding("registerPending.seasonFolderPath", seasonFolderPath);
+        logEpisodePaths("registerPending.requestEpisodes", episodes);
         transactionTemplate.executeWithoutResult(tx -> {
             upsertSeries(seasonGuid, seasonFolderPath, tvTitle, seasonNumber, AnalysisStatus.PENDING);
             upsertEpisodeSegmentsFromRequest(seasonGuid, episodes, AnalysisStatus.PENDING);
@@ -214,12 +220,15 @@ public class AnalysisService {
 
     private void analyzeSeasonInternal(String seasonGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, String tvTitle, Integer seasonNumber) {
         log.info("Starting analysis for series {} in folder {}", seasonGuid, seasonFolderPath);
+        logPathEncoding("analyzeSeasonInternal.seasonFolderPath", seasonFolderPath);
+        logEpisodePaths("analyzeSeasonInternal.requestEpisodes", episodes);
         updateAnalysisStatus(seasonGuid, AnalysisStatus.IN_PROGRESS);
 
         try {
             upsertSeries(seasonGuid, seasonFolderPath, tvTitle, seasonNumber, AnalysisStatus.IN_PROGRESS);
 
             List<QueuedEpisode> queue = buildQueue(seasonGuid, seasonFolderPath, episodes);
+            logQueuedEpisodePaths("analyzeSeasonInternal.queue", queue);
             if (queue.isEmpty()) {
                 log.info("No episodes found in {}", seasonFolderPath);
                 updateAnalysisStatus(seasonGuid, AnalysisStatus.COMPLETED);
@@ -417,10 +426,49 @@ public class AnalysisService {
             return;
         }
         try {
+            logPathEncoding("ensureDuration.episodePath", ep.getPath());
             ep.setDuration(ffmpegWrapper.getDuration(ep.getPath()));
         } catch (Exception e) {
             log.error("Failed to get duration for " + ep.getPath(), e);
         }
+    }
+
+    private void logEpisodePaths(String stage, List<EpisodeDetailRequest> episodes) {
+        if (episodes == null || episodes.isEmpty()) {
+            return;
+        }
+        for (EpisodeDetailRequest ep : episodes) {
+            if (ep == null) {
+                continue;
+            }
+            logPathEncoding(stage + ".filePath", ep.getFilePath());
+        }
+    }
+
+    private void logQueuedEpisodePaths(String stage, List<QueuedEpisode> episodes) {
+        if (episodes == null || episodes.isEmpty()) {
+            return;
+        }
+        for (QueuedEpisode ep : episodes) {
+            if (ep == null) {
+                continue;
+            }
+            logPathEncoding(stage + ".filePath", ep.getPath());
+        }
+    }
+
+    private void logPathEncoding(String stage, String path) {
+        if (path == null) {
+            log.info("[PathEncoding] stage={} value=<null>", stage);
+            return;
+        }
+        String trimmed = path.length() > 200 ? path.substring(0, 200) + "..." : path;
+        boolean hasReplacement = path.indexOf('\uFFFD') >= 0;
+        boolean roundTripUtf8 = path.equals(new String(path.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
+        byte[] utf8Bytes = path.getBytes(StandardCharsets.UTF_8);
+        String hex = HexFormat.of().formatHex(utf8Bytes, 0, Math.min(64, utf8Bytes.length));
+        log.info("[PathEncoding] stage={} len={} roundTripUtf8={} hasReplacement={} sample={} utf8HexPrefix={}",
+                stage, path.length(), roundTripUtf8, hasReplacement, trimmed, hex);
     }
 
     private void upsertSeries(String seasonGuid, String seasonFolderPath, String tvTitle, Integer seasonNumber, AnalysisStatus status) {
