@@ -1,0 +1,52 @@
+[
+  {
+    "stepTitle": "配置运行环境参数",
+    "items": [
+      {
+        "type": "text",
+        "field": "wizard_min_memory",
+        "label": "最低运行内存(MB)",
+        "rules": [
+          {
+            "required": true,
+            "message": "请输入最低运行内存"
+          },
+          {
+            "pattern": "^([6-9]\\d{2}|[1-9]\\d{3,}|5[2-9]\\d|51[2-9])$",
+            "message": "最低内存必须大于 512 MB"
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_max_memory",
+        "label": "最高运行内存(MB)",
+        "rules": [
+          {
+            "required": true,
+            "message": "请输入最高运行内存"
+          },
+          {
+            "pattern": "^1024$|^(10[3-9]\\d|1[1-9]\\d{2}|[2-9]\\d{3}|[1-9]\\d{4,})$",
+            "message": "最高内存必须大于 1024 MB"
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_server_port",
+        "label": "应用服务端口",
+        "rules": [
+          {
+            "required": true,
+            "message": "请输入端口号"
+          },
+          {
+            "pattern": "^(102[4-9]|10[3-9]\\d|1[1-9]\\d{2}|[2-9]\\d{3}|[1-5]\\d{4}|6[0-4]\\d{3}|65[0-4]\\d{2}|655[0-2]\\d|6553[0-5])$",
+            "message": "端口号必须在 1024 到 65535 之间"
+          }
+        ]
+      }
+    ]
+  }
+]
