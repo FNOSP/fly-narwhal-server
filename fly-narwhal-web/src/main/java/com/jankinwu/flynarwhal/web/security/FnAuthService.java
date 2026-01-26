@@ -32,7 +32,7 @@ public class FnAuthService {
     private static final String FN_API_KEY = "NDzZTVxnRKP8Z0jXg1VAMonaG8akvh";
     private static final Duration AUTHX_TTL = Duration.ofMinutes(5);
     private static final String DEFAULT_API_SECRET = "16CCEB3D-AB42-077D-36A1-F355324E4237";
-    private static final String AUTH_CODE_FILE = "auth_code";
+    private static final String AUTH_CODE_FILE = "/var/apps/App.Native.flyNarwhalServer/shares/data/auth_code";
     private static final String AUTH_CODE_DELIM = "|";
     private static final String AUTH_CODE_PREFIX = "FN1";
     private static final String AUTH_CODE_PREFIX_DELIM = "_";
