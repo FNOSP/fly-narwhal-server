@@ -14,6 +14,7 @@ import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.HexFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -88,6 +89,7 @@ public class FFmpegWrapper {
     }
 
     public double getDuration(String path) throws IOException, InterruptedException {
+        logPathEncoding("ffmpeg.getDuration.input", path);
         ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-i", toFfmpegInputPath(path));
         applyUtf8Environment(pb);
         pb.redirectErrorStream(true); // Merge stderr to stdout
@@ -118,6 +120,7 @@ public class FFmpegWrapper {
             }
             return new int[0];
         }
+        logPathEncoding("ffmpeg.getFingerprint.input", path);
         if (Double.isNaN(start) || Double.isInfinite(start) || start < 0) {
             return new int[0];
         }
@@ -219,6 +222,7 @@ public class FFmpegWrapper {
     
     public List<BlackFrame> detectBlackFrames(String path, TimeRange range, int minimumPercentage, int threshold, int amount) throws IOException, InterruptedException {
         // ffmpeg -ss {start} -i "{path}" -to {duration} -an -dn -sn -vf "blackframe=amount={amount}:threshold={threshold}" -f null -
+        logPathEncoding("ffmpeg.detectBlackFrames.input", path);
         List<String> command = new ArrayList<>();
         command.add("ffmpeg");
         command.add("-ss");
@@ -269,6 +273,7 @@ public class FFmpegWrapper {
     }
 
     public List<ChapterInfo> getChapters(String path) throws IOException, InterruptedException {
+        logPathEncoding("ffmpeg.getChapters.input", path);
         ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-i", toFfmpegInputPath(path));
         applyUtf8Environment(pb);
         pb.redirectErrorStream(true);
@@ -326,5 +331,19 @@ public class FFmpegWrapper {
         }
         pb.environment().put("LANG", "C.UTF-8");
         pb.environment().put("LC_ALL", "C.UTF-8");
+    }
+
+    private void logPathEncoding(String stage, String path) {
+        if (path == null) {
+            log.info("[PathEncoding] stage={} value=<null>", stage);
+            return;
+        }
+        String trimmed = path.length() > 200 ? path.substring(0, 200) + "..." : path;
+        boolean hasReplacement = path.indexOf('\uFFFD') >= 0;
+        boolean roundTripUtf8 = path.equals(new String(path.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
+        byte[] utf8Bytes = path.getBytes(StandardCharsets.UTF_8);
+        String hex = HexFormat.of().formatHex(utf8Bytes, 0, Math.min(64, utf8Bytes.length));
+        log.info("[PathEncoding] stage={} len={} roundTripUtf8={} hasReplacement={} sample={} utf8HexPrefix={}",
+                stage, path.length(), roundTripUtf8, hasReplacement, trimmed, hex);
     }
 }
