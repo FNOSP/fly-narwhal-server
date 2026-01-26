@@ -71,7 +71,19 @@ jobs:
           FLY_NARWHAL_AUTHX_VERIFIER_DIR: ${{ github.workspace }}/authx-verifier
         # Unit tests are temporarily disabled in GitHub Actions.
         # run: ./gradlew --stacktrace --info :fly-narwhal-web:test :fly-narwhal-web:bootJar :fly-narwhal-web:verifyAuthxVerifierBinary
-        run: ./gradlew --stacktrace --info :fly-narwhal-web:bootJar :fly-narwhal-web:verifyAuthxVerifierBinary
+        run: |
+          git fetch --all --tags
+          git checkout dev
+          ./gradlew --stacktrace --info :fly-narwhal-web:bootJar :fly-narwhal-web:verifyAuthxVerifierBinary
+          mkdir -p dist/dev
+          cp fly-narwhal-web/build/libs/fly-narwhal-server-*.jar dist/dev/
+          
+          git checkout fn-app
+          ./gradlew --stacktrace --info :fly-narwhal-web:bootJar :fly-narwhal-web:verifyAuthxVerifierBinary
+          mkdir -p dist/fnapp
+          for f in fly-narwhal-web/build/libs/fly-narwhal-server-*.jar; do
+            cp "$f" "dist/fnapp/$(basename "$f").fnapp"
+          done
 
       - name: Upload build reports (on failure)
         if: failure()
@@ -102,7 +114,7 @@ jobs:
           TAG_NAME="${{ steps.release_tag.outputs.tag }}"
 
           # 在此处手动填写发布日志
-          NOTES="1. 实现授权码生成和通信数据加密功能（需要客户端 1.8.0 及以上版本）"
+          NOTES="1. 构建适配应用中心的 jar 包（需要客户端 1.9.1 及以上版本）"
 
           # 如果是通过 GitHub 页面手动触发并输入了日志，则优先使用输入的内容
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_body }}" ]; then
@@ -129,7 +141,8 @@ jobs:
           body: |
             ${{ env.RELEASE_BODY }}
           files: |
-            fly-narwhal-web/build/libs/fly-narwhal-server-*.jar
+            dist/dev/fly-narwhal-server-*.jar
+            dist/fnapp/fly-narwhal-server-*.jar.fnapp
           generate_release_notes: false
           draft: false
           prerelease: ${{ contains(steps.release_tag.outputs.tag, '-') }}
