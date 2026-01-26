@@ -46,6 +46,14 @@ tasks.register('generateVersionConfig') {
         def baseVersion = project.ext.baseVersion?.toString() ?: project.version.toString()
         def version = project.version.toString()
         def buildAuthxVerifier = "1".equals(System.getenv("FLY_NARWHAL_BUILD_AUTHX_VERIFIER"))
+        def isFnAppEnv = System.getenv("IS_FN_APP")
+        def gitBranch = ""
+        try {
+            def proc = ["bash", "-lc", "git rev-parse --abbrev-ref HEAD"].execute(null, project.rootDir)
+            proc.waitFor()
+            gitBranch = proc.in.text.trim()
+        } catch (Exception ignored) {}
+        def isFnApp = (isFnAppEnv != null && (isFnAppEnv.equalsIgnoreCase("true") || isFnAppEnv == "1")) || (gitBranch == "fn-app")
 
         def file = new File(packagePath, "BuildVersionConfiguration.java")
         file.text =
@@ -60,7 +68,7 @@ tasks.register('generateVersionConfig') {
             "    public static final String BASE_VERSION = \"" + baseVersion + "\";\n" +
             "    public static final String BUILD_TIME = \"" + buildTime + "\";\n" +
             "    public static final boolean BUILD_AUTHX_VERIFIER = " + buildAuthxVerifier + ";\n" +
-            "    public static final boolean IS_FN_APP = true;\n" +
+            "    public static final boolean IS_FN_APP = " + isFnApp + ";\n" +
             "\n" +
             "    @Bean\n" +
             "    public BuildVersionInfo buildVersionInfo() {\n" +

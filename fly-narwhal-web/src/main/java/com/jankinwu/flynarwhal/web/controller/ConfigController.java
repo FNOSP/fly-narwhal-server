@@ -1,6 +1,7 @@
 package com.jankinwu.flynarwhal.web.controller;
 
 import com.jankinwu.flynarwhal.core.dto.response.Result;
+import com.jankinwu.flynarwhal.web.config.BuildVersionConfiguration;
 import com.jankinwu.flynarwhal.web.security.FnAuthService;
 import com.jankinwu.flynarwhal.web.service.ConfigService;
 import com.jankinwu.flynarwhal.web.service.FnAuthConfigService;
@@ -60,6 +61,9 @@ public class ConfigController {
     public Result<String> getDbVersion() {
         try {
             String version = configService.getDatabaseVersion();
+            if (BuildVersionConfiguration.IS_FN_APP) {
+                version = version + "-fnapp";
+            }
             return Result.success(version);
         } catch (Exception e) {
             log.error("Error getting database version", e);
