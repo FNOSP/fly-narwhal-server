@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# 核心：显式设置字符编码为UTF-8（解决非交互式Shell编码缺失）
+export LANG=zh_CN.UTF-8
+export LC_ALL=zh_CN.UTF-8
+
 LOG_FILE="${TRIM_PKGVAR}/info.log"
 PID_FILE="${TRIM_PKGVAR}/app.pid"
 
@@ -7,7 +11,7 @@ PID_FILE="${TRIM_PKGVAR}/app.pid"
 PATH=/var/apps/java-21-openjdk/target/bin:$PATH
 
 # write the command to start your program here 
-CMD="java -Xms${wizard_min_memory}m -Xmx${wizard_max_memory}m -jar /var/apps/App.Native.flyNarwhalServer/target/server/fly-narwhal-server.jar --server.port=${wizard_server_port}"
+CMD="java -Xms${wizard_min_memory}m -Xmx${wizard_max_memory}m -Dfile.encoding=UTF-8 -jar /var/apps/App.Native.flyNarwhalServer/target/server/fly-narwhal-server.jar --server.port=${wizard_server_port}"
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
