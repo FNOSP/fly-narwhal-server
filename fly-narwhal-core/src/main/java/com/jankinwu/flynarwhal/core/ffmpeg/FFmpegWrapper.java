@@ -12,6 +12,8 @@ import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -86,13 +88,14 @@ public class FFmpegWrapper {
     }
 
     public double getDuration(String path) throws IOException, InterruptedException {
-        ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-i", path);
+        ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-i", toFfmpegInputPath(path));
+        applyUtf8Environment(pb);
         pb.redirectErrorStream(true); // Merge stderr to stdout
         Process process = pb.start();
         
         double duration = 0;
         
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 Matcher matcher = DURATION_PATTERN.matcher(line);
@@ -130,7 +133,7 @@ public class FFmpegWrapper {
         command.add("-ss");
         command.add(String.valueOf(start));
         command.add("-i");
-        command.add(path);
+        command.add(toFfmpegInputPath(path));
         command.add("-t");
         command.add(String.valueOf(duration));
         command.add("-map");
@@ -149,13 +152,14 @@ public class FFmpegWrapper {
         log.debug("Running command: {}", String.join(" ", command));
 
         ProcessBuilder pb = new ProcessBuilder(command);
+        applyUtf8Environment(pb);
         Process process = pb.start();
 
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         StringBuilder stderr = new StringBuilder();
         
         Thread stderrThread = new Thread(() -> {
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     if (stderr.length() < STDERR_MAX_CHARS) {
@@ -220,7 +224,7 @@ public class FFmpegWrapper {
         command.add("-ss");
         command.add(String.valueOf(range.getStart()));
         command.add("-i");
-        command.add(path);
+        command.add(toFfmpegInputPath(path));
         command.add("-to");
         command.add(String.valueOf(range.getDuration()));
         command.add("-an");
@@ -235,13 +239,14 @@ public class FFmpegWrapper {
         log.debug("Running command: {}", String.join(" ", command));
 
         ProcessBuilder pb = new ProcessBuilder(command);
+        applyUtf8Environment(pb);
         // Blackframe output goes to stderr
         pb.redirectErrorStream(true);
         Process process = pb.start();
 
         List<BlackFrame> blackFrames = new ArrayList<>();
 
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 // Parse blackframe output
@@ -264,14 +269,15 @@ public class FFmpegWrapper {
     }
 
     public List<ChapterInfo> getChapters(String path) throws IOException, InterruptedException {
-        ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-i", path);
+        ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-i", toFfmpegInputPath(path));
+        applyUtf8Environment(pb);
         pb.redirectErrorStream(true);
         Process process = pb.start();
         
         List<ChapterInfo> chapters = new ArrayList<>();
         ChapterInfo currentChapter = null;
         
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 // Chapter #0:0: start 0.000000, end 60.000000
@@ -298,5 +304,27 @@ public class FFmpegWrapper {
         }
         process.waitFor();
         return chapters;
+    }
+
+    private String toFfmpegInputPath(String path) {
+        if (path == null || path.isBlank()) {
+            return path;
+        }
+        if (path.startsWith("file:")) {
+            return path;
+        }
+        try {
+            return Path.of(path).toUri().toString();
+        } catch (Exception e) {
+            return path;
+        }
+    }
+
+    private void applyUtf8Environment(ProcessBuilder pb) {
+        if (pb == null) {
+            return;
+        }
+        pb.environment().put("LANG", "C.UTF-8");
+        pb.environment().put("LC_ALL", "C.UTF-8");
     }
 }
