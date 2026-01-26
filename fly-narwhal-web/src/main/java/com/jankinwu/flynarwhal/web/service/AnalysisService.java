@@ -32,6 +32,8 @@ import java.util.concurrent.LinkedBlockingDeque;
 import java.util.HexFormat;
 import java.util.stream.Collectors;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 @Service
 @Slf4j
@@ -469,6 +471,21 @@ public class AnalysisService {
         String hex = HexFormat.of().formatHex(utf8Bytes, 0, Math.min(64, utf8Bytes.length));
         log.info("[PathEncoding] stage={} len={} roundTripUtf8={} hasReplacement={} sample={} utf8HexPrefix={}",
                 stage, path.length(), roundTripUtf8, hasReplacement, trimmed, hex);
+        logPathFileState(stage, path);
+    }
+
+    private void logPathFileState(String stage, String path) {
+        try {
+            Path nioPath = Path.of(path);
+            boolean exists = Files.exists(nioPath);
+            boolean isFile = exists && Files.isRegularFile(nioPath);
+            boolean readable = exists && Files.isReadable(nioPath);
+            Path parent = nioPath.getParent();
+            boolean parentExists = parent != null && Files.exists(parent);
+            log.info("[PathFileState] stage={} exists={} isFile={} readable={} parentExists={}", stage, exists, isFile, readable, parentExists);
+        } catch (Exception e) {
+            log.info("[PathFileState] stage={} error={}", stage, e.getClass().getSimpleName());
+        }
     }
 
     private void upsertSeries(String seasonGuid, String seasonFolderPath, String tvTitle, Integer seasonNumber, AnalysisStatus status) {
