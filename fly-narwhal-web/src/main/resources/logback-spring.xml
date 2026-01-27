@@ -48,10 +48,10 @@
             <fileNamePattern>${loggingPath}/%d{yyyy-MM,aux}/info/log_info-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
             <!--单个日志文件的最大体积-->
             <maxFileSize>50MB</maxFileSize>
-            <!-- 日志最大的历史 30天 -->
-            <maxHistory>90</maxHistory>
+            <!-- 日志最大的历史 3天 -->
+            <maxHistory>3</maxHistory>
             <!--控制所有归档日志文件的总大小-->
-            <totalSizeCap>10GB</totalSizeCap>
+            <totalSizeCap>1GB</totalSizeCap>
             <!--是否在应用启动的时候删除历史日志-->
             <!--<cleanHistoryOnStart>true</cleanHistoryOnStart>-->
         </rollingPolicy>
@@ -90,34 +90,13 @@
             <fileNamePattern>${loggingPath}/%d{yyyy-MM,aux}/error/log_error-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
             <!--单个日志文件的最大体积-->
             <maxFileSize>50MB</maxFileSize>
-            <!-- 日志最大的历史 30天 -->
-            <maxHistory>30</maxHistory>
+            <!-- 日志最大的历史 3天 -->
+            <maxHistory>3</maxHistory>
             <!--控制所有归档日志文件的总大小-->
             <totalSizeCap>1GB</totalSizeCap>
             <!--是否在应用启动的时候删除历史日志-->
             <!--<cleanHistoryOnStart>true</cleanHistoryOnStart>-->
         </rollingPolicy>
-    </appender>
-
-    <springProperty scope="context" name="lokiUrl" source="loki.url"/>
-    <springProperty name="application" source="spring.application.name" />
-    <property name="PATTERN" value="${application} %d{yyyy-MM-dd HH:mm:ss} [%-4level] %logger{}:%L [%thread] %msg%n" />
-    <property name="LOKI_URL" value="${lokiUrl}"/>
-    <appender name="lokiAppender" class="com.github.loki4j.logback.Loki4jAppender">
-        <batchTimeoutMs>1000</batchTimeoutMs>
-        <http class="com.github.loki4j.logback.ApacheHttpSender">
-            <url>${LOKI_URL}/push</url>
-        </http>
-        <format>
-            <!--页面上显示的标签-->
-            <label>
-                <pattern>system=${application},level=%level,logType=%X{log_file_type:-logType}</pattern>
-            </label>
-            <message>
-                <pattern>${PATTERN}</pattern>
-            </message>
-            <sortByTime>true</sortByTime>
-        </format>
     </appender>
 
     <!-- 默认配置：打印到控制台 -->
