@@ -8,7 +8,7 @@
       },
       {
         "type": "tips",
-        "helpText": "　　本项目采用 AGPL-3.0 开源协议许可，为飞牛 OS 爱好者开发的第三方影视客户端，与飞牛影视官方无关。经由 FNOSP 孵化并托管于仓库中，可点击  <a target=\"_blank\" href=\"https://github.com/FNOSP/FlyNarwhal\">项目地址</a > 访问项目仓库地址进行了解，如果您对本项目很感兴趣请前往仓库为我们点下 Star ⭐支持一下！"
+        "helpText": "　　本项目为飞牛 OS 爱好者开发的第三方影视客户端，与飞牛影视官方无关。经由 FNOSP 孵化并托管于仓库中，采用 AGPL-3.0 开源协议许可，可以点击  <a target=\"_blank\" href=\"https://github.com/FNOSP/FlyNarwhal\">项目地址</a > 访问项目仓库地址进行了解，如果您对本项目很感兴趣请前往仓库为我们点下 Star ⭐ 支持一下！"
       },
       {
         "type": "switch",

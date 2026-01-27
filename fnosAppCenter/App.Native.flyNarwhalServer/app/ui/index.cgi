@@ -69,9 +69,9 @@ if [ $CURL_EXIT_CODE -ne 0 ]; then
             echo "Status: 502 Bad Gateway"
             ERROR_MSG="无法解析代理地址 localhost"
             ;;
-        7)  # 无法连接到5333端口（服务未启动/端口错误）
+        7)  # 服务尚未完全启动
             echo "Status: 503 Service Unavailable"
-            ERROR_MSG="无法连接到服务端程序（服务未启动或端口错误）"
+            ERROR_MSG="服务尚未完全启动，请稍等片刻"
             ;;
         22) # 目标URL返回4xx/5xx错误
             echo "Status: 404 Not Found"
@@ -79,7 +79,7 @@ if [ $CURL_EXIT_CODE -ne 0 ]; then
             ;;
         *)  # 其他未知错误
             echo "Status: 500 Internal Server Error"
-            ERROR_MSG="代理请求失败，curl退出码: ${CURL_EXIT_CODE}"
+            ERROR_MSG="代理请求失败，curl 退出码: ${CURL_EXIT_CODE}"
             ;;
     esac
     echo "Content-Type: text/plain; charset=utf-8"
