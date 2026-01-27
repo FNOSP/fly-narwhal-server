@@ -84,6 +84,13 @@ jobs:
           for f in fly-narwhal-web/build/libs/fly-narwhal-server-*.jar; do
             cp "$f" "dist/fnapp/$(basename "$f").fnapp"
           done
+          FNAPP_JAR=$(ls -t fly-narwhal-web/build/libs/fly-narwhal-server-*.jar | head -n 1)
+          mkdir -p fnosAppCenter/App.Native.flyNarwhalServer/app/server
+          cp "$FNAPP_JAR" fnosAppCenter/App.Native.flyNarwhalServer/app/server/fly-narwhal-server.jar
+          cd fnosAppCenter
+          chmod +x fnpack-1.2.0-linux-amd64
+          ./fnpack-1.2.0-linux-amd64 build --directory App.Native.flyNarwhalServer
+          mv App.Native.flyNarwhalServer.fpk App.Native.flyNarwhalServer.amd64.fpk
 
       - name: Upload build reports (on failure)
         if: failure()
@@ -114,7 +121,7 @@ jobs:
           TAG_NAME="${{ steps.release_tag.outputs.tag }}"
 
           # 在此处手动填写发布日志
-          NOTES="1. 构建适配应用中心的 jar 包（需要客户端 1.10.0 及以上版本）"
+          NOTES="1. 构建 fpk 安装包（需要客户端 1.10.0 及以上版本）"
 
           # 如果是通过 GitHub 页面手动触发并输入了日志，则优先使用输入的内容
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_body }}" ]; then
@@ -143,6 +150,7 @@ jobs:
           files: |
             dist/dev/fly-narwhal-server-*.jar
             dist/fnapp/fly-narwhal-server-*.jar.fnapp
+            fnosAppCenter/App.Native.flyNarwhalServer.amd64.fpk
           generate_release_notes: false
           draft: false
           prerelease: ${{ contains(steps.release_tag.outputs.tag, '-') }}
