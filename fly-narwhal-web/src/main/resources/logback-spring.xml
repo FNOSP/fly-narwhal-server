@@ -34,17 +34,6 @@
         </encoder>
     </appender>
 
-    <appender name="mybatis_console"
-              class="ch.qos.logback.core.ConsoleAppender">
-        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-            <level>debug</level>
-        </filter>
-        <encoder>
-            <Pattern>${CONSOLE_LOG_PATTERN}</Pattern>
-            <charset>UTF-8</charset>
-        </encoder>
-    </appender>
-
     <!-- 时间滚动输出 level为 INFO 日志 -->
     <appender name="info_log" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <!-- 正在记录的日志文件的路径及文件名 -->
@@ -74,23 +63,6 @@
             <onMatch>ACCEPT</onMatch>
             <!-- 不匹配时的操作：有序列表里的下个过滤器过接着处理日志 -->
             <onMismatch>NEUTRAL</onMismatch>
-        </filter>
-    </appender>
-
-    <appender name="mybatis_log" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${loggingPath}/log_mybatis.log</file>
-        <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} -%msg%n</pattern>
-            <charset>UTF-8</charset>
-        </encoder>
-        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-            <fileNamePattern>${loggingPath}/%d{yyyy-MM,aux}/mybatis/log_mybatis-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
-            <maxFileSize>50MB</maxFileSize>
-            <maxHistory>5</maxHistory>
-            <totalSizeCap>1GB</totalSizeCap>
-        </rollingPolicy>
-        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-            <level>DEBUG</level>
         </filter>
     </appender>
 
@@ -134,15 +106,8 @@
 
     <!--生产环境:打印到控制台并输出到文件 -->
     <springProfile name="release">
-        <logger name="org.apache.ibatis" level="DEBUG" additivity="false">
-            <appender-ref ref="mybatis_console" />
-            <appender-ref ref="mybatis_log" />
-        </logger>
-
-        <logger name="com.baomidou.mybatisplus" level="DEBUG" additivity="false">
-            <appender-ref ref="mybatis_console" />
-            <appender-ref ref="mybatis_log" />
-        </logger>
+        <logger name="org.apache.ibatis" level="DEBUG" />
+        <logger name="com.baomidou.mybatisplus" level="DEBUG" />
 
         <root level="info">
             <appender-ref ref="console_log" />
@@ -153,13 +118,8 @@
 
     <!--开发环境:打印控制台 -->
     <springProfile name="dev">
-        <logger name="org.apache.ibatis" level="DEBUG" additivity="false">
-            <appender-ref ref="mybatis_console" />
-        </logger>
-
-        <logger name="com.baomidou.mybatisplus" level="DEBUG" additivity="false">
-            <appender-ref ref="mybatis_console" />
-        </logger>
+        <logger name="org.apache.ibatis" level="DEBUG" />
+        <logger name="com.baomidou.mybatisplus" level="DEBUG" />
 
         <root level="info">
             <appender-ref ref="console_log" />
