@@ -5,7 +5,7 @@ desc                  = """<p><img src="data:image/png;base64,iVBORw0KGgoAAAANSU
 platform              = x86
 source                = thirdparty
 maintainer            = 友人A（Jankin-Wu）
-maintainer_url        = https://github.com/JankinWu
+maintainer_url        = https://github.com/Jankin-Wu
 distributor           = MR_XIAOBO
 distributor_url       = https://github.com/xiaobonet
 desktop_uidir         = ui
