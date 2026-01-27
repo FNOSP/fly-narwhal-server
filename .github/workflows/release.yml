@@ -15,28 +15,7 @@ on:
         type: string
 
 jobs:
-  check_tag_source:
-    runs-on: ubuntu-latest
-    outputs:
-      is_dev: ${{ steps.tag_source.outputs.is_dev }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Check tag source
-        id: tag_source
-        run: |
-          git fetch --all --tags
-          if git merge-base --is-ancestor "${GITHUB_SHA}" "origin/dev"; then
-            echo "is_dev=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_dev=false" >> "$GITHUB_OUTPUT"
-          fi
-
   release:
-    needs: check_tag_source
-    if: needs.check_tag_source.outputs.is_dev == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -99,12 +78,18 @@ jobs:
           mkdir -p dist/dev
           cp fly-narwhal-web/build/libs/fly-narwhal-server-*.jar dist/dev/
           
-          git checkout fn-app
+          git checkout fn-app-0127
           ./gradlew --stacktrace --info :fly-narwhal-web:bootJar :fly-narwhal-web:verifyAuthxVerifierBinary
           mkdir -p dist/fnapp
           for f in fly-narwhal-web/build/libs/fly-narwhal-server-*.jar; do
             cp "$f" "dist/fnapp/$(basename "$f").fnapp"
           done
+          FNAPP_JAR=$(ls -t fly-narwhal-web/build/libs/fly-narwhal-server-*.jar | head -n 1)
+          cp "$FNAPP_JAR" fnosAppCenter/App.Native.flyNarwhalServer/app/server/fly-narwhal-server.jar
+          cd fnosAppCenter
+          chmod +x fnpack-1.2.0-linux-amd64
+          ./fnpack-1.2.0-linux-amd64 build --directory App.Native.flyNarwhalServer
+          mv App.Native.flyNarwhalServer/App.Native.flyNarwhalServer.fpk App.Native.flyNarwhalServer/App.Native.flyNarwhalServer.amd64.fpk
 
       - name: Upload build reports (on failure)
         if: failure()
@@ -164,6 +149,7 @@ jobs:
           files: |
             dist/dev/fly-narwhal-server-*.jar
             dist/fnapp/fly-narwhal-server-*.jar.fnapp
+            fnosAppCenter/App.Native.flyNarwhalServer/App.Native.flyNarwhalServer.amd64.fpk
           generate_release_notes: false
           draft: false
           prerelease: ${{ contains(steps.release_tag.outputs.tag, '-') }}
