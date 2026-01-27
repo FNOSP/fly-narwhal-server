@@ -364,13 +364,13 @@ public class FFmpegWrapper {
             return path;
         }
         if (path.startsWith("file:")) {
-            return path;
+            try {
+                return Path.of(URI.create(path)).toString();
+            } catch (Exception e) {
+                return path;
+            }
         }
-        try {
-            return Path.of(path).toUri().toString();
-        } catch (Exception e) {
-            return path;
-        }
+        return path;
     }
 
     private void applyUtf8Environment(ProcessBuilder pb) {
