@@ -55,14 +55,8 @@
             <!--是否在应用启动的时候删除历史日志-->
             <!--<cleanHistoryOnStart>true</cleanHistoryOnStart>-->
         </rollingPolicy>
-        <!-- 此日志文件只记录info级别的 -->
-        <filter class="ch.qos.logback.classic.filter.LevelFilter">
-            <!-- 过滤的级别 -->
-            <level>INFO</level>
-            <!-- 匹配时的操作：接收（记录） -->
-            <onMatch>ACCEPT</onMatch>
-            <!-- 不匹配时的操作：有序列表里的下个过滤器过接着处理日志 -->
-            <onMismatch>NEUTRAL</onMismatch>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>DEBUG</level>
         </filter>
     </appender>
 
@@ -99,6 +93,16 @@
         </rollingPolicy>
     </appender>
 
+    <logger name="com.baomidou.mybatisplus" level="DEBUG" additivity="false">
+        <appender-ref ref="info_log" />
+    </logger>
+    <logger name="org.apache.ibatis" level="DEBUG" additivity="false">
+        <appender-ref ref="info_log" />
+    </logger>
+    <logger name="com.jankinwu.flynarwhal.web.mapper" level="DEBUG" additivity="false">
+        <appender-ref ref="info_log" />
+    </logger>
+
     <!-- 默认配置：打印到控制台 -->
     <root level="info">
         <appender-ref ref="console_log" />
@@ -106,9 +110,6 @@
 
     <!--生产环境:打印到控制台并输出到文件 -->
     <springProfile name="release">
-        <logger name="org.apache.ibatis" level="DEBUG" />
-        <logger name="com.baomidou.mybatisplus" level="DEBUG" />
-
         <root level="info">
             <appender-ref ref="console_log" />
             <appender-ref ref="info_log" />
@@ -118,9 +119,6 @@
 
     <!--开发环境:打印控制台 -->
     <springProfile name="dev">
-        <logger name="org.apache.ibatis" level="DEBUG" />
-        <logger name="com.baomidou.mybatisplus" level="DEBUG" />
-
         <root level="info">
             <appender-ref ref="console_log" />
 <!--            <appender-ref ref="info_log" />-->
