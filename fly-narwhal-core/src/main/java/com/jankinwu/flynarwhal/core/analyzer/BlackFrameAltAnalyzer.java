@@ -26,6 +26,11 @@ public class BlackFrameAltAnalyzer {
 
     public Segment detectCredits(QueuedEpisode episode) {
         try {
+            log.info("[BlackFrameAltAnalyze] episodeNumber={} duration={} creditsFpStart={}", episode.getEpisodeNumber(), episode.getDuration(), episode.getCreditsFingerprintStart());
+            if (episode.getDuration() <= 0) {
+                log.warn("[BlackFrameAltAnalyze] episodeNumber={} skip reason=durationZero", episode.getEpisodeNumber());
+                return null;
+            }
             
             double duration = episode.getDuration() - episode.getCreditsFingerprintStart();
             TimeRange range = new TimeRange(episode.getCreditsFingerprintStart(), episode.getDuration());
@@ -34,11 +39,13 @@ public class BlackFrameAltAnalyzer {
                     episode.getPath(), range, 0, blackFrameThreshold); // amount=0 to capture all, then filter
             
             if (blackFrames.isEmpty()) {
+                log.info("[BlackFrameAltAnalyze] episodeNumber={} blackFrames=0", episode.getEpisodeNumber());
                 return null;
             }
             
             List<CreditScene> scenes = detectCreditScenes(blackFrames, blackFrameMinimumPercentage);
             if (scenes.isEmpty()) {
+                log.info("[BlackFrameAltAnalyze] episodeNumber={} creditScenes=0", episode.getEpisodeNumber());
                 return null;
             }
             

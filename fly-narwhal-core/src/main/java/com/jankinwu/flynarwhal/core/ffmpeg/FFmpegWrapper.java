@@ -26,7 +26,7 @@ import java.util.regex.Pattern;
 @Slf4j
 public class FFmpegWrapper {
 
-    private static final Pattern DURATION_PATTERN = Pattern.compile("Duration: (\\d{2}):(\\d{2}):(\\d{2}\\.\\d{2})");
+    private static final Pattern DURATION_PATTERN = Pattern.compile("Duration: (\\d{2}):(\\d{2}):(\\d{2}(?:\\.\\d+)?)");
     private static final Pattern BLACK_FRAME_PATTERN = Pattern.compile("frame:(\\d+)\\s+pblack:(\\d+)\\s+pts:\\d+\s+t:([\\d\\.]+)");
     private static final Pattern CHAPTER_START_PATTERN = Pattern.compile("Chapter #\\d+:\\d+: start (\\d+\\.\\d+), end (\\d+\\.\\d+)");
     private static final Pattern CHAPTER_TITLE_PATTERN = Pattern.compile("Metadata:\\s+title\\s+:\\s+(.+)");
@@ -98,16 +98,26 @@ public class FFmpegWrapper {
         command.add("ffmpeg");
         command.add("-i");
         command.add(inputPath);
+        log.debug("Running command: {}", String.join(" ", command));
         ProcessBuilder pb = new ProcessBuilder("bash", "-c", buildShellCommand(command));
         applyUtf8Environment(pb);
         pb.redirectErrorStream(true); // Merge stderr to stdout
         Process process = pb.start();
         
         double duration = 0;
+        StringBuilder output = new StringBuilder();
         
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
+                if (output.length() < STDERR_MAX_CHARS) {
+                    int remaining = STDERR_MAX_CHARS - output.length();
+                    if (line.length() <= remaining) {
+                        output.append(line).append('\n');
+                    } else {
+                        output.append(line, 0, remaining);
+                    }
+                }
                 Matcher matcher = DURATION_PATTERN.matcher(line);
                 if (matcher.find()) {
                     int hours = Integer.parseInt(matcher.group(1));
@@ -118,6 +128,26 @@ public class FFmpegWrapper {
             }
         }
         process.waitFor();
+        int exitCode = process.exitValue();
+        if (exitCode != 0) {
+            String out = output.toString().trim();
+            if (!out.isEmpty()) {
+                log.error("FFmpeg getDuration exited with code {}. output: {}", exitCode, out);
+            } else {
+                log.error("FFmpeg getDuration exited with code {}", exitCode);
+            }
+            return 0;
+        }
+        if (duration <= 0) {
+            String out = output.toString().trim();
+            if (!out.isEmpty()) {
+                log.warn("FFmpeg getDuration parsed duration=0. output: {}", out);
+            } else {
+                log.warn("FFmpeg getDuration parsed duration=0 with empty output");
+            }
+        } else {
+            log.info("[DurationParsed] seconds={} input={}", duration, inputPath);
+        }
         return duration;
     }
 

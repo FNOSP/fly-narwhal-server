@@ -258,10 +258,15 @@ public class AnalysisService {
 
     private void prepareEpisodesForAnalysis(List<QueuedEpisode> queue) {
         for (QueuedEpisode ep : queue) {
-            ep.setIntroFingerprintEnd(600);
-            ep.setCreditsFingerprintStart(Math.max(0, ep.getDuration() - 240));
+            double duration = ep.getDuration();
+            double introFingerprintEnd = duration > 0 ? Math.min(600, duration) : 600;
+            double creditsFingerprintStart = duration > 0 ? Math.max(0, duration - 240) : 0;
+            ep.setIntroFingerprintEnd(introFingerprintEnd);
+            ep.setCreditsFingerprintStart(creditsFingerprintStart);
             ep.setIntroAnalyzed(false);
             ep.setCreditsAnalyzed(false);
+            log.info("[AnalysisPrep] episodeNumber={} duration={} introFpEnd={} creditsFpStart={}",
+                ep.getEpisodeNumber(), ep.getDuration(), ep.getIntroFingerprintEnd(), ep.getCreditsFingerprintStart());
         }
     }
 
@@ -271,16 +276,36 @@ public class AnalysisService {
         AnalyzerAction action = AnalyzerAction.DEFAULT;
 
         List<MediaFileAnalyzer> introAnalyzers = analyzerFactory.createAnalyzers(AnalysisMode.INTRODUCTION, isAnime, isMovie, action);
+        log.info("[AnalysisRun] mode={} analyzers={}", AnalysisMode.INTRODUCTION,
+            introAnalyzers.stream().map(a -> a.getClass().getSimpleName()).collect(Collectors.toList()));
         runAnalyzers(introAnalyzers, queue, AnalysisMode.INTRODUCTION);
 
         List<MediaFileAnalyzer> creditsAnalyzers = analyzerFactory.createAnalyzers(AnalysisMode.CREDITS, isAnime, isMovie, action);
+        log.info("[AnalysisRun] mode={} analyzers={}", AnalysisMode.CREDITS,
+            creditsAnalyzers.stream().map(a -> a.getClass().getSimpleName()).collect(Collectors.toList()));
         runAnalyzers(creditsAnalyzers, queue, AnalysisMode.CREDITS);
+
+        for (QueuedEpisode ep : queue) {
+            log.info("[AnalysisResult] episodeNumber={} duration={} introAnalyzed={} creditsAnalyzed={} introAction={} creditsAction={} intro={} credits={}",
+                ep.getEpisodeNumber(),
+                ep.getDuration(),
+                ep.isIntroAnalyzed(),
+                ep.isCreditsAnalyzed(),
+                ep.getIntroAction(),
+                ep.getCreditsAction(),
+                segmentToString(ep.getIntroSegment()),
+                segmentToString(ep.getCreditsSegment()));
+        }
     }
 
     private void runAnalyzers(List<MediaFileAnalyzer> analyzers, List<QueuedEpisode> queue, AnalysisMode mode) {
         for (MediaFileAnalyzer analyzer : analyzers) {
             try {
+                int before = countAnalyzed(queue, mode);
+                log.info("[AnalyzerRun] mode={} analyzer={} beforeAnalyzed={}/{}", mode, analyzer.getClass().getSimpleName(), before, queue.size());
                 analyzer.analyze(queue, mode);
+                int after = countAnalyzed(queue, mode);
+                log.info("[AnalyzerRun] mode={} analyzer={} afterAnalyzed={}/{}", mode, analyzer.getClass().getSimpleName(), after, queue.size());
             } catch (Exception e) {
                 log.error("Error running analyzer " + analyzer.getClass().getSimpleName(), e);
             }
@@ -429,10 +454,41 @@ public class AnalysisService {
         }
         try {
             logPathEncoding("ensureDuration.episodePath", ep.getPath());
+            log.info("[EnsureDuration] episodeNumber={} currentDuration={}", ep.getEpisodeNumber(), ep.getDuration());
             ep.setDuration(ffmpegWrapper.getDuration(ep.getPath()));
+            log.info("[EnsureDuration] episodeNumber={} updatedDuration={}", ep.getEpisodeNumber(), ep.getDuration());
+            if (ep.getDuration() <= 0) {
+                log.warn("[EnsureDuration] episodeNumber={} durationStillZero path={}", ep.getEpisodeNumber(), ep.getPath());
+            }
         } catch (Exception e) {
             log.error("Failed to get duration for " + ep.getPath(), e);
         }
+    }
+
+    private int countAnalyzed(List<QueuedEpisode> queue, AnalysisMode mode) {
+        int count = 0;
+        for (QueuedEpisode ep : queue) {
+            if (ep == null) {
+                continue;
+            }
+            if (mode == AnalysisMode.INTRODUCTION) {
+                if (ep.isIntroAnalyzed()) {
+                    count++;
+                }
+            } else if (mode == AnalysisMode.CREDITS) {
+                if (ep.isCreditsAnalyzed()) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    private String segmentToString(Segment segment) {
+        if (segment == null) {
+            return "<null>";
+        }
+        return "start=" + segment.getStart() + ",end=" + segment.getEnd() + ",duration=" + segment.getDuration() + ",valid=" + segment.isValid();
     }
 
     private void logEpisodePaths(String stage, List<EpisodeDetailRequest> episodes) {

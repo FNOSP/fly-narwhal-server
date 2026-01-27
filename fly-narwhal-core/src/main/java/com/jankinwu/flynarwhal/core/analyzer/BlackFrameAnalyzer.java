@@ -24,6 +24,11 @@ public class BlackFrameAnalyzer {
     }
 
     public Segment analyzeCredits(QueuedEpisode episode) {
+        log.info("[BlackFrameAnalyze] episodeNumber={} duration={} creditsFpStart={}", episode.getEpisodeNumber(), episode.getDuration(), episode.getCreditsFingerprintStart());
+        if (episode.getDuration() <= 0) {
+            log.warn("[BlackFrameAnalyze] episodeNumber={} skip reason=durationZero", episode.getEpisodeNumber());
+            return null;
+        }
         // Initial search start logic from FindSearchStart
         double searchStart = findSearchStart(episode, blackFrameMinimumPercentage, blackFrameThreshold);
         return analyzeMediaFile(episode, searchStart, blackFrameMinimumPercentage, blackFrameThreshold);

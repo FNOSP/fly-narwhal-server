@@ -27,7 +27,10 @@ public class BatchChromaprintAnalyzer implements MediaFileAnalyzer {
         for (QueuedEpisode ep : episodes) {
             if (mode == AnalysisMode.INTRODUCTION && ep.getIntroFingerprint() == null) {
                 try {
+                    log.info("[ChromaprintFp] mode={} episodeNumber={} duration={} rangeStart={} rangeEnd={}",
+                        mode, ep.getEpisodeNumber(), ep.getDuration(), 0, ep.getIntroFingerprintEnd());
                     int[] fp = chromaprintAnalyzer.getFingerprint(ep, mode);
+                    log.info("[ChromaprintFp] mode={} episodeNumber={} fpPoints={}", mode, ep.getEpisodeNumber(), fp == null ? 0 : fp.length);
                     if (fp != null && fp.length > 0) {
                         ep.setIntroFingerprint(intsToBytes(fp));
                     }
@@ -36,7 +39,10 @@ public class BatchChromaprintAnalyzer implements MediaFileAnalyzer {
                 }
             } else if (mode == AnalysisMode.CREDITS && ep.getCreditsFingerprint() == null) {
                 try {
+                    log.info("[ChromaprintFp] mode={} episodeNumber={} duration={} rangeStart={} rangeEnd={}",
+                        mode, ep.getEpisodeNumber(), ep.getDuration(), ep.getCreditsFingerprintStart(), ep.getDuration());
                     int[] fp = chromaprintAnalyzer.getFingerprint(ep, mode);
+                    log.info("[ChromaprintFp] mode={} episodeNumber={} fpPoints={}", mode, ep.getEpisodeNumber(), fp == null ? 0 : fp.length);
                     if (fp != null && fp.length > 0) {
                         ep.setCreditsFingerprint(intsToBytes(fp));
                     }
@@ -53,7 +59,10 @@ public class BatchChromaprintAnalyzer implements MediaFileAnalyzer {
             if (isAnalyzed(current, mode)) continue;
             
             byte[] currentFpBytes = mode == AnalysisMode.INTRODUCTION ? current.getIntroFingerprint() : current.getCreditsFingerprint();
-            if (currentFpBytes == null || currentFpBytes.length == 0) continue;
+            if (currentFpBytes == null || currentFpBytes.length == 0) {
+                log.info("[ChromaprintCompareSkip] mode={} episodeNumber={} reason=noFingerprint", mode, current.getEpisodeNumber());
+                continue;
+            }
             
             int[] currentFp = bytesToInts(currentFpBytes);
 

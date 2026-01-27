@@ -33,10 +33,13 @@ public class ChapterAnalyzer {
 
     public Segment findMatchingChapter(QueuedEpisode episode, AnalysisMode mode) {
         try {
+            log.info("[ChapterAnalyze] mode={} episodeNumber={} duration={}", mode, episode.getEpisodeNumber(), episode.getDuration());
             List<ChapterInfo> chapters = ffmpegWrapper.getChapters(episode.getPath());
             if (chapters.isEmpty()) {
+                log.info("[ChapterAnalyze] mode={} episodeNumber={} chapters=0", mode, episode.getEpisodeNumber());
                 return null;
             }
+            log.info("[ChapterAnalyze] mode={} episodeNumber={} chapters={}", mode, episode.getEpisodeNumber(), chapters.size());
             
             String patternStr = mode == AnalysisMode.INTRODUCTION ? introPattern : creditsPattern;
             Pattern pattern = Pattern.compile(patternStr, Pattern.CASE_INSENSITIVE);
