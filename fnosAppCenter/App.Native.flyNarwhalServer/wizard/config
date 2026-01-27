@@ -5,7 +5,7 @@
       {
         "type": "text",
         "field": "wizard_min_memory",
-        "label": "最低运行内存(MB)",
+        "label": "最低运行内存（MB）",
         "rules": [
           {
             "required": true,
@@ -20,7 +20,7 @@
       {
         "type": "text",
         "field": "wizard_max_memory",
-        "label": "最高运行内存(MB)",
+        "label": "最高运行内存（MB）",
         "rules": [
           {
             "required": true,
