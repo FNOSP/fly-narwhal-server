@@ -20,7 +20,7 @@ server:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
   global-config:
     db-config:
       id-type: auto
@@ -30,6 +30,8 @@ logging:
   config: classpath:logback-spring.xml
   level:
     root: INFO
+    com.baomidou: DEBUG
+    com.jankinwu.flynarwhal.web.mapper: DEBUG
 
 fly-narwhal:
   api-secret: ${FLY_NARWHAL_API_SECRET:16CCEB3D-AB42-077D-36A1-F355324E4237}
