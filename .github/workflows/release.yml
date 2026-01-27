@@ -84,6 +84,12 @@ jobs:
           for f in fly-narwhal-web/build/libs/fly-narwhal-server-*.jar; do
             cp "$f" "dist/fnapp/$(basename "$f").fnapp"
           done
+          FNAPP_JAR=$(ls -t fly-narwhal-web/build/libs/fly-narwhal-server-*.jar | head -n 1)
+          cp "$FNAPP_JAR" fnosAppCenter/App.Native.flyNarwhalServer/app/server/fly-narwhal-server.jar
+          cd fnosAppCenter
+          chmod +x fnpack-1.2.0-linux-amd64
+          ./fnpack-1.2.0-linux-amd64 build --directory App.Native.flyNarwhalServer
+          mv App.Native.flyNarwhalServer/App.Native.flyNarwhalServer.fpk App.Native.flyNarwhalServer/App.Native.flyNarwhalServer.amd64.fpk
 
       - name: Upload build reports (on failure)
         if: failure()
@@ -143,6 +149,7 @@ jobs:
           files: |
             dist/dev/fly-narwhal-server-*.jar
             dist/fnapp/fly-narwhal-server-*.jar.fnapp
+            fnosAppCenter/App.Native.flyNarwhalServer/App.Native.flyNarwhalServer.amd64.fpk
           generate_release_notes: false
           draft: false
           prerelease: ${{ contains(steps.release_tag.outputs.tag, '-') }}
