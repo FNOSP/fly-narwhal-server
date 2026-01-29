@@ -53,7 +53,7 @@ tasks.register('generateVersionConfig') {
             proc.waitFor()
             gitBranch = proc.in.text.trim()
         } catch (Exception ignored) {}
-        def isFnApp = (isFnAppEnv != null && (isFnAppEnv.equalsIgnoreCase("true") || isFnAppEnv == "1")) || (gitBranch == "fn-app")
+        def isFnApp = (isFnAppEnv != null && (isFnAppEnv.equalsIgnoreCase("true") || isFnAppEnv == "1")) || (gitBranch.startsWith("fn-app"))
 
         def file = new File(packagePath, "BuildVersionConfiguration.java")
         file.text =
