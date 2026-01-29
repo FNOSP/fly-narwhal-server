@@ -188,8 +188,8 @@ public class configServiceImpl implements ConfigService {
                 return null;
             }
             
-            File tempDir = new File("/var/apps/App.Native.flyNarwhalServer/target/server/shares/tmp");
-            Files.createDirectories(tempDir.toPath());
+            File tempDir = new File("/var/apps/App.Native.flyNarwhalServer/target/server");
+//            Files.createDirectories(tempDir.toPath());
             File tempUpdater = new File(tempDir, "updater-" + System.currentTimeMillis());
             tempUpdater.deleteOnExit();
             try (FileOutputStream fos = new FileOutputStream(tempUpdater)) {
