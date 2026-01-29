@@ -90,7 +90,9 @@ jobs:
           cd fnosAppCenter
           chmod +x fnpack-1.2.0-linux-amd64
           ./fnpack-1.2.0-linux-amd64 build --directory App.Native.flyNarwhalServer
-          mv App.Native.flyNarwhalServer.fpk App.Native.flyNarwhalServer.amd64.fpk
+          VERSION=$(grep -E '^version\s*=' App.Native.flyNarwhalServer/manifest | sed -E 's/.*=\s*([0-9.]+).*/\1/')
+          VERSION_UNDERSCORED=$(echo "$VERSION" | tr '.' '_')
+          mv App.Native.flyNarwhalServer.fpk "App.Native.flyNarwhalServer.amd64.${VERSION_UNDERSCORED}.fpk"
 
       - name: Upload build reports (on failure)
         if: failure()
@@ -150,7 +152,7 @@ jobs:
           files: |
             dist/dev/fly-narwhal-server-*.jar
             dist/fnapp/fly-narwhal-server-*.jar.fnapp
-            fnosAppCenter/App.Native.flyNarwhalServer.amd64.fpk
+            fnosAppCenter/App.Native.flyNarwhalServer.amd64.*.fpk
           generate_release_notes: false
           draft: false
           prerelease: ${{ contains(steps.release_tag.outputs.tag, '-') }}
