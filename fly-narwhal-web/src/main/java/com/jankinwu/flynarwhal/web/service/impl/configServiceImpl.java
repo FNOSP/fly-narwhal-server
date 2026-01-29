@@ -188,7 +188,9 @@ public class configServiceImpl implements ConfigService {
                 return null;
             }
             
-            File tempUpdater = new File("/var/apps/App.Native.flyNarwhalServer/target/server/updater");
+            File tempDir = new File("/var/apps/App.Native.flyNarwhalServer/target/server/shares/tmp");
+            Files.createDirectories(tempDir.toPath());
+            File tempUpdater = new File(tempDir, "updater-" + System.currentTimeMillis());
             tempUpdater.deleteOnExit();
             try (FileOutputStream fos = new FileOutputStream(tempUpdater)) {
                 StreamUtils.copy(is, fos);
@@ -255,16 +257,22 @@ public class configServiceImpl implements ConfigService {
         log.info("Starting updater: {} {} {} {}", updater.getAbsolutePath(), pid, resolvedJarPath, newJar.getAbsolutePath());
 
         File jarDir = currentJarFile.getParentFile();
-        ProcessBuilder pb = new ProcessBuilder(
-                updater.getAbsolutePath(),
-                String.valueOf(pid),
-                resolvedJarPath,
-                newJar.getAbsolutePath()
+        String command = String.format(
+                "nohup %s %d %s %s >/dev/null 2>&1 </dev/null &",
+                shellEscape(updater.getAbsolutePath()),
+                pid,
+                shellEscape(resolvedJarPath),
+                shellEscape(newJar.getAbsolutePath())
         );
+        ProcessBuilder pb = new ProcessBuilder("sh", "-c", command);
         if (jarDir != null) {
             pb.directory(jarDir);
         }
         Process process = pb.start();
         log.info("Updater process started, pid={}", process.pid());
+    }
+
+    private String shellEscape(String value) {
+        return "'" + value.replace("'", "'\"'\"'") + "'";
     }
 }
