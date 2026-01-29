@@ -105,7 +105,7 @@ func main() {
 
 	// Execute appcenter-cli stop command
 	logf("Stopping App.Native.flyNarwhalServer...\n")
-	stopCmd := exec.Command("sh", "-c", "appcenter-cli stop App.Native.flyNarwhalServer")
+	stopCmd := exec.Command("/bin/sh", "-c", "appcenter-cli stop App.Native.flyNarwhalServer")
 	stopCmd.Stdout = os.Stdout
 	stopCmd.Stderr = os.Stderr
 	err = stopCmd.Run()
@@ -117,7 +117,7 @@ func main() {
 
 	// Execute appcenter-cli start command
 	logf("Starting App.Native.flyNarwhalServer...\n")
-	startCmd := exec.Command("sh", "-c", fmt.Sprintf("appcenter-cli start App.Native.flyNarwhalServer"))
+	startCmd := exec.Command("/bin/sh", "-c", fmt.Sprintf("appcenter-cli start App.Native.flyNarwhalServer"))
 	startCmd.Stdout = os.Stdout
 	startCmd.Stderr = os.Stderr
 	err = startCmd.Run()
