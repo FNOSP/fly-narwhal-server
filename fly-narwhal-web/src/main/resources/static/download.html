@@ -167,6 +167,26 @@
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 24px;
             margin-top: 40px;
+            align-items: stretch;
+        }
+
+        .version-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 16px;
+            padding: 6px 14px;
+            border-radius: 999px;
+            background: rgba(0, 122, 255, 0.1);
+            color: var(--primary-color);
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: var(--transition);
+        }
+
+        .version-badge:hover {
+            background: rgba(0, 122, 255, 0.18);
         }
 
         .card {
@@ -178,6 +198,7 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            height: 100%;
         }
 
         .card:hover {
@@ -211,12 +232,14 @@
             justify-content: center;
             background-color: var(--primary-color);
             color: white;
-            padding: 12px 24px;
+            padding: 12px 16px;
             border-radius: 12px;
             text-decoration: none;
             font-weight: 500;
             transition: var(--transition);
             width: 100%;
+            text-align: center;
+            flex-wrap: wrap;
         }
 
         .download-btn:hover {
@@ -227,7 +250,133 @@
         .download-btn span {
             font-size: 14px;
             opacity: 0.9;
+        }
+
+        .btn-label + span {
             margin-left: 8px;
+        }
+
+        .download-btn.ghost {
+            background-color: transparent;
+            color: var(--primary-color);
+            border: 1px solid rgba(0, 122, 255, 0.4);
+        }
+
+        .download-btn.ghost:hover {
+            background-color: rgba(0, 122, 255, 0.08);
+            filter: none;
+        }
+
+        [data-tip] {
+            position: relative;
+        }
+
+        [data-tip]::after {
+            content: attr(data-tip);
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%) scale(0.95);
+            padding: 6px 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            font-size: 12px;
+            font-weight: 500;
+            border-radius: 8px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s ease, transform 0.15s ease;
+            z-index: 10;
+        }
+
+        [data-tip]::before {
+            content: '';
+            position: absolute;
+            bottom: calc(100% + 2px);
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: rgba(0, 0, 0, 0.8);
+            opacity: 0;
+            transition: opacity 0.15s ease;
+            z-index: 10;
+        }
+
+        [data-tip]:hover::after {
+            opacity: 1;
+            transform: translateX(-50%) scale(1);
+        }
+
+        [data-tip]:hover::before {
+            opacity: 1;
+        }
+
+        .arch-group {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .arch-group:not(:last-child) {
+            margin-bottom: 8px;
+        }
+
+        .arch-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-sub);
+            text-align: left;
+            letter-spacing: 0.3px;
+        }
+
+        .arch-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+            gap: 10px;
+        }
+
+        .arch-buttons.cols-4 {
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+        }
+
+        .arch-buttons.cols-4 .download-btn {
+            padding: 10px 6px;
+            font-size: 13px;
+        }
+
+        .arch-buttons .download-btn {
+            padding: 10px 8px;
+        }
+
+        .other-formats-link {
+            font-size: 13px;
+            color: var(--primary-color);
+            text-decoration: none;
+            margin-top: 2px;
+        }
+
+        .other-formats-link:hover {
+            text-decoration: underline;
+        }
+
+        .card-note {
+            margin-top: 14px;
+            font-size: 12px;
+            color: var(--text-sub);
+        }
+
+        .loading-hint {
+            padding: 10px 0;
+            font-size: 13px;
+            color: var(--text-sub);
+            text-align: center;
+        }
+
+        .download-btn.disabled {
+            pointer-events: none;
+            opacity: 0.5;
         }
 
         .footer {
@@ -242,6 +391,10 @@
             .intro-card { padding: 18px 16px; flex-direction: column; align-items: stretch; }
             .intro-actions { justify-content: flex-start; }
             .repo-btn { justify-content: center; width: 100%; }
+        }
+
+        @media (max-width: 380px) {
+            .card { padding: 24px 20px; }
         }
 
         .auth-btn {
@@ -402,6 +555,10 @@
         <div class="header-title">
             <h1>下载客户端</h1>
             <p class="subtitle">原生丝滑 · 多端覆盖 · 智享影音新体验</p>
+            <a id="version-badge" class="version-badge" href="https://github.com/FNOSP/FlyNarwhal/releases/latest" target="_blank" rel="noopener noreferrer">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 12.5a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11zM7.25 4h1.5v4.5l3 1.8-.75 1.24L7.25 9.5V4z"/></svg>
+                <span id="version-badge-text">最新版本 · 查看更新日志 →</span>
+            </a>
         </div>
         <div class="intro">
             <div class="intro-card">
@@ -430,9 +587,8 @@
                 <path d="M0 3.449L9.75 2.1V11.4H0V3.449zM0 12.6h9.75v9.3L0 20.551V12.6zM11.25 1.89l12.75-1.83V11.4H11.25V1.89zM11.25 12.6H24v11.25l-12.75-1.83V12.6z"/>
             </svg>
             <div class="os-name">Windows</div>
-            <div class="btn-group">
-                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.10.0/FlyNarwhal_Setup_Windows_amd64_1.10.0.exe" class="download-btn">下载 x86_64<span>(.exe)</span></a>
-                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.10.0/FlyNarwhal_Setup_Windows_aarch64_1.10.0.exe" class="download-btn">下载 ARM64<span>(.exe)</span></a>
+            <div id="windows-btns" class="btn-group">
+                <div class="loading-hint">正在获取最新版本…</div>
             </div>
         </div>
 
@@ -442,9 +598,8 @@
                 <path d="M849.124134 704.896288c-1.040702 3.157923-17.300015 59.872622-57.250912 118.190843-34.577516 50.305733-70.331835 101.018741-126.801964 101.909018-55.532781 0.976234-73.303516-33.134655-136.707568-33.134655-63.323211 0-83.23061 32.244378-135.712915 34.110889-54.254671 2.220574-96.003518-54.951543-130.712017-105.011682-70.934562-102.549607-125.552507-290.600541-52.30118-416.625816 36.040844-63.055105 100.821243-103.135962 171.364903-104.230899 53.160757-1.004887 103.739712 36.012192 136.028093 36.012192 33.171494 0 94.357018-44.791136 158.90615-38.089503 27.02654 1.151219 102.622262 11.298324 151.328567 81.891102-3.832282 2.607384-90.452081 53.724599-89.487104 157.76107C739.079832 663.275355 847.952448 704.467523 849.124134 704.896288M633.69669 230.749408c29.107945-35.506678 48.235584-84.314291 43.202964-132.785236-41.560558 1.630127-92.196819 27.600615-122.291231 62.896492-26.609031 30.794353-50.062186 80.362282-43.521213 128.270409C557.264926 291.935955 604.745311 264.949324 633.69669 230.749408"></path>
             </svg>
             <div class="os-name">macOS</div>
-            <div class="btn-group">
-                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.10.0/FlyNarwhal_Setup_MacOS_amd64_1.10.0.dmg" class="download-btn">下载 Intel<span>(.dmg)</span></a>
-                <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.10.0/FlyNarwhal_Setup_MacOS_aarch64_1.10.0.dmg" class="download-btn">下载 Apple Silicon<span>(.dmg)</span></a>
+            <div id="macos-btns" class="btn-group">
+                <div class="loading-hint">正在获取最新版本…</div>
             </div>
         </div>
 
@@ -457,15 +612,232 @@
 <!--                <path d="M512 15.491679C237.797277 15.491679 16.266263 238.571861 16.266263 511.225416s221.531014 495.733737 495.733737 495.733737 495.733737-221.531014 495.733737-495.733737S786.202723 15.491679 512 15.491679z m105.343419 185.900152c17.040847-30.983359 57.319213-40.278366 86.753404-23.237519 30.983359 17.040847 40.278366 57.319213 23.237519 86.753404-17.040847 30.983359-57.319213 40.278366-86.753404 23.237518-30.983359-17.040847-40.278366-55.770045-23.237519-86.753403zM191.322239 574.741301c-35.630862 0-63.515885-27.885023-63.515885-63.515885s27.885023-63.515885 63.515885-63.515885 63.515885 27.885023 63.515885 63.515885-29.434191 63.515885-63.515885 63.515885z m55.770045 6.196672c44.92587-35.630862 44.92587-103.794251 0-139.425114 17.040847-65.065053 58.868381-120.835098 113.089259-158.015128l48.024206 79.007564c-102.245083 72.810893-102.245083 224.629349 0 297.440242l-48.024206 79.007564c-54.220877-35.630862-96.048411-91.400908-113.089259-158.015128z m457.004539 263.358547c-30.983359 17.040847-69.712557 7.74584-86.753404-23.237518-17.040847-30.983359-7.74584-69.712557 23.237519-86.753404 30.983359-17.040847 69.712557-7.74584 86.753404 23.237518 18.590015 30.983359 7.74584 69.712557-23.237519 86.753404z m1.549168-137.875945c-52.67171-20.139183-111.540091 13.942511-120.835098 69.712557-10.844175 3.098336-97.597579 27.885023-193.645991-18.590016l44.92587-80.556732c114.638427 52.67171 246.3177-23.237519 257.161876-148.720121l91.400907 1.549168c-3.098336 68.163389-34.081694 130.130106-79.007564 176.605144zM693.252648 495.733737c-10.844175-123.933434-142.523449-202.940998-257.161876-148.720121l-44.92587-80.556732c96.048411-48.024206 182.801815-21.688351 193.645991-18.590016 9.295008 57.319213 68.163389 89.85174 120.835098 69.712557 46.475038 46.475038 75.909228 108.441755 80.556732 176.605144l-92.950075 1.549168z"></path>-->
 <!--            </svg>-->
             <div class="os-name">Linux</div>
-            <div class="btn-group">
-                <h3> 敬请期待 </h3>
-                <!-- <a href="https://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.3/FlyNarwhal_Setup_Linux_amd64_1.6.3.deb" class="download-btn">下载 x86_64<span>(.deb)</span></a>
-                <a href="h  ttps://ghfast.top/https://github.com/FNOSP/FlyNarwhal/releases/download/v1.6.3/FlyNarwhal_Setup_Linux_aarch64_1.6.3.deb" class="download-btn">下载 ARM64<span>(.deb)</span></a> -->
+            <div id="linux-btns" class="btn-group">
+                <div class="loading-hint">正在获取最新版本…</div>
             </div>
         </div>
     </div>
 
+    <p id="release-note" class="card-note"></p>
+
 </div>
+
+<script>
+    const REPO = 'FNOSP/FlyNarwhal';
+    const MIRROR_PREFIX = 'https://ghfast.top/';
+    // Fallback version used when the GitHub API is unreachable, so the page
+    // still offers working pinned download links. Keep in sync with releases.
+    const FALLBACK_TAG = 'v2.3.1';
+
+    // Display order: earlier entries render first (primary) within each group.
+    const OS_RULES = [
+        { os: 'windows', pattern: /_Windows_/i, group: [
+            { key: 'amd64',   label: '下载 x86_64' },
+            { key: 'aarch64', label: '下载 ARM64' },
+        ]},
+        { os: 'macos', pattern: /_MacOS_/i, group: [
+            { key: 'amd64',   label: '下载 Intel' },
+            { key: 'aarch64', label: '下载 Apple Silicon' },
+        ]},
+        { os: 'linux', pattern: /_Linux_/i, group: [
+            { key: 'amd64',   label: 'x86_64 (amd64)' },
+            { key: 'aarch64', label: 'ARM64 (aarch64)' },
+        ]},
+    ];
+
+    const FORMAT_ORDER = { exe: 0, dmg: 1, deb: 2, rpm: 3, zst: 4, appimage: 5, zip: 9 };
+
+    // Display labels per extension. `group` 3 marks portable archives (rendered as ghost buttons).
+    const FORMAT_LABELS = {
+        exe:       { sub: '.exe 安装包', group: 0 },
+        dmg:       { sub: '.dmg',        group: 0 },
+        deb:       { sub: 'deb · Debian / Ubuntu',  group: 1 },
+        rpm:       { sub: 'rpm · RHEL / Fedora',    group: 1 },
+        zst:       { sub: 'pkg · Arch Linux',       group: 1 },
+        appimage:  { sub: 'AppImage · 通用格式',     group: 1 },
+        zip:       { sub: '.zip 压缩包', group: 3 },
+    };
+
+    function assetExt(name) {
+        const lower = name.toLowerCase();
+        if (lower.endsWith('.tar.zst')) return 'zst';
+        const idx = lower.lastIndexOf('.');
+        return idx >= 0 ? lower.slice(idx + 1) : '';
+    }
+
+    function formatOf(name) {
+        return FORMAT_LABELS[assetExt(name)] || null;
+    }
+
+    function detectOs(rule, name) {
+        return rule.pattern.test('_' + name + '_');
+    }
+
+    // Arch aliases so future naming variants (x64, arm64…) still bucket correctly.
+    const ARCH_ALIASES = { amd64: 'amd64', x64: 'amd64', aarch64: 'aarch64', arm64: 'aarch64' };
+
+    function archKey(name) {
+        const m = name.toLowerCase().match(/_(amd64|x64|aarch64|arm64)_/);
+        return m ? ARCH_ALIASES[m[1]] : '';
+    }
+
+    function buildButton(url, label, sub, ghost, title) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.className = 'download-btn' + (ghost ? ' ghost' : '');
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        if (title) {
+            a.title = title;
+            a.setAttribute('data-tip', title);
+        }
+        const span = document.createElement('span');
+        span.className = 'btn-label';
+        span.textContent = label;
+        a.appendChild(span);
+        if (sub) {
+            const s = document.createElement('span');
+            s.textContent = '(' + sub + ')';
+            a.appendChild(s);
+        }
+        return a;
+    }
+
+    function sortAssets(assets) {
+        return assets.slice().sort((a, b) =>
+            (FORMAT_ORDER[assetExt(a.name)] ?? 99) - (FORMAT_ORDER[assetExt(b.name)] ?? 99));
+    }
+
+    // Filter assets down to the ones this card should show, bucketed by arch key.
+    function collectAssets(releaseAssets) {
+        const result = {};
+        for (const rule of OS_RULES) {
+            const matched = sortAssets(releaseAssets.filter(a => {
+                const f = formatOf(a.name);
+                return f && detectOs(rule, a.name);
+            }));
+            const byKey = {};
+            for (const arch of rule.group) byKey[arch.key] = [];
+            const others = [];
+            for (const asset of matched) {
+                const arch = archKey(asset.name);
+                if (byKey[arch]) byKey[arch].push(asset);
+                else others.push(asset);
+            }
+            result[rule.os] = { byKey, others };
+        }
+        return result;
+    }
+
+    function renderCards(collected) {
+        for (const rule of OS_RULES) {
+            const container = document.getElementById(rule.os + '-btns');
+            container.innerHTML = '';
+            const { byKey, others } = collected[rule.os];
+            const hasAny = Object.values(byKey).some(l => l.length) || others.length;
+            if (!hasAny) {
+                container.innerHTML = '<div class="loading-hint">暂无可用安装包</div>';
+                continue;
+            }
+
+            if (rule.os === 'linux') {
+                for (const arch of rule.group) {
+                    const list = byKey[arch.key];
+                    if (!list.length) continue;
+                    const group = document.createElement('div');
+                    group.className = 'arch-group';
+                    const title = document.createElement('div');
+                    title.className = 'arch-title';
+                    title.textContent = arch.label;
+                    const btns = document.createElement('div');
+                    btns.className = 'arch-buttons cols-4';
+                    for (const asset of list) {
+                        // Linux buttons are labelled by package format, e.g. "deb", "AppImage".
+                        const fmt = formatOf(asset.name).sub.split(' · ')[0];
+                        const tip = formatOf(asset.name).sub;
+                        btns.appendChild(buildButton(MIRROR_PREFIX + asset.browser_download_url, fmt, null, false, tip));
+                    }
+                    group.appendChild(title);
+                    group.appendChild(btns);
+                    container.appendChild(group);
+                }
+            } else {
+                for (const arch of rule.group) {
+                    const list = byKey[arch.key];
+                    if (!list.length) continue;
+                    const portableCount = list.filter(a => formatOf(a.name).group === 3).length;
+                    for (const asset of list) {
+                        const isPortable = formatOf(asset.name).group === 3;
+                        const suffix = isPortable ? (portableCount > 1 ? '（便携版）' : ' 便携版') : '';
+                        container.appendChild(buildButton(MIRROR_PREFIX + asset.browser_download_url,
+                            arch.label + suffix, formatOf(asset.name).sub, isPortable));
+                    }
+                }
+            }
+            for (const asset of others) {
+                container.appendChild(buildButton(MIRROR_PREFIX + asset.browser_download_url,
+                    '下载其他格式', formatOf(asset.name).sub, true));
+            }
+        }
+    }
+
+    function applyRelease(release) {
+        const tag = release.tag_name;
+        document.getElementById('version-badge').href = release.html_url;
+        document.getElementById('version-badge-text').textContent = '最新版本 ' + tag + ' · 查看更新日志 →';
+        renderCards(collectAssets(release.assets));
+        const note = document.getElementById('release-note');
+        note.innerHTML = '';
+        note.append('当前最新版本 ' + tag + '，发布于 ' + new Date(release.published_at).toLocaleDateString('zh-CN') + '。全部安装包及 SHA256SUMS 校验文件见 ');
+        const link = document.createElement('a');
+        link.className = 'other-formats-link';
+        link.href = release.html_url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = 'GitHub Releases 页面';
+        note.appendChild(link);
+        note.append('。');
+    }
+
+    async function loadLatestRelease() {
+        try {
+            const res = await fetch('https://api.github.com/repos/' + REPO + '/releases/latest', {
+                headers: { Accept: 'application/vnd.github+json' }
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            applyRelease(await res.json());
+        } catch (e) {
+            console.error('获取最新版本失败，使用回退版本链接', e);
+            loadFallbackRelease();
+        }
+    }
+
+    // Fallback when the GitHub API is unreachable (rate limit / network):
+    // pin the known-good FALLBACK_TAG assets via the list-by-tag endpoint,
+    // which may still be cached/available; if that also fails, link to the
+    // releases page directly so users are never stuck.
+    async function loadFallbackRelease() {
+        try {
+            const res = await fetch('https://api.github.com/repos/' + REPO + '/releases/tags/' + FALLBACK_TAG, {
+                headers: { Accept: 'application/vnd.github+json' }
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            applyRelease(await res.json());
+            return;
+        } catch (e) {
+            console.error('回退版本获取也失败', e);
+        }
+        const url = 'https://github.com/' + REPO + '/releases/latest';
+        for (const rule of OS_RULES) {
+            const container = document.getElementById(rule.os + '-btns');
+            container.innerHTML = '';
+            container.appendChild(buildButton(url, '前往下载页面', null, false));
+        }
+        document.getElementById('release-note').append('暂时无法获取版本信息，请点击按钮前往 GitHub Releases 页面下载。');
+    }
+
+    document.addEventListener('DOMContentLoaded', loadLatestRelease);
+</script>
 
 <script>
     let lastAuthCode = '';
