@@ -329,19 +329,20 @@ public class FFmpegWrapper {
         return chapters;
     }
 
-    private String toFfmpegInputPath(String path) {
+    String toFfmpegInputPath(String path) {
         if (path == null || path.isBlank()) {
             return path;
         }
         if (path.startsWith("file:")) {
-            return path;
+            try {
+                // Convert file URIs back to native paths because FFmpeg does not URL-decode them.
+                return Path.of(URI.create(path)).toString();
+            } catch (Exception e) {
+                log.error("Error converting file URI to path: {}", path, e);
+                return path;
+            }
         }
-        try {
-            return Path.of(path).toUri().toString();
-        } catch (Exception e) {
-            log.error("Error converting path to URI: {}", path, e);
-            return path;
-        }
+        return path;
     }
 
     private void applyUtf8Environment(ProcessBuilder pb) {
