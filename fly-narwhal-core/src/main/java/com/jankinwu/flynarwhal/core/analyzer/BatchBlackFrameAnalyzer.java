@@ -33,6 +33,7 @@ public class BatchBlackFrameAnalyzer implements MediaFileAnalyzer {
                     episode.setCreditsAction(AnalyzerAction.BLACK_FRAME);
                 }
             } catch (Exception e) {
+                episode.setAnalysisFailed(true);
                 log.error("Error in BlackFrame analysis for " + episode.getPath(), e);
             }
         }

@@ -34,9 +34,23 @@ public class EpisodeSegment {
 
     private BigDecimal creditsEnd;
 
+    private BigDecimal recapStart;
+
+    private BigDecimal recapEnd;
+
+    private BigDecimal previewStart;
+
+    private BigDecimal previewEnd;
+
+    private BigDecimal commercialStart;
+
+    private BigDecimal commercialEnd;
+
     private byte[] introFingerprint;
 
     private byte[] creditsFingerprint;
+
+    private byte[] recapFingerprint;
 
     private String action;
 

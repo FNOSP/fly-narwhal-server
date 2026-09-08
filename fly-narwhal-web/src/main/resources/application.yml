@@ -35,3 +35,8 @@ logging:
 
 fly-narwhal:
   api-secret: ${FLY_NARWHAL_API_SECRET:16CCEB3D-AB42-077D-36A1-F355324E4237}
+  client-version:
+    # Minimum client version required for non-/api/config endpoints.
+    # Clients below this version receive a 4001 code with an upgrade prompt;
+    # clients sending no version header (legacy) are always allowed.
+    min-version: ${FLY_NARWHAL_CLIENT_MIN_VERSION:2.4.0}

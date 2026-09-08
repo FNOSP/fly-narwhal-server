@@ -19,25 +19,34 @@ public class BatchChapterAnalyzer implements MediaFileAnalyzer {
     public void analyze(List<QueuedEpisode> episodes, AnalysisMode mode) {
         log.info("Starting Chapter Analysis for {} episodes (Mode: {})", episodes.size(), mode);
         for (QueuedEpisode episode : episodes) {
-            if (isAnalyzed(episode, mode)) continue;
+            if (episode.isAnalyzed(mode)) continue;
 
-            Segment segment = chapterAnalyzer.findMatchingChapter(episode, mode);
-            if (segment != null && segment.isValid()) {
-                log.info("Found {} via Chapters for {}: {}-{}", mode, episode.getPath(), segment.getStart(), segment.getEnd());
-                if (mode == AnalysisMode.INTRODUCTION) {
-                    episode.setIntroSegment(segment);
-                    episode.setIntroAnalyzed(true);
-                    episode.setIntroAction(AnalyzerAction.CHAPTER);
-                } else {
-                    episode.setCreditsSegment(segment);
-                    episode.setCreditsAnalyzed(true);
-                    episode.setCreditsAction(AnalyzerAction.CHAPTER);
+            try {
+                Segment segment = chapterAnalyzer.findMatchingChapter(episode, mode);
+                if (segment != null && segment.isValid()) {
+                    log.info("Found {} via Chapters for {}: {}-{}", mode, episode.getPath(), segment.getStart(), segment.getEnd());
+                    episode.setSegment(mode, segment);
+                    episode.setAnalyzed(mode, true);
+                    episode.setAnalyzerAction(mode, AnalyzerAction.CHAPTER);
+                } else if (mode == AnalysisMode.RECAP) {
+                    tryRecapBlackFrameFallback(episode);
                 }
+            } catch (Exception e) {
+                episode.setAnalysisFailed(true);
+                log.error("Error in Chapter analysis for {}", episode.getPath(), e);
             }
         }
     }
 
-    private boolean isAnalyzed(QueuedEpisode episode, AnalysisMode mode) {
-        return mode == AnalysisMode.INTRODUCTION ? episode.isIntroAnalyzed() : episode.isCreditsAnalyzed();
+    private void tryRecapBlackFrameFallback(QueuedEpisode episode) {
+        log.trace("Recap chapter match failed for {}, attempting black-frame fallback", episode.getPath());
+        Segment fallback = chapterAnalyzer.detectRecapUsingBlackFrames(episode);
+        if (fallback != null && fallback.isValid()) {
+            log.info("Found Recap via black-frame fallback for {}: {}-{}",
+                    episode.getPath(), fallback.getStart(), fallback.getEnd());
+            episode.setRecapSegment(fallback);
+            episode.setRecapAnalyzed(true);
+            episode.setRecapAction(AnalyzerAction.CHAPTER);
+        }
     }
 }

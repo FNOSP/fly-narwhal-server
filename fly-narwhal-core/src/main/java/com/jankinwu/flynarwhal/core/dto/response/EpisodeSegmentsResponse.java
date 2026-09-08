@@ -13,4 +13,7 @@ import lombok.NoArgsConstructor;
 public class EpisodeSegmentsResponse {
     private SegmentDTO intro;
     private SegmentDTO credits;
+    private SegmentDTO recap;
+    private SegmentDTO preview;
+    private SegmentDTO commercial;
 }

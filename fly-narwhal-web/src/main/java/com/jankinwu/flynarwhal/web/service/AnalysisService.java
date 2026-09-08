@@ -12,9 +12,11 @@ import com.jankinwu.flynarwhal.core.ffmpeg.FFmpegWrapper;
 import com.jankinwu.flynarwhal.core.scanner.MediaFileScanner;
 import com.jankinwu.flynarwhal.web.entity.EpisodeSegment;
 import com.jankinwu.flynarwhal.web.entity.TvSeasonInfo;
+import com.jankinwu.flynarwhal.web.entity.UserSmartSkipConfig;
 import com.jankinwu.flynarwhal.web.mapper.DbVersionMapper;
 import com.jankinwu.flynarwhal.web.mapper.EpisodeSegmentMapper;
 import com.jankinwu.flynarwhal.web.mapper.TvSeasonInfoMapper;
+import com.jankinwu.flynarwhal.web.mapper.UserSmartSkipConfigMapper;
 import com.jankinwu.flynarwhal.web.mapstruct.AnalysisEntityMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -34,10 +36,6 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 @Import({
-    com.jankinwu.flynarwhal.core.analyzer.ChapterAnalyzer.class,
-    com.jankinwu.flynarwhal.core.analyzer.BlackFrameAnalyzer.class,
-    com.jankinwu.flynarwhal.core.analyzer.BlackFrameAltAnalyzer.class,
-    com.jankinwu.flynarwhal.core.analyzer.ChromaprintAnalyzer.class,
     AnalyzerFactory.class,
     MediaFileScanner.class
 })
@@ -46,6 +44,7 @@ public class AnalysisService {
     private final TvSeasonInfoMapper tvSeasonInfoMapper;
     private final EpisodeSegmentMapper episodeSegmentMapper;
     private final DbVersionMapper dbVersionMapper;
+    private final UserSmartSkipConfigMapper userSmartSkipConfigMapper;
     private final AnalyzerFactory analyzerFactory;
     private final MediaFileScanner mediaFileScanner;
     private final FFmpegWrapper ffmpegWrapper;
@@ -63,6 +62,7 @@ public class AnalysisService {
     public AnalysisService(TvSeasonInfoMapper tvSeasonInfoMapper,
                            EpisodeSegmentMapper episodeSegmentMapper,
                            DbVersionMapper dbVersionMapper,
+                           UserSmartSkipConfigMapper userSmartSkipConfigMapper,
                            AnalyzerFactory analyzerFactory,
                            MediaFileScanner mediaFileScanner,
                            TransactionTemplate transactionTemplate,
@@ -70,6 +70,7 @@ public class AnalysisService {
         this.tvSeasonInfoMapper = tvSeasonInfoMapper;
         this.episodeSegmentMapper = episodeSegmentMapper;
         this.dbVersionMapper = dbVersionMapper;
+        this.userSmartSkipConfigMapper = userSmartSkipConfigMapper;
         this.analyzerFactory = analyzerFactory;
         this.mediaFileScanner = mediaFileScanner;
         this.ffmpegWrapper = new FFmpegWrapper();
@@ -82,15 +83,11 @@ public class AnalysisService {
             try {
                 AnalyzeJob job = analyzeJobQueue.takeFirst();
                 try {
-                    analyzeSeasonInternal(job.seasonGuid, job.seasonFolderPath, job.episodes, job.tvTitle, job.seasonNumber);
+                    analyzeSeasonInternal(job.seasonGuid, job.seasonFolderPath, job.episodes, job.tvTitle, job.seasonNumber, job.userGuid);
                 } catch (Exception e) {
                     log.error("Error analyzing season internal", e);
-//                    status.setRollbackOnly();
                     updateAnalysisStatus(job.seasonGuid, AnalysisStatus.FAILED);
                 }
-//                transactionTemplate.executeWithoutResult(status -> {
-//
-//                });
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -100,15 +97,17 @@ public class AnalysisService {
         }
     }
 
-    public int enqueueAnalyzeSeason(String seasonGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, String tvTitle, Integer seasonNumber) {
+    public int enqueueAnalyzeSeason(String seasonGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes,
+                                    String tvTitle, Integer seasonNumber, String userGuid) {
         List<EpisodeDetailRequest> safeEpisodes = episodes == null ? List.of() : List.copyOf(episodes);
         registerPending(seasonGuid, seasonFolderPath, tvTitle, seasonNumber, safeEpisodes);
-        enqueueJob(seasonGuid, seasonFolderPath, safeEpisodes, tvTitle, seasonNumber);
+        enqueueJob(seasonGuid, seasonFolderPath, safeEpisodes, tvTitle, seasonNumber, userGuid);
         return analyzeJobQueue.size();
     }
 
-    private void enqueueJob(String seasonGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, String tvTitle, Integer seasonNumber) {
-        analyzeJobQueue.addLast(new AnalyzeJob(seasonGuid, seasonFolderPath, episodes, LocalDateTime.now(), tvTitle, seasonNumber));
+    private void enqueueJob(String seasonGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes,
+                            String tvTitle, Integer seasonNumber, String userGuid) {
+        analyzeJobQueue.addLast(new AnalyzeJob(seasonGuid, seasonFolderPath, episodes, LocalDateTime.now(), tvTitle, seasonNumber, userGuid));
     }
 
     private void registerPending(String seasonGuid, String seasonFolderPath, String tvTitle, Integer seasonNumber, List<EpisodeDetailRequest> episodes) {
@@ -116,6 +115,25 @@ public class AnalysisService {
             upsertSeries(seasonGuid, seasonFolderPath, tvTitle, seasonNumber, AnalysisStatus.PENDING);
             upsertEpisodeSegmentsFromRequest(seasonGuid, episodes, AnalysisStatus.PENDING);
         });
+    }
+
+    /**
+     * Load the requesting user's smart skip config; legacy clients send no
+     * userGuid and any user without a saved row gets the defaults.
+     */
+    private SmartSkipConfig loadConfig(String userGuid) {
+        if (userGuid == null || userGuid.isBlank()) {
+            return SmartSkipConfig.defaultConfig();
+        }
+        try {
+            UserSmartSkipConfig row = userSmartSkipConfigMapper.selectById(userGuid);
+            if (row != null) {
+                return row.toConfig();
+            }
+        } catch (Exception e) {
+            log.error("Failed to load smart skip config for user {}, falling back to defaults", userGuid, e);
+        }
+        return SmartSkipConfig.defaultConfig();
     }
 
     private AnalysisStatus getSeasonAnalysisStatus(String seasonGuid) {
@@ -202,22 +220,31 @@ public class AnalysisService {
         }
 
         EpisodeSegmentsResponse response = new EpisodeSegmentsResponse();
-        if (segment.getIntroStart() != null && segment.getIntroEnd() != null) {
-            response.setIntro(new SegmentDTO(segment.getIntroStart(), segment.getIntroEnd(), true));
-        }
-        if (segment.getCreditsStart() != null && segment.getCreditsEnd() != null) {
-            response.setCredits(new SegmentDTO(segment.getCreditsStart(), segment.getCreditsEnd(), true));
-        }
-
+        response.setIntro(toSegmentDTO(segment.getIntroStart(), segment.getIntroEnd()));
+        response.setCredits(toSegmentDTO(segment.getCreditsStart(), segment.getCreditsEnd()));
+        response.setRecap(toSegmentDTO(segment.getRecapStart(), segment.getRecapEnd()));
+        response.setPreview(toSegmentDTO(segment.getPreviewStart(), segment.getPreviewEnd()));
+        response.setCommercial(toSegmentDTO(segment.getCommercialStart(), segment.getCommercialEnd()));
         return response;
     }
 
-    private void analyzeSeasonInternal(String seasonGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, String tvTitle, Integer seasonNumber) {
-        log.info("Starting analysis for series {} in folder {}", seasonGuid, seasonFolderPath);
+    private SegmentDTO toSegmentDTO(BigDecimal start, BigDecimal end) {
+        if (start == null || end == null) {
+            return null;
+        }
+        return new SegmentDTO(start, end, true);
+    }
+
+    private void analyzeSeasonInternal(String seasonGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes,
+                                       String tvTitle, Integer seasonNumber, String userGuid) {
+        log.info("Starting analysis for series {} in folder {} (user: {})", seasonGuid, seasonFolderPath, userGuid);
         updateAnalysisStatus(seasonGuid, AnalysisStatus.IN_PROGRESS);
 
         try {
             upsertSeries(seasonGuid, seasonFolderPath, tvTitle, seasonNumber, AnalysisStatus.IN_PROGRESS);
+
+            SmartSkipConfig config = loadConfig(userGuid);
+            log.info("Smart skip config for user {}: {}", userGuid, config);
 
             List<QueuedEpisode> queue = buildQueue(seasonGuid, seasonFolderPath, episodes);
             if (queue.isEmpty()) {
@@ -229,8 +256,8 @@ public class AnalysisService {
 
             upsertEpisodeSegmentsFromQueue(seasonGuid, queue, AnalysisStatus.IN_PROGRESS);
             hydrateQueueFromExistingSegments(seasonGuid, queue);
-            prepareEpisodesForAnalysis(queue);
-            runDefaultAnalysis(queue);
+            prepareEpisodesForAnalysis(queue, config);
+            runDefaultAnalysis(queue, config);
 
             PersistSummary summary = persistResults(seasonGuid, queue);
             updateAnalysisStatus(seasonGuid, resolveSeasonStatus(summary));
@@ -245,25 +272,45 @@ public class AnalysisService {
         return mediaFileScanner.getEpisodeQueue(seasonGuid, seasonFolderPath, episodes);
     }
 
-    private void prepareEpisodesForAnalysis(List<QueuedEpisode> queue) {
+    private void prepareEpisodesForAnalysis(List<QueuedEpisode> queue, SmartSkipConfig config) {
         for (QueuedEpisode ep : queue) {
-            ep.setIntroFingerprintEnd(600);
-            ep.setCreditsFingerprintStart(Math.max(0, ep.getDuration() - 240));
-            ep.setIntroAnalyzed(false);
-            ep.setCreditsAnalyzed(false);
+            ep.setIntroFingerprintEnd(config.getIntroFingerprintEnd(ep.getDuration()));
+            ep.setCreditsFingerprintStart(config.getCreditsFingerprintStart(ep.getDuration()));
+            for (AnalysisMode mode : AnalysisMode.values()) {
+                if (!isModeEnabled(mode, config)) {
+                    continue; // keep previously hydrated results for disabled modes
+                }
+                ep.setAnalyzed(mode, false);
+                ep.setSegment(mode, null);
+            }
+            ep.setAnalysisFailed(false);
         }
     }
 
-    private void runDefaultAnalysis(List<QueuedEpisode> queue) {
-        boolean isAnime = false;
-        boolean isMovie = false;
+    private boolean isModeEnabled(AnalysisMode mode, SmartSkipConfig config) {
+        switch (mode) {
+            case INTRODUCTION: return config.isScanIntroduction();
+            case CREDITS: return config.isScanCredits();
+            case RECAP: return config.isScanRecap();
+            case PREVIEW: return config.isScanPreview();
+            case COMMERCIAL: return config.isScanCommercial();
+            default: return false;
+        }
+    }
+
+    private void runDefaultAnalysis(List<QueuedEpisode> queue, SmartSkipConfig config) {
+        boolean isAnime = config.isAnimeDetection();
+        boolean isMovie = !queue.isEmpty() && queue.stream().allMatch(QueuedEpisode::isMovie);
         AnalyzerAction action = AnalyzerAction.DEFAULT;
 
-        List<MediaFileAnalyzer> introAnalyzers = analyzerFactory.createAnalyzers(AnalysisMode.INTRODUCTION, isAnime, isMovie, action);
-        runAnalyzers(introAnalyzers, queue, AnalysisMode.INTRODUCTION);
-
-        List<MediaFileAnalyzer> creditsAnalyzers = analyzerFactory.createAnalyzers(AnalysisMode.CREDITS, isAnime, isMovie, action);
-        runAnalyzers(creditsAnalyzers, queue, AnalysisMode.CREDITS);
+        for (AnalysisMode mode : AnalysisMode.values()) {
+            if (!isModeEnabled(mode, config)) {
+                log.info("Skipping disabled analysis mode {}", mode);
+                continue;
+            }
+            List<MediaFileAnalyzer> analyzers = analyzerFactory.createAnalyzers(mode, isAnime, isMovie, action, config);
+            runAnalyzers(analyzers, queue, mode);
+        }
     }
 
     private void runAnalyzers(List<MediaFileAnalyzer> analyzers, List<QueuedEpisode> queue, AnalysisMode mode) {
@@ -310,7 +357,9 @@ public class AnalysisService {
 
     private boolean persistEpisodeResult(String seasonGuid, QueuedEpisode ep, LocalDateTime now, EpisodeSegment segment) {
         try {
-            boolean failed = ep.getDuration() <= 0;
+            // A failure (bad probe or analyzer exception) must not be cached as
+            // "no segments" — mark it retryable instead.
+            boolean failed = ep.getDuration() <= 0 || ep.isAnalysisFailed();
 
             boolean isNew = (segment == null);
             if (isNew) {
@@ -321,21 +370,11 @@ public class AnalysisService {
 
             analysisEntityMapper.updateEpisodeFromQueuedEpisode(segment, ep);
 
-            if (ep.getIntroSegment() != null) {
-                segment.setIntroStart(BigDecimal.valueOf(ep.getIntroSegment().getStart()));
-                segment.setIntroEnd(BigDecimal.valueOf(ep.getIntroSegment().getEnd()));
-            } else {
-                segment.setIntroStart(null);
-                segment.setIntroEnd(null);
-            }
-
-            if (ep.getCreditsSegment() != null) {
-                segment.setCreditsStart(BigDecimal.valueOf(ep.getCreditsSegment().getStart()));
-                segment.setCreditsEnd(BigDecimal.valueOf(ep.getCreditsSegment().getEnd()));
-            } else {
-                segment.setCreditsStart(null);
-                segment.setCreditsEnd(null);
-            }
+            applySegment(segment, AnalysisMode.INTRODUCTION, ep.getIntroSegment());
+            applySegment(segment, AnalysisMode.CREDITS, ep.getCreditsSegment());
+            applySegment(segment, AnalysisMode.RECAP, sanitizeRecapSegment(ep.getRecapSegment(), ep.getIntroSegment()));
+            applySegment(segment, AnalysisMode.PREVIEW, ep.getPreviewSegment());
+            applySegment(segment, AnalysisMode.COMMERCIAL, ep.getCommercialSegment());
 
             segment.setAction(buildActions(ep));
             segment.setStatus(failed ? AnalysisStatus.FAILED : AnalysisStatus.COMPLETED);
@@ -347,6 +386,37 @@ public class AnalysisService {
             log.error("Failed to persist episode result for episode {}", ep.getEpisodeNumber(), e);
             updateEpisodeStatus(seasonGuid, ep.getEpisodeNumber(), AnalysisStatus.FAILED, ep.getEpisodeGuid(), ep.getPath());
             return true;
+        }
+    }
+
+    /**
+     * Last-line-of-defense invariant from upstream: a recap that mirrors the
+     * introduction (or would run past its start) is an analysis artifact, not a
+     * real previously-on segment — drop it.
+     */
+    private Segment sanitizeRecapSegment(Segment recap, Segment intro) {
+        if (recap == null || !recap.isValid()) {
+            return null;
+        }
+        if (intro == null || !intro.isValid()) {
+            return recap;
+        }
+        if (recap.getEnd() > intro.getStart()) {
+            log.info("Dropping recap {}-{} that overlaps intro starting at {}", recap.getStart(), recap.getEnd(), intro.getStart());
+            return null;
+        }
+        return recap;
+    }
+
+    private void applySegment(EpisodeSegment segment, AnalysisMode mode, Segment value) {
+        BigDecimal start = value != null ? BigDecimal.valueOf(value.getStart()) : null;
+        BigDecimal end = value != null ? BigDecimal.valueOf(value.getEnd()) : null;
+        switch (mode) {
+            case INTRODUCTION: segment.setIntroStart(start); segment.setIntroEnd(end); break;
+            case CREDITS: segment.setCreditsStart(start); segment.setCreditsEnd(end); break;
+            case RECAP: segment.setRecapStart(start); segment.setRecapEnd(end); break;
+            case PREVIEW: segment.setPreviewStart(start); segment.setPreviewEnd(end); break;
+            case COMMERCIAL: segment.setCommercialStart(start); segment.setCommercialEnd(end); break;
         }
     }
 
@@ -394,22 +464,34 @@ public class AnalysisService {
             if (existing != null) {
                 ep.setIntroFingerprint(existing.getIntroFingerprint());
                 ep.setCreditsFingerprint(existing.getCreditsFingerprint());
+                ep.setRecapFingerprint(existing.getRecapFingerprint());
                 if (existing.getDuration() != null) {
                     ep.setDuration(existing.getDuration());
                 }
 
-                if (existing.getIntroStart() != null && existing.getIntroEnd() != null) {
-                    ep.setIntroSegment(new Segment(existing.getIntroStart().doubleValue(), existing.getIntroEnd().doubleValue(), true));
-                }
-                if (existing.getCreditsStart() != null && existing.getCreditsEnd() != null) {
-                    ep.setCreditsSegment(new Segment(existing.getCreditsStart().doubleValue(), existing.getCreditsEnd().doubleValue(), true));
-                }
+                Segment intro = toSegment(existing.getIntroStart(), existing.getIntroEnd());
+                if (intro != null) ep.setIntroSegment(intro);
+                Segment credits = toSegment(existing.getCreditsStart(), existing.getCreditsEnd());
+                if (credits != null) ep.setCreditsSegment(credits);
+                Segment recap = toSegment(existing.getRecapStart(), existing.getRecapEnd());
+                if (recap != null) ep.setRecapSegment(recap);
+                Segment preview = toSegment(existing.getPreviewStart(), existing.getPreviewEnd());
+                if (preview != null) ep.setPreviewSegment(preview);
+                Segment commercial = toSegment(existing.getCommercialStart(), existing.getCommercialEnd());
+                if (commercial != null) ep.setCommercialSegment(commercial);
 
                 parseActions(existing.getAction(), ep);
             }
 
             ensureDuration(ep);
         }
+    }
+
+    private Segment toSegment(BigDecimal start, BigDecimal end) {
+        if (start == null || end == null) {
+            return null;
+        }
+        return new Segment(start.doubleValue(), end.doubleValue(), true);
     }
 
     private void ensureDuration(QueuedEpisode ep) {
@@ -516,21 +598,18 @@ public class AnalysisService {
     }
 
     private String buildActions(QueuedEpisode ep) {
-        AnalyzerAction intro = ep.getIntroAction();
-        AnalyzerAction credits = ep.getCreditsAction();
-        if (intro == null && credits == null) {
-            return null;
+        StringBuilder sb = new StringBuilder();
+        for (AnalysisMode mode : AnalysisMode.values()) {
+            AnalyzerAction action = ep.getAnalyzerAction(mode);
+            if (action == null) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append(';');
+            }
+            sb.append(mode.segmentKey()).append('=').append(action.name());
         }
-        if (intro != null && credits != null && intro == credits) {
-            return intro.name();
-        }
-        if (intro != null && credits != null) {
-            return "INTRODUCTION=" + intro.name() + ";CREDITS=" + credits.name();
-        }
-        if (intro != null) {
-            return "INTRODUCTION=" + intro.name();
-        }
-        return "CREDITS=" + credits.name();
+        return sb.length() == 0 ? null : sb.toString();
     }
 
     private void parseActions(String action, QueuedEpisode ep) {
@@ -540,6 +619,7 @@ public class AnalysisService {
 
         String trimmed = action.trim();
         if (!trimmed.contains("=")) {
+            // Legacy single-value format applies to Introduction and Credits
             try {
                 AnalyzerAction a = AnalyzerAction.valueOf(trimmed);
                 ep.setIntroAction(a);
@@ -560,16 +640,18 @@ public class AnalysisService {
             String value = p.substring(idx + 1).trim();
             try {
                 AnalyzerAction a = AnalyzerAction.valueOf(value);
-                if ("INTRODUCTION".equalsIgnoreCase(key)) {
-                    ep.setIntroAction(a);
-                } else if ("CREDITS".equalsIgnoreCase(key)) {
-                    ep.setCreditsAction(a);
+                for (AnalysisMode mode : AnalysisMode.values()) {
+                    if (mode.segmentKey().equalsIgnoreCase(key)) {
+                        ep.setAnalyzerAction(mode, a);
+                        break;
+                    }
                 }
             } catch (Exception ignored) {
             }
         }
     }
 
-    private record AnalyzeJob(String seasonGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes, LocalDateTime enqueuedAt, String tvTitle, Integer seasonNumber) {
+    private record AnalyzeJob(String seasonGuid, String seasonFolderPath, List<EpisodeDetailRequest> episodes,
+                              LocalDateTime enqueuedAt, String tvTitle, Integer seasonNumber, String userGuid) {
     }
 }

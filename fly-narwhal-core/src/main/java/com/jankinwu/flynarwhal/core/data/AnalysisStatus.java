@@ -9,6 +9,7 @@ public enum AnalysisStatus {
     IN_PROGRESS("正在分析中"),
     PARTIAL_SUCCESS("部分成功"),
     COMPLETED("已完成"),
+    /** Analysis failed; the episode must not be cached as "no segments" and stays retryable. */
     FAILED("分析失败");
 
     private final String description;
