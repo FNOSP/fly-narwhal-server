@@ -21,4 +21,10 @@ dependencies {
     implementation 'jakarta.annotation:jakarta.annotation-api:2.1.1'
     implementation 'com.google.protobuf:protobuf-java:3.25.1'
     implementation 'org.brotli:dec:0.1.2'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
 }

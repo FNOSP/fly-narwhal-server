@@ -22,4 +22,8 @@ public class AnalyzeRequest {
 
     @JsonProperty("episodes")
     private List<EpisodeDetailRequest> episodes;
+
+    /** User who requested the analysis; the server loads this user's SmartSkipConfig. Legacy clients omit it. */
+    @JsonProperty("user_guid")
+    private String userGuid;
 }

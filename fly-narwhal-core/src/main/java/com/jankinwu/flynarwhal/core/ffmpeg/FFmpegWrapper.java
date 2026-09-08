@@ -2,6 +2,7 @@ package com.jankinwu.flynarwhal.core.ffmpeg;
 
 import com.jankinwu.flynarwhal.core.data.BlackFrame;
 import com.jankinwu.flynarwhal.core.data.ChapterInfo;
+import com.jankinwu.flynarwhal.core.data.SmartSkipConfig;
 import com.jankinwu.flynarwhal.core.data.TimeRange;
 import lombok.extern.slf4j.Slf4j;
 import java.io.BufferedReader;
@@ -12,8 +13,10 @@ import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -25,11 +28,17 @@ public class FFmpegWrapper {
     private static final Pattern BLACK_FRAME_PATTERN = Pattern.compile("frame:(\\d+)\\s+pblack:(\\d+)\\s+pts:\\d+\s+t:([\\d\\.]+)");
     private static final Pattern CHAPTER_START_PATTERN = Pattern.compile("Chapter #\\d+:\\d+: start (\\d+\\.\\d+), end (\\d+\\.\\d+)");
     private static final Pattern CHAPTER_TITLE_PATTERN = Pattern.compile("Metadata:\\s+title\\s+:\\s+(.+)");
+    private static final Pattern SILENCE_START_PATTERN = Pattern.compile("silence_start:\\s*(-?[\\d\\.]+)");
+    private static final Pattern SILENCE_END_PATTERN = Pattern.compile("silence_end:\\s*(-?[\\d\\.]+)");
     private static final int STDERR_MAX_CHARS = 8192;
     private static final Object CAPABILITY_LOCK = new Object();
     private static volatile Boolean FFMPEG_AVAILABLE;
     private static volatile Boolean CHROMAPRINT_MUXER_AVAILABLE;
+    private static volatile Boolean SILENCEDETECT_FILTER_AVAILABLE;
     private static final AtomicBoolean CHROMAPRINT_UNAVAILABLE_LOGGED = new AtomicBoolean(false);
+
+    /** ffmpeg binary path. Configurable via FLY_NARWHAL_FFMPEG_PATH; defaults to "ffmpeg" on PATH. */
+    private static final String FFMPEG_PATH = System.getenv().getOrDefault("FLY_NARWHAL_FFMPEG_PATH", "ffmpeg");
 
     public static boolean isFfmpegAvailable() {
         Boolean cached = FFMPEG_AVAILABLE;
@@ -43,7 +52,7 @@ public class FFmpegWrapper {
             }
             boolean available;
             try {
-                Process process = new ProcessBuilder("ffmpeg", "-version")
+                Process process = new ProcessBuilder(FFMPEG_PATH, "-version")
                     .redirectErrorStream(true)
                     .start();
                 process.waitFor();
@@ -71,7 +80,7 @@ public class FFmpegWrapper {
                 available = false;
             } else {
                 try {
-                    Process process = new ProcessBuilder("ffmpeg", "-hide_banner", "-h", "muxer=chromaprint")
+                    Process process = new ProcessBuilder(FFMPEG_PATH, "-hide_banner", "-h", "muxer=chromaprint")
                         .redirectErrorStream(true)
                         .start();
                     process.waitFor();
@@ -85,13 +94,39 @@ public class FFmpegWrapper {
         }
     }
 
+    public static boolean isSilencedetectFilterAvailable() {
+        Boolean cached = SILENCEDETECT_FILTER_AVAILABLE;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (CAPABILITY_LOCK) {
+            cached = SILENCEDETECT_FILTER_AVAILABLE;
+            if (cached != null) {
+                return cached;
+            }
+            boolean available = false;
+            if (isFfmpegAvailable()) {
+                try {
+                    Process process = new ProcessBuilder(FFMPEG_PATH, "-hide_banner", "-h", "filter=silencedetect")
+                        .redirectErrorStream(true)
+                        .start();
+                    available = process.waitFor(5, TimeUnit.SECONDS) && process.exitValue() == 0;
+                } catch (Exception e) {
+                    available = false;
+                }
+            }
+            SILENCEDETECT_FILTER_AVAILABLE = available;
+            return available;
+        }
+    }
+
     public double getDuration(String path) throws IOException, InterruptedException {
-        ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-i", path);
+        ProcessBuilder pb = new ProcessBuilder(FFMPEG_PATH, "-i", path);
         pb.redirectErrorStream(true); // Merge stderr to stdout
         Process process = pb.start();
-        
+
         double duration = 0;
-        
+
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
             String line;
             while ((line = reader.readLine()) != null) {
@@ -104,8 +139,8 @@ public class FFmpegWrapper {
                 }
             }
         }
-        process.waitFor();
-        return duration;
+        boolean finished = awaitProcess(process, SmartSkipConfig.PROBE_TIMEOUT_SECONDS, "getDuration", path);
+        return finished ? duration : 0;
     }
 
     public int[] getFingerprint(String path, double start, double duration) throws IOException, InterruptedException {
@@ -123,7 +158,7 @@ public class FFmpegWrapper {
         }
 
         List<String> command = new ArrayList<>();
-        command.add("ffmpeg");
+        command.add(FFMPEG_PATH);
         command.add("-hide_banner");
         command.add("-loglevel");
         command.add("error");
@@ -153,7 +188,7 @@ public class FFmpegWrapper {
 
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         StringBuilder stderr = new StringBuilder();
-        
+
         Thread stderrThread = new Thread(() -> {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
                 String line;
@@ -182,11 +217,11 @@ public class FFmpegWrapper {
                 buffer.write(data, 0, nRead);
             }
         }
-        
-        process.waitFor();
-        stderrThread.join();
-        
-        if (process.exitValue() != 0) {
+
+        boolean finished = awaitProcess(process, SmartSkipConfig.DEFAULT_TIMEOUT_SECONDS, "getFingerprint", path);
+        stderrThread.join(2000);
+
+        if (!finished || process.exitValue() != 0) {
             String stderrText = stderr.toString().trim();
             if (!stderrText.isEmpty()) {
                 log.error("FFmpeg exited with code {}. stderr: {}", process.exitValue(), stderrText);
@@ -195,28 +230,46 @@ public class FFmpegWrapper {
             }
             return new int[0];
         }
-        
+
         byte[] rawBytes = buffer.toByteArray();
         if (rawBytes.length == 0) {
             return new int[0];
         }
-        
+
         // Chromaprint raw format is 32-bit integers, Little Endian
         IntBuffer intBuf = ByteBuffer.wrap(rawBytes).order(ByteOrder.LITTLE_ENDIAN).asIntBuffer();
         int[] array = new int[intBuf.remaining()];
         intBuf.get(array);
-        
+
         return array;
     }
 
     public List<BlackFrame> detectBlackFrames(String path, TimeRange range, int minimumPercentage, int threshold) throws IOException, InterruptedException {
-        return detectBlackFrames(path, range, minimumPercentage, threshold, 50);
+        return detectBlackFrames(path, range, minimumPercentage, threshold, 50, false);
     }
-    
+
     public List<BlackFrame> detectBlackFrames(String path, TimeRange range, int minimumPercentage, int threshold, int amount) throws IOException, InterruptedException {
-        // ffmpeg -ss {start} -i "{path}" -to {duration} -an -dn -sn -vf "blackframe=amount={amount}:threshold={threshold}" -f null -
+        return detectBlackFrames(path, range, minimumPercentage, threshold, amount, false);
+    }
+
+    /**
+     * Scan a time range for black frames.
+     *
+     * @param amount        blackframe filter "amount" percentage
+     * @param keyframesOnly decode keyframes only (-skip_frame nokey -flags2 +fast),
+     *                      matching upstream's wide credits scan; frame numbers then
+     *                      count keyframes, which is what the scene-gap heuristics expect
+     */
+    public List<BlackFrame> detectBlackFrames(String path, TimeRange range, int minimumPercentage, int threshold, int amount, boolean keyframesOnly) throws IOException, InterruptedException {
+        // ffmpeg [-skip_frame nokey -flags2 +fast] -ss {start} -i "{path}" -to {duration} -an -dn -sn -vf "blackframe=amount={amount}:threshold={threshold}" -f null -
         List<String> command = new ArrayList<>();
-        command.add("ffmpeg");
+        command.add(FFMPEG_PATH);
+        if (keyframesOnly) {
+            command.add("-skip_frame");
+            command.add("nokey");
+            command.add("-flags2");
+            command.add("+fast");
+        }
         command.add("-ss");
         command.add(String.valueOf(range.getStart()));
         command.add("-i");
@@ -251,7 +304,7 @@ public class FFmpegWrapper {
                     int frame = Integer.parseInt(matcher.group(1));
                     int pblack = Integer.parseInt(matcher.group(2));
                     double time = Double.parseDouble(matcher.group(3));
-                    
+
                     if (pblack >= minimumPercentage) {
                         blackFrames.add(new BlackFrame(pblack, time, frame));
                     }
@@ -259,18 +312,115 @@ public class FFmpegWrapper {
             }
         }
 
-        process.waitFor();
+        awaitProcess(process, SmartSkipConfig.DEFAULT_TIMEOUT_SECONDS, "detectBlackFrames", path);
         return blackFrames;
     }
 
-    public List<ChapterInfo> getChapters(String path) throws IOException, InterruptedException {
-        ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-i", path);
+    /**
+     * Detect silence intervals via ffmpeg's silencedetect filter. Times are
+     * relative to the scanned range start (add range.getStart() for absolute).
+     */
+    public List<SilenceRange> detectSilence(String path, TimeRange range, int noiseDb, double minDuration) throws IOException, InterruptedException {
+        if (!isSilencedetectFilterAvailable()) {
+            return List.of();
+        }
+        List<String> command = new ArrayList<>();
+        command.add(FFMPEG_PATH);
+        command.add("-hide_banner");
+        command.add("-vn");
+        command.add("-sn");
+        command.add("-dn");
+        command.add("-ss");
+        command.add(String.valueOf(range.getStart()));
+        command.add("-i");
+        command.add(path);
+        command.add("-t");
+        command.add(String.valueOf(range.getDuration()));
+        command.add("-af");
+        command.add("silencedetect=noise=" + noiseDb + "dB:d=" + minDuration);
+        command.add("-f");
+        command.add("null");
+        command.add("-");
+
+        ProcessBuilder pb = new ProcessBuilder("bash", "-c", buildShellCommand(command));
+        applyUtf8Environment(pb);
+        // silencedetect output goes to stderr
         pb.redirectErrorStream(true);
         Process process = pb.start();
-        
+
+        List<SilenceRange> silences = new ArrayList<>();
+        Double pendingStart = null;
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                Matcher startMatcher = SILENCE_START_PATTERN.matcher(line);
+                if (startMatcher.find()) {
+                    pendingStart = Double.parseDouble(startMatcher.group(1));
+                    continue;
+                }
+                Matcher endMatcher = SILENCE_END_PATTERN.matcher(line);
+                if (endMatcher.find() && pendingStart != null) {
+                    double end = Double.parseDouble(endMatcher.group(1));
+                    silences.add(new SilenceRange(pendingStart, end));
+                    pendingStart = null;
+                }
+            }
+        }
+
+        awaitProcess(process, SmartSkipConfig.PROBE_TIMEOUT_SECONDS, "detectSilence", path);
+        return silences;
+    }
+
+    public List<Double> detectKeyframes(String path, TimeRange range) throws IOException, InterruptedException {
+        List<String> command = new ArrayList<>();
+        command.add(FFMPEG_PATH);
+        command.add("-hide_banner");
+        command.add("-loglevel");
+        command.add("error");
+        command.add("-ss");
+        command.add(String.valueOf(range.getStart()));
+        command.add("-i");
+        command.add(path);
+        command.add("-t");
+        command.add(String.valueOf(range.getDuration()));
+        command.add("-vf");
+        command.add("select='eq(pict_type,I)',showinfo");
+        command.add("-f");
+        command.add("null");
+        command.add("-");
+
+        ProcessBuilder pb = new ProcessBuilder("bash", "-c", buildShellCommand(command));
+        applyUtf8Environment(pb);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        List<Double> keyframes = new ArrayList<>();
+        // showinfo prints keyframe times on stderr merged to stdout.
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                // Lines contain "pts_time:123.456" for each keyframe.
+                java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("pts_time:([\\d.]+)").matcher(line);
+                if (matcher.find()) {
+                    double time = Double.parseDouble(matcher.group(1));
+                    keyframes.add(range.getStart() + time);
+                }
+            }
+        }
+
+        awaitProcess(process, SmartSkipConfig.PROBE_TIMEOUT_SECONDS, "detectKeyframes", path);
+        return keyframes;
+    }
+
+    public List<ChapterInfo> getChapters(String path) throws IOException, InterruptedException {
+        ProcessBuilder pb = new ProcessBuilder(FFMPEG_PATH, "-i", path);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
         List<ChapterInfo> chapters = new ArrayList<>();
         ChapterInfo currentChapter = null;
-        
+
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
             String line;
             while ((line = reader.readLine()) != null) {
@@ -296,7 +446,49 @@ public class FFmpegWrapper {
                 chapters.add(currentChapter);
             }
         }
-        process.waitFor();
+        awaitProcess(process, SmartSkipConfig.PROBE_TIMEOUT_SECONDS, "getChapters", path);
         return chapters;
+    }
+
+    /**
+     * Wait for the process to finish within the timeout; on timeout kill it and
+     * return false so callers can take their existing failure path.
+     */
+    private boolean awaitProcess(Process process, int timeoutSeconds, String operation, String path) throws InterruptedException {
+        boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+        if (!finished) {
+            log.error("FFmpeg {} timed out after {}s for {}, killing process", operation, timeoutSeconds, path);
+            process.destroyForcibly();
+        }
+        return finished;
+    }
+
+    private String buildShellCommand(List<String> args) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < args.size(); i++) {
+            if (i > 0) {
+                sb.append(' ');
+            }
+            sb.append('"').append(escapeForDoubleQuotes(args.get(i))).append('"');
+        }
+        return sb.toString();
+    }
+
+    private String escapeForDoubleQuotes(String value) {
+        if (value == null) {
+            return "";
+        }
+        String escaped = value.replace("\\", "\\\\");
+        escaped = escaped.replace("\"", "\\\"");
+        escaped = escaped.replace("$", "\\$");
+        return escaped.replace("`", "\\`");
+    }
+
+    private void applyUtf8Environment(ProcessBuilder pb) {
+        if (pb == null) {
+            return;
+        }
+        pb.environment().put("LANG", "C.UTF-8");
+        pb.environment().put("LC_ALL", "C.UTF-8");
     }
 }

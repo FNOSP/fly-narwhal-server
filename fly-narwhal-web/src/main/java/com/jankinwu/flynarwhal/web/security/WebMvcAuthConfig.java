@@ -9,13 +9,20 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebMvcAuthConfig implements WebMvcConfigurer {
 
     private final FnAuthInterceptor fnAuthInterceptor;
+    private final ClientVersionInterceptor clientVersionInterceptor;
 
-    public WebMvcAuthConfig(FnAuthInterceptor fnAuthInterceptor) {
+    public WebMvcAuthConfig(FnAuthInterceptor fnAuthInterceptor, ClientVersionInterceptor clientVersionInterceptor) {
         this.fnAuthInterceptor = fnAuthInterceptor;
+        this.clientVersionInterceptor = clientVersionInterceptor;
     }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        // Version gate first: it is independent of the signature and rejects
+        // outdated clients with a clear upgrade message before auth runs.
+        // /api/config/** is exempt (handled inside the interceptor).
+        registry.addInterceptor(clientVersionInterceptor)
+                .addPathPatterns("/api/**");
         registry.addInterceptor(fnAuthInterceptor)
                 .addPathPatterns("/api/analysis/**")
                 .addPathPatterns("/api/config/**")

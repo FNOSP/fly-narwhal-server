@@ -11,29 +11,34 @@ import java.util.List;
 
 @Slf4j
 @RequiredArgsConstructor
-public class BatchBlackFrameAltAnalyzer implements MediaFileAnalyzer {
+public class BatchCreditsBlackFrameAnalyzer implements MediaFileAnalyzer {
 
-    private final BlackFrameAltAnalyzer blackFrameAltAnalyzer;
+    private final CreditsBlackFrameAnalyzer creditsBlackFrameAnalyzer;
 
     @Override
     public void analyze(List<QueuedEpisode> episodes, AnalysisMode mode) {
-        if (mode != AnalysisMode.CREDITS) return;
+        if (mode != AnalysisMode.CREDITS) {
+            return;
+        }
 
-        log.info("Starting BlackFrame Alt Analysis for {} episodes", episodes.size());
+        log.info("Starting CreditsBlackFrame Analysis for {} episodes", episodes.size());
         for (QueuedEpisode episode : episodes) {
-            if (episode.isCreditsAnalyzed()) continue;
+            if (episode.isCreditsAnalyzed()) {
+                continue;
+            }
 
             try {
-                Segment segment = blackFrameAltAnalyzer.detectCredits(episode);
+                Segment segment = creditsBlackFrameAnalyzer.detectCredits(episode);
                 if (segment != null && segment.isValid()) {
-                    log.info("Found Credits via BlackFrame Alt for {}: {}-{}", episode.getPath(), segment.getStart(), segment.getEnd());
+                    log.info("Found Credits via CreditsBlackFrame for {}: {}-{}",
+                            episode.getPath(), segment.getStart(), segment.getEnd());
                     episode.setCreditsSegment(segment);
                     episode.setCreditsAnalyzed(true);
                     episode.setCreditsAction(AnalyzerAction.BLACK_FRAME);
                 }
             } catch (Exception e) {
                 episode.setAnalysisFailed(true);
-                log.error("Error in BlackFrame Alt analysis for " + episode.getPath(), e);
+                log.error("Error in CreditsBlackFrame analysis for " + episode.getPath(), e);
             }
         }
     }
