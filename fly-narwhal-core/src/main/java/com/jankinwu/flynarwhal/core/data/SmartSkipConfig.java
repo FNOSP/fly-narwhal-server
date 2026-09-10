@@ -94,9 +94,6 @@ public class SmartSkipConfig {
     /** Upper bound of the intro fingerprint window, in seconds. */
     public static final int MAX_INTRO_DURATION = 600;
 
-    /** Fallback upper bound for the credits fingerprint window when duration is unknown. */
-    public static final int MAX_CREDITS_DURATION = 400;
-
     /** Default ffmpeg timeout for analysis commands, in seconds. */
     public static final int DEFAULT_TIMEOUT_SECONDS = 60;
 
@@ -164,14 +161,23 @@ public class SmartSkipConfig {
         return Math.max(end, 0);
     }
 
-    /** Credits fingerprint window start for an episode of the given duration. */
+    /** Credits fingerprint window start for an episode of the given duration (upstream QueueManager). */
     public double getCreditsFingerprintStart(double duration) {
+        return getCreditsFingerprintStart(duration, false);
+    }
+
+    /**
+     * Credits have their own maximum duration in seconds. Upstream deliberately does NOT
+     * apply the general analysis percentage here, since it can exclude the actual credits
+     * boundary: start = duration - min(duration, MaximumCreditsDuration), or
+     * MaximumMovieCreditsDuration for movies.
+     */
+    public double getCreditsFingerprintStart(double duration, boolean isMovie) {
         if (duration <= 0) {
-            return Math.max(0, MAX_INTRO_DURATION);
+            return 0;
         }
-        double end = duration * getAnalysisPercent() / 100.0;
-        end = Math.min(end, MAX_CREDITS_DURATION);
-        end = Math.min(end, getAnalysisLengthLimit() * 60.0);
-        return Math.max(0, duration - end);
+        double maxCreditsDuration = Math.min(duration,
+                isMovie ? getMaximumMovieCreditsDuration() : getMaximumCreditsDuration());
+        return Math.max(0, duration - maxCreditsDuration);
     }
 }

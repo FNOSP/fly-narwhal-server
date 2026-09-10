@@ -275,7 +275,7 @@ public class AnalysisService {
     private void prepareEpisodesForAnalysis(List<QueuedEpisode> queue, SmartSkipConfig config) {
         for (QueuedEpisode ep : queue) {
             ep.setIntroFingerprintEnd(config.getIntroFingerprintEnd(ep.getDuration()));
-            ep.setCreditsFingerprintStart(config.getCreditsFingerprintStart(ep.getDuration()));
+            ep.setCreditsFingerprintStart(config.getCreditsFingerprintStart(ep.getDuration(), ep.isMovie()));
             for (AnalysisMode mode : AnalysisMode.values()) {
                 if (!isModeEnabled(mode, config)) {
                     continue; // keep previously hydrated results for disabled modes

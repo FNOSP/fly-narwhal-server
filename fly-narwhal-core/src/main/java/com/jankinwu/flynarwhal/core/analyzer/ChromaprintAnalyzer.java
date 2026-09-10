@@ -114,6 +114,24 @@ public class ChromaprintAnalyzer {
         }
     }
 
+    /**
+     * Maximum accepted match duration per mode (upstream GetMaximumSegmentDuration).
+     * Credits subtracts 1s from the fingerprint window so perfect whole-window matches
+     * (e.g. duplicate files) are rejected instead of becoming false positives.
+     */
+    public double getMaximumSegmentDuration(QueuedEpisode episode, AnalysisMode mode) {
+        switch (mode) {
+            case INTRODUCTION:
+                return config.getMaximumIntroDuration();
+            case RECAP:
+                return config.getMaximumRecapDuration();
+            case CREDITS:
+                return episode.getDuration() - episode.getCreditsFingerprintStart() - 1;
+            default:
+                return episode.getDuration();
+        }
+    }
+
     private static class RangePair {
         List<TimeRange> lhs;
         List<TimeRange> rhs;

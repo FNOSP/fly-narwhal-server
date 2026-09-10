@@ -10,20 +10,23 @@ import com.jankinwu.flynarwhal.core.ffmpeg.FFmpegWrapper;
 import com.jankinwu.flynarwhal.core.ffmpeg.SilenceRange;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Post-detection boundary adjustment, ported from upstream TimeAdjustmentHelper:
- * silence-point snapping for intro end, chapter-boundary snapping, keyframe
- * snapping and user start/end offsets.
+ * episode-boundary end snapping, chapter-boundary snapping, user offsets (subtracted
+ * from the end, matching upstream sign), silence snapping and keyframe snapping.
+ *
+ * <p>Adjustment order mirrors upstream: start (snap/chapter) -> start offset ->
+ * end (snap/chapter) -> end offset -> silence -> keyframe. When the adjusted start
+ * reaches or passes the adjusted end, an INVALID segment is returned so callers
+ * discard it instead of persisting a degenerate range.
  */
 @Slf4j
 public class SegmentHelper {
 
-    private static final double CHAPTER_SNAP_THRESHOLD = 1.5;
-    private static final double ADJUST_WINDOW_INWARD = 5.0;
-    private static final double ADJUST_WINDOW_OUTWARD = 2.0;
-    private static final double EPSILON = 1e-3;
+    private static final double EPSILON = 1e-3; // 1 ms tolerance for floating point comparisons
 
     private final FFmpegWrapper ffmpegWrapper;
 
@@ -32,138 +35,175 @@ public class SegmentHelper {
     }
 
     public Segment adjustSegment(Segment segment, AnalysisMode mode, QueuedEpisode episode, SmartSkipConfig config) {
+        return adjustSegment(segment, mode, episode, config, config.isAdjustIntroBasedOnChapters());
+    }
+
+    /**
+     * @param useChapters whether chapter-boundary snapping applies; upstream passes
+     *                    false for segments that already came from chapter matching
+     */
+    public Segment adjustSegment(Segment segment, AnalysisMode mode, QueuedEpisode episode,
+                                 SmartSkipConfig config, boolean useChapters) {
         if (segment == null || !segment.isValid() || segment.getDuration() <= 0) {
             return segment;
         }
 
-        double start = segment.getStart();
-        double end = segment.getEnd();
+        if (config.getEndSnapThreshold() < 0 || config.getAdjustWindowInward() < 0 || config.getAdjustWindowOutward() < 0) {
+            log.warn("Invalid boundary adjustment configuration for {}, keeping raw segment", episode.getPath());
+            return new Segment(segment.getStart(), segment.getEnd(), true);
+        }
+
         double duration = episode.getDuration();
-
-        try {
-            // End-snap to episode boundaries for segments very close to start/end.
-            if (start <= config.getEndSnapThreshold() + EPSILON) {
-                start = 0;
+        List<ChapterInfo> chapters = List.of();
+        if (useChapters) {
+            try {
+                chapters = ffmpegWrapper.getChapters(episode.getPath());
+            } catch (Exception e) {
+                log.debug("Chapter lookup failed for {}, skipping chapter adjustment", episode.getPath(), e);
             }
-
-            if (mode == AnalysisMode.INTRODUCTION && config.isAdjustIntroBasedOnSilence()) {
-                end = adjustEndBySilence(episode, start, end, config);
-            }
-
-            if (config.isAdjustIntroBasedOnChapters()
-                    && (mode == AnalysisMode.INTRODUCTION || mode == AnalysisMode.CREDITS)) {
-                double[] adjusted = adjustByChapters(episode, start, end);
-                start = adjusted[0];
-                end = adjusted[1];
-            }
-
-            if (config.isSnapToKeyframe()
-                    && (mode == AnalysisMode.INTRODUCTION || mode == AnalysisMode.CREDITS)) {
-                end = snapToNearestKeyframe(episode, end, mode, config);
-            }
-        } catch (Exception e) {
-            log.warn("Boundary adjustment failed for {} mode {}, keeping raw segment", episode.getPath(), mode, e);
         }
 
-        start = clamp(start + config.getIntroStartOffset(), 0, duration);
-        double endOffset = mode == AnalysisMode.CREDITS ? config.getCreditsEndOffset() : config.getIntroEndOffset();
-        end = clamp(end + endOffset, 0, duration);
+        double inward = config.getAdjustWindowInward();
+        double outward = config.getAdjustWindowOutward();
 
-        if (start > end) {
-            end = start;
+        // ---- Start ----
+        double rawStart = segment.getStart();
+        double adjustedStart = rawStart;
+        boolean snapToEpisodeStart = false;
+
+        if (rawStart < 0) {
+            log.warn("Negative segment start {} for {}, resetting to 0", rawStart, episode.getPath());
+            snapToEpisodeStart = true;
+        } else if (rawStart <= config.getEndSnapThreshold() + EPSILON) {
+            snapToEpisodeStart = true;
+        } else if (useChapters && !chapters.isEmpty()) {
+            TimeRange searchRange = getSearchRange(rawStart, duration, outward, inward);
+            adjustedStart = getChapterBoundary(chapters, rawStart, searchRange);
         }
 
-        return new Segment(start, end, true);
+        if (snapToEpisodeStart) {
+            adjustedStart = 0;
+        }
+
+        // Upstream applies the start offset after all other start adjustments, and skips
+        // it for snapped starts (IncludeIntroStartOffsetWhenSnapping defaults to false).
+        if (!snapToEpisodeStart) {
+            adjustedStart = clamp(adjustedStart + config.getIntroStartOffset(), 0, duration);
+        }
+
+        // ---- End ----
+        double rawEnd = segment.getEnd();
+        double adjustedEnd = rawEnd;
+        if (rawEnd >= duration - config.getEndSnapThreshold() - EPSILON) {
+            adjustedEnd = duration;
+        } else {
+            if (useChapters && !chapters.isEmpty()) {
+                TimeRange searchRange = getSearchRange(adjustedEnd, duration, inward, outward);
+                adjustedEnd = getChapterBoundary(chapters, adjustedEnd, searchRange);
+            }
+
+            double endOffset = mode == AnalysisMode.CREDITS ? config.getCreditsEndOffset() : config.getIntroEndOffset();
+            adjustedEnd -= endOffset;
+            adjustedEnd = clamp(adjustedEnd, 0, duration);
+
+            TimeRange silenceRange = getSearchRange(adjustedEnd, duration, inward, outward);
+            if (config.isAdjustIntroBasedOnSilence()) {
+                adjustedEnd = adjustEndBySilence(episode, adjustedEnd, silenceRange, config);
+            }
+
+            if (config.isSnapToKeyframe()) {
+                adjustedEnd = snapToNearestKeyframe(episode, adjustedEnd, silenceRange);
+            }
+        }
+
+        if (adjustedStart >= adjustedEnd) {
+            log.warn("Adjusted start {} >= end {} for {} mode {}, discarding segment",
+                    adjustedStart, adjustedEnd, episode.getPath(), mode);
+            return new Segment(adjustedStart, adjustedEnd, false);
+        }
+
+        return new Segment(adjustedStart, adjustedEnd, true);
     }
 
-    /** Snap the segment end to a silence point found in a window around the raw end. */
-    private double adjustEndBySilence(QueuedEpisode episode, double start, double end, SmartSkipConfig config) {
-        double windowStart = Math.max(0, end - ADJUST_WINDOW_INWARD);
-        double windowEnd = Math.min(episode.getDuration(), end + ADJUST_WINDOW_OUTWARD);
-        if (windowEnd - windowStart <= 0) {
-            return end;
+    /**
+     * Snap the end to the first silence point inside the search range, matching upstream
+     * AdjustIntroEndBasedOnSilenceAsync. Silence times from FFmpegWrapper are relative to
+     * the scanned range start, so the range start is added back before comparison.
+     */
+    private double adjustEndBySilence(QueuedEpisode episode, double currentEnd, TimeRange searchRange, SmartSkipConfig config) {
+        if (searchRange.getDuration() <= 0) {
+            return currentEnd;
         }
-
         try {
             List<SilenceRange> silences = ffmpegWrapper.detectSilence(
                     episode.getPath(),
-                    new TimeRange(windowStart, windowEnd),
+                    searchRange,
                     config.getSilenceDetectionMaximumNoise(),
                     config.getSilenceDetectionMinimumDuration());
-            if (silences.isEmpty()) {
-                return end;
-            }
 
-            SilenceRange best = null;
-            double bestDistance = Double.MAX_VALUE;
             for (SilenceRange silence : silences) {
-                double distance = Math.abs(silence.getStart() - end);
-                if (distance < bestDistance && silence.getStart() > start + config.getMinimumIntroDuration()) {
-                    best = silence;
-                    bestDistance = distance;
+                double start = silence.getStart() + searchRange.getStart();
+                double end = silence.getEnd() + searchRange.getStart();
+                boolean intersects = start <= searchRange.getEnd() && end >= searchRange.getStart();
+                if (!intersects
+                        || end - start < config.getSilenceDetectionMinimumDuration()
+                        || start < searchRange.getStart()) {
+                    continue;
                 }
-            }
-            if (best != null) {
-                log.debug("Silence-adjusted end {} -> {} for {}", end, best.getStart(), episode.getPath());
-                return best.getStart();
+                log.debug("Silence-adjusted end {} -> {} for {}", currentEnd, start, episode.getPath());
+                return start;
             }
         } catch (Exception e) {
             log.debug("Silence detection failed for {}", episode.getPath(), e);
         }
-        return end;
+        return currentEnd;
     }
 
-    /** Snap start/end to the nearest chapter boundary when within the snap threshold. */
-    private double[] adjustByChapters(QueuedEpisode episode, double start, double end) throws Exception {
-        List<ChapterInfo> chapters = ffmpegWrapper.getChapters(episode.getPath());
-        if (chapters.isEmpty()) {
-            return new double[]{start, end};
-        }
-
-        double snappedStart = snapToBoundary(start, chapters);
-        double snappedEnd = snapToBoundary(end, chapters);
-        if (snappedStart != start || snappedEnd != end) {
-            log.debug("Chapter-adjusted segment {}-{} -> {}-{} for {}", start, end, snappedStart, snappedEnd, episode.getPath());
-        }
-        return new double[]{snappedStart, snappedEnd};
-    }
-
-    private double snapToNearestKeyframe(QueuedEpisode episode, double time, AnalysisMode mode, SmartSkipConfig config) {
-        double windowStart = Math.max(0, time - ADJUST_WINDOW_INWARD);
-        double windowEnd = Math.min(episode.getDuration(), time + ADJUST_WINDOW_OUTWARD);
-        if (windowEnd - windowStart <= 0) {
+    private double snapToNearestKeyframe(QueuedEpisode episode, double time, TimeRange searchRange) {
+        if (searchRange.getDuration() <= 0) {
             return time;
         }
         try {
-            List<Double> keyframes = ffmpegWrapper.detectKeyframes(
-                    episode.getPath(), new TimeRange(windowStart, windowEnd));
-            double nearest = time;
-            double best = Double.MAX_VALUE;
-            for (Double keyframe : keyframes) {
-                double distance = Math.abs(keyframe - time);
-                if (distance < best) {
-                    best = distance;
-                    nearest = keyframe;
-                }
-            }
-            return nearest;
+            List<Double> keyframes = ffmpegWrapper.detectKeyframes(episode.getPath(), searchRange);
+            return selectNearest(keyframes, time);
         } catch (Exception e) {
             log.debug("Keyframe detection failed for {}", episode.getPath(), e);
             return time;
         }
     }
 
-    private double snapToBoundary(double time, List<ChapterInfo> chapters) {
-        double best = time;
-        double bestDistance = CHAPTER_SNAP_THRESHOLD;
+    /** Nearest chapter start inside the search range; reference time when none. */
+    private double getChapterBoundary(List<ChapterInfo> chapters, double referenceTime, TimeRange searchRange) {
+        List<Double> candidates = new ArrayList<>();
         for (ChapterInfo chapter : chapters) {
-            double distance = Math.abs(chapter.getStart() - time);
-            if (distance <= bestDistance) {
-                best = chapter.getStart();
-                bestDistance = distance;
+            double t = chapter.getStart();
+            if (t + EPSILON >= searchRange.getStart() && t - EPSILON <= searchRange.getEnd()) {
+                candidates.add(t);
             }
         }
-        return best;
+        if (candidates.isEmpty()) {
+            return referenceTime;
+        }
+        return selectNearest(candidates, referenceTime);
+    }
+
+    private double selectNearest(List<Double> candidates, double reference) {
+        double nearest = reference;
+        double best = Double.MAX_VALUE;
+        for (double v : candidates) {
+            double d = Math.abs(v - reference);
+            if (d < best) {
+                best = d;
+                nearest = v;
+            }
+        }
+        return nearest;
+    }
+
+    private TimeRange getSearchRange(double time, double duration, double windowStart, double windowEnd) {
+        return new TimeRange(
+                Math.max(time - windowStart, 0),
+                Math.min(time + windowEnd, duration));
     }
 
     private double clamp(double value, double min, double max) {

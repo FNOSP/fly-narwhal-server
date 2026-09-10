@@ -98,7 +98,9 @@ public class ChapterAnalyzer {
                         segment = new Segment(segment.getStart(), clampedEnd, true);
                     }
                 }
-                return segmentHelper.adjustSegment(segment, mode, episode, config);
+                // Chapter-derived segments skip chapter snapping (upstream passes
+                // adjustIntroBasedOnChapters: false) but still get silence/offset/keyframe adjustment.
+                return segmentHelper.adjustSegment(segment, mode, episode, config, false);
             }
 
         } catch (Exception e) {
@@ -186,8 +188,15 @@ public class ChapterAnalyzer {
         try {
             List<BlackFrame> blackFrames = RecapDetectionHelper.detectAdaptiveBlackFrames(
                     ffmpegWrapper, episode, maxRecapBoundary, config);
-            return RecapDetectionHelper.buildRecapFromBlackFrames(
+            Segment recap = RecapDetectionHelper.buildRecapFromBlackFrames(
                     blackFrames, config.getMinimumRecapDuration(), maxRecapBoundary);
+            if (recap == null || !recap.isValid()) {
+                return null;
+            }
+            // Upstream routes recap fallback segments through the same mode-specific
+            // boundary adjustment as chapter matches (chapters disabled).
+            Segment adjusted = segmentHelper.adjustSegment(recap, AnalysisMode.RECAP, episode, config, false);
+            return adjusted != null && adjusted.isValid() ? adjusted : null;
         } catch (Exception e) {
             log.error("Error detecting recap using black frames for {}", episode.getPath(), e);
             return null;

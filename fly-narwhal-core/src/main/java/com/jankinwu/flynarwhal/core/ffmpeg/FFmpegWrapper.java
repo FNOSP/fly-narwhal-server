@@ -30,6 +30,12 @@ public class FFmpegWrapper {
     private static final Pattern CHAPTER_TITLE_PATTERN = Pattern.compile("Metadata:\\s+title\\s+:\\s+(.+)");
     private static final Pattern SILENCE_START_PATTERN = Pattern.compile("silence_start:\\s*(-?[\\d\\.]+)");
     private static final Pattern SILENCE_END_PATTERN = Pattern.compile("silence_end:\\s*(-?[\\d\\.]+)");
+    private static final Pattern BLACK_DETECT_PATTERN = Pattern.compile("black_start:([\\d\\.]+)\\s+black_end:([\\d\\.]+)");
+    /** blackdetect minimum interval duration, matching upstream BlackInterval.MinimumDetectionDuration. */
+    private static final double BLACK_INTERVAL_MINIMUM_DURATION = 0.1;
+    /** Limited-range (TV swing) luma floor used to convert blackframe threshold to blackdetect pix_th. */
+    private static final int LIMITED_RANGE_LUMA_MINIMUM = 16;
+    private static final int LIMITED_RANGE_LUMA_RANGE = 219;
     private static final int STDERR_MAX_CHARS = 8192;
     private static final Object CAPABILITY_LOCK = new Object();
     private static volatile Boolean FFMPEG_AVAILABLE;
@@ -314,6 +320,89 @@ public class FFmpegWrapper {
 
         awaitProcess(process, SmartSkipConfig.DEFAULT_TIMEOUT_SECONDS, "detectBlackFrames", path);
         return blackFrames;
+    }
+
+    /**
+     * Detect continuous black intervals via ffmpeg's blackdetect filter, ported from
+     * upstream FFmpegService.DetectBlackIntervalsAsync. Unlike the blackframe filter
+     * (per-frame samples), blackdetect reports real [start, end] intervals of sustained
+     * black, which is what the credits interval-recovery pass expects.
+     *
+     * @param threshold blackframe-style pixel threshold (raw 0-255 luma); converted to
+     *                  blackdetect pix_th assuming limited-range video so both filters
+     *                  share one pixel-level definition of black
+     * @param minimum   minimum percentage of the frame that must be black (blackdetect
+     *                  pic_th), tied to the keyframe pass threshold so interval
+     *                  confirmation and keyframe proposal agree
+     * @return black intervals with times relative to {@code range.getStart()}
+     *         (add the range start for absolute timestamps)
+     */
+    public List<TimeRange> detectBlackIntervals(String path, TimeRange range, int threshold, int minimum) throws IOException, InterruptedException {
+        logPathEncoding("ffmpeg.detectBlackIntervals.input", path);
+        String inputPath = toFfmpegInputPath(path);
+        String pixelThreshold = formatBlackDetectPixelThreshold(threshold);
+        String pictureRatioThreshold = formatBlackDetectPictureRatioThreshold(minimum);
+
+        List<String> command = new ArrayList<>();
+        command.add(FFMPEG_PATH);
+        command.add("-hide_banner");
+        command.add("-ss");
+        command.add(String.valueOf(range.getStart()));
+        command.add("-skip_frame");
+        command.add("noref");
+        command.add("-i");
+        command.add(inputPath);
+        command.add("-to");
+        command.add(String.valueOf(range.getDuration()));
+        command.add("-an");
+        command.add("-dn");
+        command.add("-sn");
+        command.add("-vf");
+        command.add("blackdetect=d=" + BLACK_INTERVAL_MINIMUM_DURATION
+                + ":pix_th=" + pixelThreshold
+                + ":pic_th=" + pictureRatioThreshold);
+        command.add("-f");
+        command.add("null");
+        command.add("-");
+
+        log.debug("Running command: {}", String.join(" ", command));
+
+        ProcessBuilder pb = new ProcessBuilder("bash", "-c", buildShellCommand(command));
+        applyUtf8Environment(pb);
+        // blackdetect output goes to stderr
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        List<TimeRange> intervals = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                // [blackdetect @ 0x...] black_start:12.300 black_end:45.600 black_duration:33.300
+                Matcher matcher = BLACK_DETECT_PATTERN.matcher(line);
+                if (matcher.find()) {
+                    double start = Double.parseDouble(matcher.group(1));
+                    double end = Double.parseDouble(matcher.group(2));
+                    if (end > start) {
+                        intervals.add(new TimeRange(start, end));
+                    }
+                }
+            }
+        }
+
+        awaitProcess(process, SmartSkipConfig.DEFAULT_TIMEOUT_SECONDS, "detectBlackIntervals", path);
+        return intervals;
+    }
+
+    /** Invert blackdetect's (16 + pix_th * 219) cutoff so it equals the blackframe threshold. */
+    static String formatBlackDetectPixelThreshold(int threshold) {
+        double normalized = Math.min(Math.max((threshold - LIMITED_RANGE_LUMA_MINIMUM) / (double) LIMITED_RANGE_LUMA_RANGE, 0), 1);
+        return String.valueOf(Math.round(normalized * 10000) / 10000.0);
+    }
+
+    /** pic_th as a 0..1 fraction of the frame that must be black. */
+    static String formatBlackDetectPictureRatioThreshold(int minimum) {
+        double ratio = Math.min(Math.max(minimum / 100.0, 0), 1);
+        return String.valueOf(Math.round(ratio * 10000) / 10000.0);
     }
 
     /**

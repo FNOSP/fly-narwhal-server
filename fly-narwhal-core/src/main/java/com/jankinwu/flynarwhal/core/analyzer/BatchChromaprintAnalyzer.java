@@ -78,23 +78,35 @@ public class BatchChromaprintAnalyzer implements MediaFileAnalyzer {
                     );
 
                     Segment seg = result.get(current.getPath());
-                    if (seg != null && seg.isValid() && seg.getDuration() > 0) {
-                        if (mode == AnalysisMode.RECAP) {
-                            // A chromaprint match is only a candidate card: rebuild the
-                            // recap segment from black frames bounded before the intro.
-                            Segment recap = RecapDetectionHelper.buildRecapFromCandidate(
-                                    current, seg, config, ffmpegWrapper, recapBlackFrameCache);
-                            if (recap == null || !recap.isValid() || recap.getDuration() <= 0) {
-                                continue; // try matching against another episode
-                            }
-                            seg = recap;
-                        }
-                        log.info("Found {} via Chromaprint for {}: {}-{}", mode, current.getPath(), seg.getStart(), seg.getEnd());
-                        current.setSegment(mode, seg);
-                        current.setAnalyzed(mode, true);
-                        current.setAnalyzerAction(mode, AnalyzerAction.CHROMAPRINT);
-                        break; // Found a match, move to next episode
+                    if (seg == null || !seg.isValid() || seg.getDuration() <= 0) {
+                        continue;
                     }
+
+                    // Upstream rejects matches longer than the mode maximum: perfect
+                    // whole-window matches are duplicates, not intros/credits.
+                    double maxDuration = chromaprintAnalyzer.getMaximumSegmentDuration(current, mode);
+                    if (seg.getDuration() > maxDuration) {
+                        log.debug("Rejecting {} match for {}: duration {} exceeds maximum {}",
+                                mode, current.getPath(), seg.getDuration(), maxDuration);
+                        continue;
+                    }
+
+                    if (mode == AnalysisMode.RECAP) {
+                        // A chromaprint match is only a candidate card: rebuild the
+                        // recap segment from black frames bounded before the intro.
+                        Segment recap = RecapDetectionHelper.buildRecapFromCandidate(
+                                current, seg, config, ffmpegWrapper, recapBlackFrameCache);
+                        if (recap == null || !recap.isValid() || recap.getDuration() <= 0
+                                || recap.getDuration() > maxDuration) {
+                            continue; // try matching against another episode
+                        }
+                        seg = recap;
+                    }
+                    log.info("Found {} via Chromaprint for {}: {}-{}", mode, current.getPath(), seg.getStart(), seg.getEnd());
+                    current.setSegment(mode, seg);
+                    current.setAnalyzed(mode, true);
+                    current.setAnalyzerAction(mode, AnalyzerAction.CHROMAPRINT);
+                    break; // Found a match, move to next episode
                 } catch (Exception e) {
                     current.setAnalysisFailed(true);
                     log.error("Error comparing episodes", e);

@@ -30,7 +30,8 @@ class RecapDetectionHelperTest {
     private static FFmpegWrapper fakeFfmpeg(Map<TimeRange, List<BlackFrame>> responses) {
         return new FFmpegWrapper() {
             @Override
-            public List<BlackFrame> detectBlackFrames(String path, TimeRange range, int minimumPercentage, int threshold) {
+            public List<BlackFrame> detectBlackFrames(String path, TimeRange range, int minimumPercentage,
+                                                      int threshold, int amount, boolean keyframesOnly) {
                 List<BlackFrame> frames = responses.get(range);
                 return frames == null ? List.of() : frames;
             }
@@ -127,7 +128,8 @@ class RecapDetectionHelperTest {
         int[] calls = {0};
         FFmpegWrapper ffmpegWrapper = new FFmpegWrapper() {
             @Override
-            public List<BlackFrame> detectBlackFrames(String path, TimeRange range, int minimumPercentage, int threshold) {
+            public List<BlackFrame> detectBlackFrames(String path, TimeRange range, int minimumPercentage,
+                                                      int threshold, int amount, boolean keyframesOnly) {
                 calls[0]++;
                 return responses.getOrDefault(range, List.of());
             }
