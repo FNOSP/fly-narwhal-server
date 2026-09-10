@@ -78,9 +78,10 @@ public final class RecapDetectionHelper {
     }
 
     /**
-     * Scan black frames unfiltered (minimum 0) and normalize the threshold
-     * against the full darkness distribution, so every recap consumer shares
-     * one definition of "black".
+     * Scan black frames unfiltered (blackframe amount=0, minimum 0) and normalize the
+     * threshold against the full darkness distribution, so every recap consumer shares
+     * one definition of "black". Upstream reports every frame for recap scans so
+     * NormalizeThreshold can observe the content's full darkness distribution.
      */
     public static List<BlackFrame> detectAdaptiveBlackFrames(
             FFmpegWrapper ffmpegWrapper, QueuedEpisode episode, double maximumBoundary, SmartSkipConfig config)
@@ -89,7 +90,9 @@ public final class RecapDetectionHelper {
                 episode.getPath(),
                 new TimeRange(0, maximumBoundary),
                 0,
-                config.getBlackFrameThreshold());
+                config.getBlackFrameThreshold(),
+                0,
+                false);
         if (blackFrames.isEmpty()) {
             return List.of();
         }

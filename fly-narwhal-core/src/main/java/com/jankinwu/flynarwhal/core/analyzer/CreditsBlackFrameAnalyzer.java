@@ -6,17 +6,17 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * New end-credits analyzer ported from upstream CreditsBlackFrameAnalyzer.
+ * End-credits analyzer ported from upstream CreditsBlackFrameAnalyzer (12.0).
  *
- * Uses adaptive thresholding on keyframe black-frame evidence, recovers scenes
- * with targeted blackdetect intervals, refines the start boundary, and falls
- * back to non-black credits when enabled.
+ * Uses adaptive density gating on the FULL keyframe black-frame distribution
+ * (blackframe amount=0), targeted blackdetect interval recovery, and optional
+ * boundary refinement that probes the keyframe gap before a scene. Falls back to
+ * non-black credits when enabled.
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -30,27 +30,34 @@ public class CreditsBlackFrameAnalyzer {
     private final Map<String, List<TimeRange>> intervalCache = new ConcurrentHashMap<>();
 
     public Segment detectCredits(QueuedEpisode episode) {
-        double fingerprintStart = episode.getCreditsFingerprintStart();
-        double fingerprintEnd = episode.getDuration();
-
         try {
+            // Upstream reports every keyframe (amount=0) so adaptive threshold
+            // normalization and the density gate see the full darkness distribution.
             List<BlackFrame> blackFrames = ffmpegWrapper.detectBlackFrames(
                     episode.getPath(),
-                    new TimeRange(fingerprintStart, fingerprintEnd),
+                    new TimeRange(episode.getCreditsFingerprintStart(), episode.getDuration()),
                     0,
                     config.getBlackFrameThreshold(),
-                    50,
+                    0,
                     true);
 
-            Segment segment = detectBlackFrameCredits(episode, blackFrames);
+            Segment segment = blackFrames.isEmpty() ? null : detectBlackFrameCredits(episode, blackFrames);
+
             if (segment != null && segment.isValid()) {
-                return segmentHelper.adjustSegment(segment, AnalysisMode.CREDITS, episode, config);
+                Segment adjusted = segmentHelper.adjustSegment(segment, AnalysisMode.CREDITS, episode, config);
+                if (adjusted != null && adjusted.isValid()) {
+                    return adjusted;
+                }
+                log.debug("Credits segment discarded after boundary adjustment for {}", episode.getPath());
             }
 
             if (config.isDetectNonBlackCredits()) {
                 segment = detectNonBlackCredits(episode);
                 if (segment != null && segment.isValid()) {
-                    return segmentHelper.adjustSegment(segment, AnalysisMode.CREDITS, episode, config);
+                    Segment adjusted = segmentHelper.adjustSegment(segment, AnalysisMode.CREDITS, episode, config);
+                    if (adjusted != null && adjusted.isValid()) {
+                        return adjusted;
+                    }
                 }
             }
         } catch (Exception e) {
@@ -61,51 +68,55 @@ public class CreditsBlackFrameAnalyzer {
     }
 
     private Segment detectBlackFrameCredits(QueuedEpisode episode, List<BlackFrame> blackFrames) {
-        if (blackFrames == null || blackFrames.isEmpty()) {
-            return null;
-        }
-
         double fingerprintStart = episode.getCreditsFingerprintStart();
         double fingerprintEnd = episode.getDuration();
+        int minimumDuration = config.getMinimumCreditsDuration();
 
         var normalized = BlackFrameThresholdHelper.normalizeThreshold(blackFrames, config.getBlackFrameMinimumPercentage());
         int minimum = normalized.minimum();
         int sceneChange = normalized.sceneChange();
 
-        List<CreditScene> scenes = CreditSceneBuilder.detectCreditScenes(blackFrames, minimum, sceneChange);
-        List<TimeRange> intervals = new ArrayList<>();
+        List<CreditScene> scenes = CreditSceneBuilder.detectCreditScenes(
+                blackFrames, minimum, sceneChange, minimumDuration, config.isRefineCreditsBoundary());
+        List<TimeRange> blackIntervals = new ArrayList<>();
 
         if (scenes.isEmpty()) {
             List<CreditScene> candidates = CreditSceneBuilder.detectCreditSceneCandidates(blackFrames, minimum);
             if (candidates.isEmpty()) {
                 return null;
             }
-            intervals = detectBlackIntervals(episode, candidates, minimum, fingerprintStart, fingerprintEnd);
-            scenes = detectIntervalSupportedCreditScenes(blackFrames, intervals, minimum);
+            blackIntervals = detectBlackIntervals(episode, candidates, minimum, minimumDuration, fingerprintStart, fingerprintEnd);
+            scenes = CreditSceneBuilder.detectIntervalSupportedCreditScenes(blackFrames, blackIntervals, minimum, minimumDuration);
             if (scenes.isEmpty()) {
                 return null;
             }
-        } else if (scenes.size() == 1 && isSparse(blackFrames, scenes.get(0), minimum)) {
-            intervals = detectBlackIntervals(episode, scenes, minimum, fingerprintStart, fingerprintEnd);
-            List<CreditScene> supported = detectIntervalSupportedCreditScenes(blackFrames, intervals, minimum);
-            if (!supported.isEmpty()) {
-                scenes = supported;
+        } else if (scenes.size() == 1
+                && CreditSceneMetrics.calculate(blackFrames, scenes.get(0), minimum).isSparse(scenes.get(0), minimumDuration)) {
+            blackIntervals = detectBlackIntervals(episode, scenes, minimum, minimumDuration, fingerprintStart, fingerprintEnd);
+            List<CreditScene> supportedScenes =
+                    CreditSceneBuilder.detectIntervalSupportedCreditScenes(blackFrames, blackIntervals, minimum, minimumDuration);
+            if (!supportedScenes.isEmpty()) {
+                scenes = supportedScenes;
             }
         }
 
-        List<CreditScene> ranked = rankCreditCandidates(scenes, intervals);
+        List<CreditScene> ranked = rankCreditCandidates(scenes, blackIntervals);
+        CreditsBoundaryRefiner boundaryRefiner = config.isRefineCreditsBoundary() ? new CreditsBoundaryRefiner(ffmpegWrapper) : null;
 
         for (CreditScene scene : ranked) {
-            double refinedStart = scene.getStartTime();
-            if (config.isRefineCreditsBoundary()) {
-                refinedStart = refineBoundary(episode, blackFrames, scene, sceneChange);
+            double refinedStartTime = scene.getStartTime();
+            if (boundaryRefiner != null) {
+                refinedStartTime = boundaryRefiner.refine(
+                        episode, blackFrames, scene, sceneChange,
+                        config.getBlackFrameThreshold(), minimumDuration);
             }
 
-            double absStart = refinedStart + episode.getCreditsFingerprintStart();
-            double absEnd = scene.getEndTime() + episode.getCreditsFingerprintStart();
-            Segment segment = new Segment(absStart, absEnd, true);
+            Segment segment = new Segment(
+                    refinedStartTime + fingerprintStart,
+                    scene.getEndTime() + fingerprintStart,
+                    true);
 
-            if (segment.getDuration() >= config.getMinimumCreditsDuration()) {
+            if (segment.getDuration() >= minimumDuration) {
                 log.trace("Found valid credits segment: start={}s, end={}s, duration={}s",
                         segment.getStart(), segment.getEnd(), segment.getDuration());
                 return segment;
@@ -116,16 +127,26 @@ public class CreditsBlackFrameAnalyzer {
     }
 
     private Segment detectNonBlackCredits(QueuedEpisode episode) {
-        // Fallback requires keyframe visual entropy scan. Not implemented yet.
-        log.trace("Non-black credits fallback not implemented");
+        // Fallback requires the keyframe visual entropy scan (upstream CreditEntropyFallback).
+        // Not implemented yet.
+        log.trace("Non-black credits fallback not implemented for {}", episode.getPath());
         return null;
     }
 
-    private List<TimeRange> detectBlackIntervals(QueuedEpisode episode, List<CreditScene> candidates, int minimum, double fingerprintStart, double fingerprintEnd) {
-        if (candidates == null || candidates.isEmpty()) {
-            return new ArrayList<>();
-        }
-
+    /**
+     * Runs targeted blackdetect scans for candidate ranges, ported from upstream
+     * DetectBlackIntervalsForCandidatesOrEmptyAsync + FFmpegService.DetectBlackIntervalsAsync.
+     *
+     * @return detected black intervals relative to the credits fingerprint window,
+     *         or an empty list when interval detection is unavailable
+     */
+    private List<TimeRange> detectBlackIntervals(
+            QueuedEpisode episode,
+            List<CreditScene> candidates,
+            int minimum,
+            int minimumDuration,
+            double fingerprintStart,
+            double fingerprintEnd) {
         String cacheKey = episode.getPath() + "_" + minimum;
         List<TimeRange> cached = intervalCache.get(cacheKey);
         if (cached != null) {
@@ -133,61 +154,77 @@ public class CreditsBlackFrameAnalyzer {
         }
 
         List<TimeRange> intervals = new ArrayList<>();
-
-        for (CreditScene candidate : candidates) {
-            TimeRange range = buildIntervalProbeRange(candidate, fingerprintStart, fingerprintEnd);
-            try {
-                List<BlackFrame> detected = ffmpegWrapper.detectBlackFrames(
-                        episode.getPath(), range, minimum, config.getBlackFrameThreshold(), 100);
-                double rangeOffset = range.getStart() - fingerprintStart;
-                for (BlackFrame frame : detected) {
-                    double relativeTime = frame.getTime() + rangeOffset;
-                    intervals.add(new TimeRange(relativeTime, relativeTime + 0.5));
+        try {
+            for (TimeRange range : buildIntervalProbeRanges(candidates, minimumDuration, fingerprintStart, fingerprintEnd)) {
+                List<TimeRange> detected = ffmpegWrapper.detectBlackIntervals(
+                        episode.getPath(), range, config.getBlackFrameThreshold(), minimum);
+                double offset = range.getStart() - fingerprintStart;
+                for (TimeRange interval : detected) {
+                    intervals.add(new TimeRange(interval.getStart() + offset, interval.getEnd() + offset));
                 }
-            } catch (Exception e) {
-                log.trace("Black interval detection unavailable for {}", episode.getPath(), e);
             }
+        } catch (Exception e) {
+            log.debug("Black interval detection unavailable for {}", episode.getPath(), e);
+            intervals = new ArrayList<>();
         }
 
         intervalCache.put(cacheKey, intervals);
         return intervals;
     }
 
-    private TimeRange buildIntervalProbeRange(CreditScene candidate, double fingerprintStart, double fingerprintEnd) {
-        double padding = Math.max(config.getMinimumCreditsDuration() * 0.5, 2.0);
-        double start = Math.max(fingerprintStart, fingerprintStart + candidate.getStartTime() - padding);
-        double end = Math.min(fingerprintEnd, fingerprintStart + candidate.getEndTime() + padding);
-        return new TimeRange(start, end);
-    }
-
-    private List<CreditScene> detectIntervalSupportedCreditScenes(List<BlackFrame> frames, List<TimeRange> intervals, int minimum) {
-        List<CreditScene> scenes = CreditSceneBuilder.detectCreditScenes(frames, minimum, minimum);
-        List<CreditScene> supported = new ArrayList<>();
-        for (CreditScene scene : scenes) {
-            if (hasIntervalSupport(scene, intervals)) {
-                supported.add(scene);
+    /**
+     * Builds bounded blackdetect probe ranges for candidate scenes, ported from
+     * upstream BuildIntervalProbeRanges: padded, clamped to the fingerprint window,
+     * ordered and merged.
+     */
+    static List<TimeRange> buildIntervalProbeRanges(
+            List<CreditScene> candidates,
+            int minimumDuration,
+            double fingerprintStart,
+            double fingerprintEnd) {
+        double padding = CreditDetectionPolicy.intervalProbePadding(minimumDuration);
+        List<TimeRange> ranges = new ArrayList<>();
+        for (CreditScene candidate : candidates) {
+            TimeRange range = new TimeRange(
+                    Math.max(fingerprintStart, fingerprintStart + candidate.getStartTime() - padding),
+                    Math.min(fingerprintEnd, fingerprintStart + candidate.getEndTime() + padding));
+            if (range.getDuration() > 0) {
+                ranges.add(range);
             }
         }
-        return supported;
-    }
+        ranges.sort(java.util.Comparator.comparingDouble(TimeRange::getStart));
 
-    private boolean hasIntervalSupport(CreditScene scene, List<TimeRange> intervals) {
-        double minimumOverlap = Math.max(config.getMinimumCreditsDuration() * 0.2, 1.0);
-        for (TimeRange interval : intervals) {
-            double overlapStart = Math.max(scene.getStartTime(), interval.getStart());
-            double overlapEnd = Math.min(scene.getEndTime(), interval.getEnd());
-            if (overlapEnd - overlapStart >= minimumOverlap) {
-                return true;
+        if (ranges.size() <= 1) {
+            return ranges;
+        }
+
+        List<TimeRange> merged = new ArrayList<>(ranges.size());
+        TimeRange current = ranges.get(0);
+        for (int i = 1; i < ranges.size(); i++) {
+            TimeRange next = ranges.get(i);
+            if (next.getStart() <= current.getEnd()) {
+                current = new TimeRange(current.getStart(), Math.max(current.getEnd(), next.getEnd()));
+            } else {
+                merged.add(current);
+                current = next;
             }
         }
-        return false;
+        merged.add(current);
+        return merged;
     }
 
-    private List<CreditScene> rankCreditCandidates(List<CreditScene> scenes, List<TimeRange> intervals) {
-        List<RankedScene> ranked = new ArrayList<>();
+    /**
+     * Ranks credit candidates, preferring scenes with interval support and then later
+     * scenes (credits sit at the end of the episode).
+     */
+    static List<CreditScene> rankCreditCandidates(List<CreditScene> scenes, List<TimeRange> intervals) {
+        record Ranked(CreditScene scene, int index, boolean hasIntervalSupport) {
+        }
+
+        List<Ranked> ranked = new ArrayList<>();
         for (int i = 0; i < scenes.size(); i++) {
             CreditScene scene = scenes.get(i);
-            ranked.add(new RankedScene(scene, i, hasIntervalSupport(scene, intervals)));
+            ranked.add(new Ranked(scene, i, hasIntervalSupport(scene, intervals)));
         }
 
         return ranked.stream()
@@ -197,28 +234,19 @@ public class CreditsBlackFrameAnalyzer {
                     }
                     return Integer.compare(b.index(), a.index());
                 })
-                .map(RankedScene::scene)
+                .map(Ranked::scene)
                 .toList();
     }
 
-    private boolean isSparse(List<BlackFrame> frames, CreditScene scene, int minimum) {
-        long count = frames.stream()
-                .filter(f -> f.getTime() >= scene.getStartTime() && f.getTime() <= scene.getEndTime() && f.getPercentage() >= minimum)
-                .count();
-        double duration = scene.getEndTime() - scene.getStartTime();
-        return count < duration / 2.0;
-    }
-
-    private double refineBoundary(QueuedEpisode episode, List<BlackFrame> frames, CreditScene scene, int sceneChangeThreshold) {
-        for (BlackFrame frame : frames) {
-            if (frame.getFrame() >= scene.getStartFrame() && frame.getFrame() <= scene.getEndFrame()
-                    && frame.getPercentage() >= sceneChangeThreshold) {
-                return frame.getTime();
+    /** Whether a candidate scene overlaps a confirmed black interval. */
+    private static boolean hasIntervalSupport(CreditScene scene, List<TimeRange> intervals) {
+        for (TimeRange interval : intervals) {
+            double overlapStart = Math.max(scene.getStartTime(), interval.getStart());
+            double overlapEnd = Math.min(scene.getEndTime(), interval.getEnd());
+            if (overlapEnd - overlapStart >= CreditDetectionPolicy.MINIMUM_INTERVAL_OVERLAP_SECONDS) {
+                return true;
             }
         }
-        return scene.getStartTime();
-    }
-
-    private record RankedScene(CreditScene scene, int index, boolean hasIntervalSupport) {
+        return false;
     }
 }

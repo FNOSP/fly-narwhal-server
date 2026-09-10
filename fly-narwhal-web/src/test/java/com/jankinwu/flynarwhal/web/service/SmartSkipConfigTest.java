@@ -37,12 +37,20 @@ class SmartSkipConfigTest {
         assertEquals(600, config.getIntroFingerprintEnd(2400), 1e-9);
         // short episode: 25% wins
         assertEquals(300, config.getIntroFingerprintEnd(1200), 1e-9);
-        // 40-minute episode: credits window is duration - min(25%*duration, 400, 600) = 2400-400
-        assertEquals(2000, config.getCreditsFingerprintStart(2400), 1e-9);
-        // short episode: 25% window wins, credits start at 500-125
-        assertEquals(375, config.getCreditsFingerprintStart(500), 1e-9);
-        // unknown duration falls back to the legacy 600s offset
-        assertEquals(600, config.getCreditsFingerprintStart(0), 1e-9);
+    }
+
+    @Test
+    void creditsWindowFollowsMaximumCreditsDurationNotAnalysisPercent() {
+        SmartSkipConfig config = SmartSkipConfig.defaultConfig();
+        // Upstream: credits start = duration - min(duration, MaximumCreditsDuration=450).
+        // The analysis percentage must NOT shrink the credits window.
+        assertEquals(1950, config.getCreditsFingerprintStart(2400), 1e-9);
+        // Episode shorter than the maximum: window starts at 0.
+        assertEquals(50, config.getCreditsFingerprintStart(500), 1e-9);
+        assertEquals(0, config.getCreditsFingerprintStart(0), 1e-9);
+        // Movies use MaximumMovieCreditsDuration (900).
+        assertEquals(6300, config.getCreditsFingerprintStart(7200, true), 1e-9);
+        assertEquals(0, config.getCreditsFingerprintStart(800, true), 1e-9);
     }
 
     @Test
