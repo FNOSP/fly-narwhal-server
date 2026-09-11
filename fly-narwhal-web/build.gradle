@@ -29,6 +29,24 @@ tasks.named('test') {
     useJUnitPlatform()
 }
 
+// logback-spring.xml writes to the fnOS app directory, which only exists on the target
+// device. The AOT step boots the real Spring context with the "release" profile active, so
+// the file appenders try to create that directory at build time and the build dies with
+// "Failed to create parent directories for [/var/apps/...]". Point the log dir at a
+// build-local path for the JVM tasks that boot the application; a deployed run that does
+// not set FLY_NARWHAL_LOG_DIR still falls back to the fnOS path baked into the config.
+// Only JavaExec/Test-style tasks carry an `environment`; processAotResources and bootJar
+// merely copy files and never start a Spring context, so they are deliberately absent.
+def buildLogDir = layout.buildDirectory.dir('aot-logs').get().asFile
+['processAot', 'processTestAot', 'bootRun'].each { name ->
+    tasks.matching { it.name == name }.configureEach {
+        doFirst {
+            buildLogDir.mkdirs()
+            environment 'FLY_NARWHAL_LOG_DIR', buildLogDir.absolutePath
+        }
+    }
+}
+
 graalvmNative {
     binaries {
         main {
