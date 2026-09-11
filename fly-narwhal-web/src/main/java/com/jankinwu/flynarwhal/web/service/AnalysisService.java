@@ -1,8 +1,7 @@
 package com.jankinwu.flynarwhal.web.service;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.jankinwu.flynarwhal.core.analyzer.AnalyzerFactory;
 import com.jankinwu.flynarwhal.core.analyzer.MediaFileAnalyzer;
 import com.jankinwu.flynarwhal.core.data.*;
@@ -175,7 +174,7 @@ public class AnalysisService {
 
         // 批量查询已存在的记录
         List<TvSeasonInfo> existingList = tvSeasonInfoMapper.selectList(
-                new LambdaQueryWrapper<TvSeasonInfo>().in(TvSeasonInfo::getSeasonGuid, seasonGuids)
+                new QueryWrapper<TvSeasonInfo>().in("season_guid", seasonGuids)
         );
         Set<String> existingGuids = existingList.stream()
                 .map(TvSeasonInfo::getSeasonGuid)
@@ -192,10 +191,10 @@ public class AnalysisService {
 
         // 批量更新已存在的记录
         if (!toUpdate.isEmpty()) {
-            LambdaUpdateWrapper<TvSeasonInfo> updateWrapper = new LambdaUpdateWrapper<>();
-            updateWrapper.in(TvSeasonInfo::getSeasonGuid, toUpdate)
-                    .set(TvSeasonInfo::getStatus, status)
-                    .set(TvSeasonInfo::getUpdateTime, now);
+            UpdateWrapper<TvSeasonInfo> updateWrapper = new UpdateWrapper<>();
+            updateWrapper.in("season_guid", toUpdate)
+                    .set("status", status.name())
+                    .set("update_time", now);
             tvSeasonInfoMapper.update(null, updateWrapper);
         }
 

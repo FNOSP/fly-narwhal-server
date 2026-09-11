@@ -1,0 +1,7 @@
+[
+  { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.DbVersionMapper" ] },
+  { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.EpisodeSegmentMapper" ] },
+  { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.TvSeasonInfoMapper" ] },
+  { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.UserSmartSkipConfigMapper" ] },
+  { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.VideoConfigUrlMapper" ] }
+]
