@@ -189,7 +189,7 @@ public class FFmpegWrapper {
 
         log.debug("Running command: {}", String.join(" ", command));
 
-        ProcessBuilder pb = new ProcessBuilder(command);
+        ProcessBuilder pb = new ProcessBuilder("bash", "-c", buildShellCommand(command));
         Process process = pb.start();
 
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
@@ -293,7 +293,7 @@ public class FFmpegWrapper {
 
         log.debug("Running command: {}", String.join(" ", command));
 
-        ProcessBuilder pb = new ProcessBuilder(command);
+        ProcessBuilder pb = new ProcessBuilder("bash", "-c", buildShellCommand(command));
         // Blackframe output goes to stderr
         pb.redirectErrorStream(true);
         Process process = pb.start();
@@ -338,8 +338,6 @@ public class FFmpegWrapper {
      *         (add the range start for absolute timestamps)
      */
     public List<TimeRange> detectBlackIntervals(String path, TimeRange range, int threshold, int minimum) throws IOException, InterruptedException {
-        logPathEncoding("ffmpeg.detectBlackIntervals.input", path);
-        String inputPath = toFfmpegInputPath(path);
         String pixelThreshold = formatBlackDetectPixelThreshold(threshold);
         String pictureRatioThreshold = formatBlackDetectPictureRatioThreshold(minimum);
 
@@ -351,7 +349,7 @@ public class FFmpegWrapper {
         command.add("-skip_frame");
         command.add("noref");
         command.add("-i");
-        command.add(inputPath);
+        command.add(path);
         command.add("-to");
         command.add(String.valueOf(range.getDuration()));
         command.add("-an");
