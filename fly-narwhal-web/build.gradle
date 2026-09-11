@@ -48,6 +48,38 @@ graalvmNative {
     }
 }
 
+// The versioned binary name changes every release, which would force the Dockerfile and
+// the release workflow to hardcode a version. Emit an unversioned copy alongside it so
+// both can reference a stable path; the version still reaches users via the release asset
+// name and the jar-style BuildVersionConfiguration baked into the image.
+tasks.register('linkNativeBinary') {
+    dependsOn(tasks.named('nativeCompile'))
+    doLast {
+        def outDir = new File(layout.buildDirectory.get().asFile, 'native/nativeCompile')
+        def versioned = new File(outDir, "fly-narwhal-server-${project.version}")
+        def stable = new File(outDir, 'fly-narwhal-server')
+
+        if (!versioned.exists()) {
+            throw new GradleException("Native binary missing: ${versioned.absolutePath}")
+        }
+        if (stable.exists()) {
+            stable.delete()
+        }
+
+        // Prefer a hard link: same inode, so the ~150MB binary is not duplicated. Some
+        // filesystems (and some CI sandboxes) disallow links, so fall back to a full copy
+        // rather than failing the build over it.
+        try {
+            java.nio.file.Files.createLink(stable.toPath(), versioned.toPath())
+        } catch (Exception e) {
+            logger.lifecycle("Hard link unavailable (${e.class.simpleName}); copying instead")
+            java.nio.file.Files.copy(versioned.toPath(), stable.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        }
+        stable.setExecutable(true)
+    }
+}
+
 // mybatis-spring 3.0.x AOT bug (mybatis/spring#929): the generated bean definitions for
 // MapperFactoryBean carry a raw Class<?> "mapperInterface" property value whose setter is
 // autowire-candidate material — under native-image Spring then tries to inject a
