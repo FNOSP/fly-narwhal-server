@@ -273,7 +273,6 @@ public class configServiceImpl implements ConfigService {
                 resolvedJarPath,
                 newArtifact.getAbsolutePath()
         );
-        ProcessBuilder pb = new ProcessBuilder("sh", "-c", command);
         if (jarDir != null) {
             pb.directory(jarDir);
         }
