@@ -35,6 +35,10 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### macOS ###
+.DS_Store
+
 /data/
 /logs/
 /fly-narwhal-web/logs/
