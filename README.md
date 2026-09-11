@@ -10,28 +10,42 @@
 > 服务端已上架应用中心，请优先从飞牛应用中心下载使用
 
 ### 准备工作
-在飞牛 NAS 应用中心安装 Java 21
+无需安装 Java：服务端以 GraalVM 原生二进制形式发布，自带运行时。
 
-### 使用 releases 中打包好的 jar 包（推荐）
+### 使用 releases 中打包好的二进制（推荐）
 
-下载 [releases](https://github.com/FNOSP/fly-narwhal-server/releases/latest) 中的 jar 包，并将其放到飞牛 NAS 某个目录下
+服务端不再发布 jar，只发布 Linux 原生二进制，按 CPU 架构分为两个包：
 
+| 架构 | 文件名 |
+| --- | --- |
+| x86_64 / amd64 | `fly-narwhal-server-linux-amd64-{version}.tar.gz` |
+| ARM64 / aarch64 | `fly-narwhal-server-linux-arm64-{version}.tar.gz` |
+
+在 [releases](https://github.com/FNOSP/fly-narwhal-server/releases/latest) 页面下载与你的
+NAS 架构匹配的包，放到飞牛 NAS 某个目录下并解压：
+
+```bash
+tar -xzf fly-narwhal-server-linux-amd64-{version}.tar.gz
+```
+
+> 解压后是同目录下的一个可执行文件加若干 `lib*.so`，**必须放在一起**，程序启动时会从同目录加载它们。
+> 压缩包已保留可执行权限，无需再 `chmod +x`。
 
 ### 运行
-1. **在终端工具中进入 Jar 包所在目录**
+1. **在终端工具中进入解压目录**
 
-2. **使用 Jar 包运行 (后台)**：
+2. **后台运行**：
 
    ```bash
-   # 请根据实际构建出的版本号替换{version}
-   nohup java -jar fly-narwhal-server-{version}.jar > /dev/null 2>&1 &
-   
-   # 服务默认运行在 5365 端口，如果需要更换默认端口
-   nohup java -jar fly-narwhal-server-{version}.jar --server.port=8080 > /dev/null 2>&1 &
+   # 服务默认运行在 5365 端口
+   nohup ./fly-narwhal-server > /dev/null 2>&1 &
+
+   # 如果需要更换默认端口
+   nohup ./fly-narwhal-server --server.port=8080 > /dev/null 2>&1 &
    ```
 
 3. **停止服务**：
-   
+
    ```bash
    kill $(lsof -t -i:5365)
    ```
@@ -39,9 +53,11 @@
 ### 从源码构建
 
 #### 准备工作
-- 安装 JDK 21
+- 安装 GraalVM JDK 21（需要其中的 `native-image`）
+- 原生镜像**只能为本机架构构建**，无法交叉编译：在 x86_64 机器上编出 amd64，
+  在 ARM64 机器上编出 arm64
 
-#### 构建 Jar 包
+#### 构建二进制
 1. **克隆项目：**
    ```bash
    git clone https://github.com/FNOSP/fly-narwhal-server
@@ -51,12 +67,22 @@
    ```bash
    chmod +x gradlew
    ```
-3. **清理并打包**：
+3. **清理并构建**：
    ```bash
-   ./gradlew clean :fly-narwhal-web:bootJar -x test
+   ./gradlew clean :fly-narwhal-web:linkNativeBinary -x test
    ```
+4. **产物位置**：`fly-narwhal-web/build/native/nativeCompile/`
+   下的 `fly-narwhal-server`（以及同目录的 `lib*.so`，需一并分发）
 
 ### Docker 部署
+
+镜像内置的是原生二进制（没有 JRE），所以 `docker build` 之前必须先在本机构建好：
+
+```bash
+./gradlew clean :fly-narwhal-web:linkNativeBinary -x test
+```
+
+> 原生镜像只能为本机架构构建，因此镜像也要在与目标运行环境相同的架构上构建。
 
 #### 使用 Docker Compose 启动
 1. **确保已安装 Docker 和 Docker Compose**。
