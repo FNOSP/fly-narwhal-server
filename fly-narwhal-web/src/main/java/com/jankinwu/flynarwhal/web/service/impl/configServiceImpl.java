@@ -55,11 +55,11 @@ public class configServiceImpl implements ConfigService {
             try {
                 // 1. Download
                 sendEvent(emitter, "update_status", "Downloading update...");
-                File newJar = downloadFile(downloadUrl, proxyUrl);
+                File newArtifact = downloadFile(downloadUrl, proxyUrl);
 
                 // 2. Verify Hash
                 sendEvent(emitter, "update_status", "Verifying integrity...");
-                if (!verifyHash(newJar, hash)) {
+                if (!verifyHash(newArtifact, hash)) {
                     sendEvent(emitter, "error", "Hash verification failed");
                     emitter.complete();
                     updateInProgress.set(false);
@@ -78,7 +78,7 @@ public class configServiceImpl implements ConfigService {
 
                 // 4. Start Updater
                 sendEvent(emitter, "update_status", "Starting update process...");
-                startUpdaterProcess(updater, newJar);
+                startUpdaterProcess(updater, newArtifact);
 
                 // 5. Notify Client & Exit
                 sendEvent(emitter, "update_start", "Update process started. Server will restart.");
@@ -127,11 +127,12 @@ public class configServiceImpl implements ConfigService {
                  finalUrl = proxyUrl + "/" + url;
              }
         }
-        
+
         log.info("Downloading update from: {}", finalUrl);
         RestTemplate restTemplate = RestTemplateFactory.create(Duration.ofSeconds(30), Duration.ofMinutes(10));
-        
-        File tempFile = new File("/var/apps/App.Native.flyNarwhalServer/target/server/fly-narwhal-update.jar");
+
+        String suffix = url.matches("(?i).*\\.exe($|\\?.*)") ? ".exe" : "";
+        File tempFile = File.createTempFile("fly-narwhal-update-", suffix);
         restTemplate.execute(finalUrl, org.springframework.http.HttpMethod.GET, null, response -> {
             StreamUtils.copy(response.getBody(), new FileOutputStream(tempFile));
             return null;
@@ -200,7 +201,16 @@ public class configServiceImpl implements ConfigService {
         }
     }
 
-    private void startUpdaterProcess(File updater, File newJar) throws IOException {
+    private void startUpdaterProcess(File updater, File newArtifact) throws IOException {
+        // Native image: no jar and the Go updater's launcher is `java -jar`, so swap the binary
+        // in place ourselves. The caller System.exit(0)s right after this returns; on Linux an
+        // exec'd file can be replaced (rename-unlink), and we restart via a detached script that
+        // waits for our PID to die before moving the new binary into place and re-execing it.
+        if (isNativeImage()) {
+            startNativeSelfUpdate(newArtifact);
+            return;
+        }
+
         String currentJarPath = null;
         try {
             String[] args = ProcessHandle.current().info().arguments().orElse(null);
@@ -254,15 +264,14 @@ public class configServiceImpl implements ConfigService {
         long pid = ProcessHandle.current().pid();
 
         String resolvedJarPath = currentJarFile.getAbsolutePath();
-        log.info("Starting updater: {} {} {} {}", updater.getAbsolutePath(), pid, resolvedJarPath, newJar.getAbsolutePath());
+        log.info("Starting updater: {} {} {} {}", updater.getAbsolutePath(), pid, resolvedJarPath, newArtifact.getAbsolutePath());
 
         File jarDir = currentJarFile.getParentFile();
-        String command = String.format(
-                "nohup %s %d %s %s >/dev/null 2>&1 </dev/null &",
-                shellEscape(updater.getAbsolutePath()),
-                pid,
-                shellEscape(resolvedJarPath),
-                shellEscape(newJar.getAbsolutePath())
+        ProcessBuilder pb = new ProcessBuilder(
+                updater.getAbsolutePath(),
+                String.valueOf(pid),
+                resolvedJarPath,
+                newArtifact.getAbsolutePath()
         );
         ProcessBuilder pb = new ProcessBuilder("sh", "-c", command);
         if (jarDir != null) {
@@ -272,7 +281,55 @@ public class configServiceImpl implements ConfigService {
         log.info("Updater process started, pid={}", process.pid());
     }
 
-    private String shellEscape(String value) {
-        return "'" + value.replace("'", "'\"'\"'") + "'";
+    private void startNativeSelfUpdate(File newBinary) throws IOException {
+        String self = resolveNativeBinaryPath();
+        if (self == null || self.isBlank()) {
+            throw new IOException("Unable to resolve native binary path");
+        }
+        File binary = new File(self).getCanonicalFile();
+        long pid = ProcessHandle.current().pid();
+
+        File script = File.createTempFile("narwhal-native-update-", ".sh");
+        script.deleteOnExit();
+        String scriptBody = String.join("\n",
+                "#!/bin/sh",
+                "SELF=" + shellQuote(binary.getAbsolutePath()),
+                "NEW=" + shellQuote(newBinary.getAbsolutePath()),
+                "PID=" + pid,
+                "while kill -0 \"$PID\" 2>/dev/null; do sleep 1; done",
+                "mv \"$NEW\" \"$SELF\"",
+                "chmod +x \"$SELF\"",
+                "cd \"$(dirname \"$SELF\")\" || exit 1",
+                "nohup \"$SELF\" > /dev/null 2>&1 &",
+                "");
+        Files.writeString(script.toPath(), scriptBody);
+        if (!script.setExecutable(true)) {
+            log.warn("Failed to mark update script executable");
+        }
+
+        ProcessBuilder pb = new ProcessBuilder("/bin/sh", script.getAbsolutePath());
+        pb.redirectErrorStream(true);
+        pb.directory(binary.getParentFile());
+        Process process = pb.start();
+        log.info("Native self-update started for {} (waiting on pid {})", binary.getAbsolutePath(), pid);
+    }
+
+    private static String shellQuote(String value) {
+        return "'" + value.replace("'", "'\\''") + "'";
+    }
+
+    private static boolean isNativeImage() {
+        return System.getProperty("org.graalvm.nativeimage.imagecode") != null;
+    }
+
+    private String resolveNativeBinaryPath() {
+        try {
+            String self = new File("/proc/self/exe").getCanonicalPath();
+            if (new File(self).exists()) {
+                return self;
+            }
+        } catch (Exception ignored) {
+        }
+        return System.getProperty("sun.java.command");
     }
 }

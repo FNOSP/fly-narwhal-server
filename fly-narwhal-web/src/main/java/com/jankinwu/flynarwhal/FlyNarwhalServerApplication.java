@@ -1,6 +1,7 @@
 package com.jankinwu.flynarwhal;
 
-import org.mybatis.spring.annotation.MapperScan;
+import com.jankinwu.flynarwhal.web.config.MybatisLoggingWarmup;
+
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
@@ -9,10 +10,10 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 
 @SpringBootApplication
-@MapperScan("com.jankinwu.flynarwhal.web.mapper")
 public class FlyNarwhalServerApplication {
 
     public static void main(String[] args) {
+        MybatisLoggingWarmup.warmUp();
         enforceUtf8DefaultCharset();
         SpringApplication.run(FlyNarwhalServerApplication.class, args);
     }

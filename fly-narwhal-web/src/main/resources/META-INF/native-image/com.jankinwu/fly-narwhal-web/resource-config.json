@@ -1,0 +1,17 @@
+{
+  "resources": {
+    "includes": [
+      { "pattern": "\\Qsql/\\E.*\\.sql" },
+      { "pattern": "\\Qsql/\\E[^/]*/?" },
+      { "pattern": "\\Qsql/\\E" },
+      { "pattern": "\\Qstatic/\\E.*" },
+      { "pattern": "\\Qupdater/\\E.*" },
+      { "pattern": "\\Qlogback-spring.xml\\E" },
+      { "pattern": "\\Qapplication\\E.*\\.yml" },
+      { "pattern": "\\QMETA-INF/services/\\E.*" },
+      { "pattern": "\\QMETA-INF/spring/\\E.*\\.imports" }
+    ],
+    "excludes": []
+  },
+  "bundles": []
+}

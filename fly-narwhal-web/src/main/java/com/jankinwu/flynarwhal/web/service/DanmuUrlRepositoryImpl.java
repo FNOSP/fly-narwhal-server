@@ -1,6 +1,6 @@
 package com.jankinwu.flynarwhal.web.service;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.jankinwu.flynarwhal.core.danmu.repository.DanmuUrlRepository;
 import com.jankinwu.flynarwhal.web.entity.VideoConfigUrl;
 import com.jankinwu.flynarwhal.web.mapper.VideoConfigUrlMapper;
@@ -19,16 +19,16 @@ public class DanmuUrlRepositoryImpl implements DanmuUrlRepository {
 
     @Override
     public List<String> findUrlsByGuid(String guid) {
-        List<VideoConfigUrl> list = mapper.selectList(new LambdaQueryWrapper<VideoConfigUrl>()
-                .eq(VideoConfigUrl::getGuid, guid));
+        List<VideoConfigUrl> list = mapper.selectList(new QueryWrapper<VideoConfigUrl>()
+                .eq("guid", guid));
         if (list == null) return new ArrayList<>();
         return list.stream().map(VideoConfigUrl::getUrl).collect(Collectors.toList());
     }
 
     @Override
     public List<String> findUrlsByParentGuid(String parentGuid) {
-        List<VideoConfigUrl> list = mapper.selectList(new LambdaQueryWrapper<VideoConfigUrl>()
-                .eq(VideoConfigUrl::getParentGuid, parentGuid));
+        List<VideoConfigUrl> list = mapper.selectList(new QueryWrapper<VideoConfigUrl>()
+                .eq("parent_guid", parentGuid));
         if (list == null) return new ArrayList<>();
         return list.stream().map(VideoConfigUrl::getUrl).collect(Collectors.toList());
     }

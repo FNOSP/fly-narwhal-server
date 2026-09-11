@@ -7,6 +7,7 @@ plugins {
     id 'java'
     id 'org.springframework.boot'
     id 'io.spring.dependency-management'
+    id 'org.graalvm.buildtools.native'
 }
 
 dependencies {
@@ -26,6 +27,128 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+graalvmNative {
+    binaries {
+        main {
+            imageName = "fly-narwhal-server-${project.version}"
+            buildArgs = [
+                // MyBatis LogFactory resolves its logger impl reflectively in a static
+                // initializer. Under native AOT that init runs at build time, the Slf4jImpl
+                // constructor's own reflective method lookup fails (LocationAwareLogger#log
+                // not registered), poisoning LogFactory permanently — every later getLog()
+                // throws with an NPE cause. Force the logging package runtime-initialized;
+                // warmup in main() pre-selects Slf4jImpl before Spring touches it.
+                '--initialize-at-run-time=org.apache.ibatis.logging',
+                '-H:Class=com.jankinwu.flynarwhal.FlyNarwhalServerApplication',
+                '-H:+AddAllCharsets'
+            ]
+        }
+    }
+}
+
+// mybatis-spring 3.0.x AOT bug (mybatis/spring#929): the generated bean definitions for
+// MapperFactoryBean carry a raw Class<?> "mapperInterface" property value whose setter is
+// autowire-candidate material — under native-image Spring then tries to inject a
+// java.lang.Class<?> bean into each mapper and fails at startup. The constructor arg alone
+// sets the interface (identical effect to JVM), so strip that property assignment from the
+// AOT-generated sources before they are compiled into the image.
+tasks.register('patchAotSources') {
+    dependsOn tasks.named('processAot')
+    outputs.upToDateWhen { false }
+    doLast {
+        def aotRoot = new File(layout.buildDirectory.get().asFile, 'generated/aotSources')
+
+        // mybatis-spring 3.0.x AOT bug (mybatis/spring#929): generated MapperFactoryBean
+        // definitions instantiate through BeanInstanceSupplier.forConstructor(Class.class) and
+        // are left on by-type/constructor autowiring, so under native-image Spring tries to
+        // resolve java.lang.Class<?> as an autowire candidate for every mapper and fails at
+        // startup. Replace each definition with fully explicit wiring — indexed Class constructor
+        // arg + no injection fallback anywhere. That is semantically identical to the JVM path.
+        def registrations = new File(aotRoot, 'com/jankinwu/flynarwhal/FlyNarwhalServerApplication__BeanFactoryRegistrations.java')
+        if (registrations.exists()) {
+            def text = registrations.text
+            // The registrar replay at image runtime double-registers mappers (the same beans exist
+            // from our patched definitions); allow overrides so it is a harmless overwrite.
+            text = text.replace('public void registerBeanDefinitions(DefaultListableBeanFactory beanFactory) {',
+                    'public void registerBeanDefinitions(DefaultListableBeanFactory beanFactory) {\n    beanFactory.setAllowBeanDefinitionOverriding(true);')
+            text = text.replace('import org.mybatis.spring.mapper.MapperFactoryBean;',
+                                'import org.mybatis.spring.mapper.MapperFactoryBean;\nimport com.jankinwu.flynarwhal.web.mapper.*;')
+            def mapperDefPattern = ~/(?s)(  private static BeanDefinition get(\w+Mapper)BeanDefinition\(\) \{)(.*?)(\n  \})/
+            text = text.replaceAll(mapperDefPattern) { m ->
+                def header = m[1]
+                def name = m[2]
+                def body = m[3]
+                def tail = m[4]
+                if (!body.contains('MapperFactoryBean')) return m[0]
+                // mybatis/spring#929 native fix: the stock scanner output adds a raw Class<?>
+                // "mapperInterface" property while leaving definitions on by-type/constructor
+                // autowiring, so at image runtime Spring resolves java.lang.Class<?> as an autowire
+                // candidate for every mapper and startup fails. The AOT supplier also converts via
+                // resolveAutowiredArgument when its value holder is null — same trap. Rewrite each
+                // definition with fully explicit values ONLY (indexed String ctor arg + Class-typed
+                // indexed arg, no supplier) and AUTOWIRE_NO; nothing is left to inject.
+                "${header}\n" +
+                "    RootBeanDefinition beanDefinition = new RootBeanDefinition(MapperFactoryBean.class);\n" +
+                "    beanDefinition.setTargetType(ResolvableType.forClass(MapperFactoryBean.class));\n" +
+                // mybatis/spring#929 native fix: concrete values only — String generic ctor arg (the
+                // JVM scanner path's shape; resolveConstructorArguments converts it, no lookup),
+                // explicit sqlSessionFactory reference, AUTOWIRE_NO so nothing is injected at all.
+                "    beanDefinition.getConstructorArgumentValues().addGenericArgumentValue(\"com.jankinwu.flynarwhal.web.mapper.${name}\");\n" +
+                "    beanDefinition.getPropertyValues().addPropertyValue(\"mapperInterface\", ${name}.class);\n" +
+                "    beanDefinition.getPropertyValues().add(\"addToConfig\", true);\n" +
+                "    beanDefinition.getPropertyValues().add(\"sqlSessionFactory\", new org.springframework.beans.factory.config.RuntimeBeanReference(\"sqlSessionFactory\"));\n" +
+                "    beanDefinition.setAutowireMode(org.springframework.beans.factory.support.AbstractBeanDefinition.AUTOWIRE_NO);\n" +
+                "    beanDefinition.setLazyInit(false);\n" +
+                "    return beanDefinition;${tail}"
+            }
+            // Drop the registrar's registration line entirely — AOT instantiated abstract
+            // definitions regardless; removing the call is what actually prevents the stock scan
+            // from replaying at image runtime. Mapper beans themselves already exist above.
+            text = text.replaceAll(/(?m)^\s*beanFactory\.registerBeanDefinition\("[^"]*#MapperScannerRegistrar#0", *MapperScannerConfigurer__BeanDefinitions\.getFlyNarwhalServerApplicationMapperScannerRegistrarBeanDefinition\(\)\);\r?\n/, '')
+            registrations.text = text
+        }
+
+        // Neutralize the scanner bean itself: MapperScannerConfigurer.postProcessBeanDefinitionRegistry
+        // runs when the bean is instantiated (as a BeanFactoryPostProcessor), re-scanning and
+        // overwriting our explicit mapper definitions with the raw Class<?> property wiring that
+        // breaks native autowiring. Rewrite its generated definition to an abstract no-op; also
+        // drop any raw Class-typed filter property values that survive into it.
+        def registrarDef = new File(aotRoot, 'org/mybatis/spring/mapper/MapperScannerConfigurer__BeanDefinitions.java')
+        if (registrarDef.exists()) {
+            def s = registrarDef.text
+            s = s.replaceAll(/(?s)(  public static BeanDefinition getFlyNarwhalServerApplicationMapperScannerRegistrarBeanDefinition\(\s*\) \{).*?(\n  \})/) { m ->
+                m[1] + '\n' +
+                "    // narwhal native patch (mybatis/spring#929): stock scan would re-register mappers\n" +
+                "    // with raw Class<?> properties under by-type autowiring, which fails at image runtime.\n" +
+                "    RootBeanDefinition beanDefinition = new RootBeanDefinition(MapperScannerConfigurer.class);\n" +
+                "    beanDefinition.setRole(BeanDefinition.ROLE_INFRASTRUCTURE);\n" +
+                "    beanDefinition.setAbstract(true);\n" +
+                "    return beanDefinition;" + m[2]
+            }
+            s = s.replaceAll(/(?m)^\s*beanDefinition\.getPropertyValues\(\)\.addPropertyValue\("(annotationClass|markerInterface)", [\w.]+\.class\);\r?\n/, '')
+            registrarDef.text = s
+        }
+
+        // mybatis-plus's AutoConfiguredMapperScannerRegistrar sets a raw Class<?> "annotationClass"
+        // property on its MapperScannerConfigurer definition — same autowire trap. Strip it from
+        // every MP-generated definition so the stock scan never resurrects java.lang.Class<?>.
+        new File(aotRoot, 'com/baomidou').traverse(type: groovy.io.FileType.FILES, nameFilter: ~/.*\.java/) { f ->
+            def s = f.text
+            if (s.contains('addPropertyValue("annotationClass"') || s.contains('addPropertyValue("markerInterface"')) {
+                f.text = s.replaceAll(/(?m)^\s*beanDefinition\.getPropertyValues\(\)\.addPropertyValue\("(annotationClass|markerInterface)", [\w.]+\.class\);\r?\n/, '')
+            }
+        }
+    }
+}
+
+tasks.named('compileAotJava') { dependsOn patchAotSources }
+
+// Keep the plain jar enabled: GraalVM's nativeCompile runs against the AOT-processed
+// classes, and buildUpdaterBinaries/native packaging both expect it to exist.
+jar {
+    enabled = true
 }
 
 bootJar {
@@ -283,6 +406,10 @@ tasks.named('processResources') {
 
 tasks.named('bootJar') {
     dependsOn(tasks.named('buildUpdaterBinaries'))
+    // processAot emits its own META-INF/native-image hints alongside the hand-written ones in
+    // src/main/resources. Both describe the same classes and the packaged jar only needs one copy;
+    // the main-source entries are the superset, so keep whichever is seen first.
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 tasks.matching { it.name == "bootRun" }.configureEach {
