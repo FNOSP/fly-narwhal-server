@@ -31,6 +31,11 @@ public class WebMvcAuthConfig implements WebMvcConfigurer {
 
     @Override
     public void addViewControllers(ViewControllerRegistry registry) {
-        registry.addRedirectViewController("/", "/download.html");
+        // index.html is the Vue landing page (built from web/ into static/).
+        registry.addRedirectViewController("/", "/index.html");
+        // /download.html was the hand-written landing page the Vue app replaced. Forward
+        // rather than redirect so links published in release notes and client configs keep
+        // working with the address bar unchanged.
+        registry.addViewController("/download.html").setViewName("forward:/index.html");
     }
 }

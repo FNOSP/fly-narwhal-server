@@ -1,0 +1,228 @@
+:root {
+    --brand: #007AFF;
+    --brand-deep: #0062CC;
+    --brand-tint: rgba(0, 122, 255, 0.1);
+    --bg: #F5F5F7;
+    --surface: #FFFFFF;
+    --ink: #1D1D1F;
+    --ink-soft: #424245;
+    --ink-muted: #86868B;
+    --hairline: rgba(0, 0, 0, 0.08);
+    --radius-lg: 28px;
+    --radius-md: 18px;
+    --radius-sm: 12px;
+    --shadow-sm: 0 4px 6px rgba(0, 0, 0, 0.02);
+    --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.08);
+    --shadow-lg: 0 28px 70px rgba(0, 0, 0, 0.14);
+    --ease: cubic-bezier(0.25, 0.8, 0.25, 1);
+    --nav-h: 62px;
+    /* Driven by scroll from App.vue: 0 at the top, 1 once past the hero. */
+    --scroll: 0;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+    /* Anchor targets must clear the floating nav. */
+    scroll-padding-top: calc(var(--nav-h) + 16px);
+    -webkit-text-size-adjust: 100%;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro SC", "SF Pro Text", "PingFang SC",
+        "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+}
+
+img {
+    display: block;
+    max-width: 100%;
+}
+
+a {
+    color: var(--brand);
+    text-decoration: none;
+}
+
+button {
+    font: inherit;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: inherit;
+}
+
+:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 3px;
+    border-radius: 6px;
+}
+
+/* ---------- layout ---------- */
+
+.shell {
+    width: 100%;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 24px;
+}
+
+.section {
+    padding: clamp(72px, 11vw, 140px) 0;
+}
+
+/* ---------- scroll reveal ---------- */
+
+.reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 0.85s var(--ease), transform 0.85s var(--ease);
+    transition-delay: var(--delay, 0ms);
+    will-change: opacity, transform;
+}
+
+.reveal.is-revealed {
+    opacity: 1;
+    transform: none;
+}
+
+/* Line-mask reveal: the container stays put while each wrapped line slides up
+   from behind its own overflow edge — the classic Apple headline entrance.
+   Per-line offsets come from an inline --line-delay on the inner span. */
+.reveal--mask {
+    opacity: 1;
+    transform: none;
+}
+
+.line-mask {
+    display: block;
+    overflow: hidden;
+    /* Room for descenders so the mask edge does not clip glyph bottoms. */
+    padding-bottom: 0.1em;
+    margin-bottom: -0.1em;
+}
+
+.line-mask > span {
+    display: block;
+    transform: translateY(115%);
+    transition: transform 0.95s var(--ease);
+    transition-delay: var(--line-delay, 0ms);
+    will-change: transform;
+}
+
+.reveal--mask.is-revealed .line-mask > span {
+    transform: none;
+}
+
+/* ---------- type ---------- */
+
+.eyebrow {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--brand);
+    margin-bottom: 14px;
+}
+
+.h2 {
+    font-size: clamp(30px, 4.4vw, 52px);
+    font-weight: 700;
+    letter-spacing: -0.022em;
+    line-height: 1.12;
+}
+
+.lede {
+    font-size: clamp(16px, 1.6vw, 19px);
+    color: var(--ink-muted);
+    line-height: 1.65;
+    max-width: 62ch;
+}
+
+.section-head {
+    margin-bottom: clamp(40px, 5vw, 64px);
+}
+
+.section-head .lede {
+    margin-top: 16px;
+}
+
+/* ---------- buttons ---------- */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 22px;
+    border-radius: 999px;
+    font-size: 15px;
+    font-weight: 600;
+    transition: transform 0.28s var(--ease), background-color 0.28s var(--ease),
+        box-shadow 0.28s var(--ease), border-color 0.28s var(--ease);
+    white-space: nowrap;
+}
+
+.btn-primary {
+    background: var(--brand);
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(0, 122, 255, 0.32);
+}
+
+.btn-primary:hover {
+    background: var(--brand-deep);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 26px rgba(0, 122, 255, 0.38);
+}
+
+.btn-ghost {
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--ink);
+    border: 1px solid var(--hairline);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.btn-ghost:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: rgba(0, 0, 0, 0.14);
+}
+
+.btn-lg {
+    padding: 15px 30px;
+    font-size: 16px;
+}
+
+/* ---------- motion preference ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.001ms !important;
+        transition-duration: 0.001ms !important;
+    }
+
+    .reveal {
+        opacity: 1;
+        transform: none;
+    }
+
+    .line-mask > span {
+        transform: none;
+    }
+}
