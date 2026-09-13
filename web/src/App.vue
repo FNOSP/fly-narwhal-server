@@ -11,6 +11,7 @@ import SecuritySection from './components/SecuritySection.vue'
 import ServerSection from './components/ServerSection.vue'
 import PlatformsSection from './components/PlatformsSection.vue'
 import DownloadSection from './components/DownloadSection.vue'
+import ChangelogSection from './components/ChangelogSection.vue'
 import FaqSection from './components/FaqSection.vue'
 import CtaSection from './components/CtaSection.vue'
 import SiteFooter from './components/SiteFooter.vue'
@@ -81,6 +82,7 @@ function scrollToDownload() {
             :release-url="releaseUrl"
             :os-rules="osRules"
         />
+        <ChangelogSection />
         <FaqSection />
         <CtaSection :version-label="versionLabel" @download="scrollToDownload" @auth="auth.request" />
     </main>

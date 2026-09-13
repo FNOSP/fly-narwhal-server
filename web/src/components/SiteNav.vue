@@ -13,6 +13,7 @@ const links = [
     { href: '#features', label: '核心特性' },
     { href: '#player', label: '播放内核' },
     { href: '#server', label: '服务端' },
+    { href: '#changelog', label: '更新日志' },
     { href: '#faq', label: '常见问题' },
 ]
 </script>
@@ -134,7 +135,7 @@ const links = [
     will-change: transform;
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 1140px) {
     .nav__links {
         display: none;
     }
