@@ -57,6 +57,15 @@ jobs:
         with:
           go-version: '1.22.x'
 
+      # The landing page is a Vue app built by Vite; the Gradle task buildWebUi shells
+      # out to npm, so Node must be on PATH before the Gradle build runs.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 

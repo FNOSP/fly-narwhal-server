@@ -44,3 +44,15 @@ out/
 /fly-narwhal-web/logs/
 /fly-narwhal-web/src/main/resources/updater/
 /fly-narwhal-web/data/fly-narwhal.mv.db
+
+### Vue landing page (web/) ###
+/web/node_modules/
+/web/dist/
+
+### Runtime & local state — never commit ###
+# The auth code is shown exactly once and lives beside the server binary.
+/fly-narwhal-web/auth_code
+/fly-narwhal-web/data/
+# Browser-pane verification screenshots and Claude session config.
+/.preview/
+/.claude/

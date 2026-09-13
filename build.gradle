@@ -22,8 +22,81 @@ allprojects {
     repositories {
         mavenCentral()
     }
-    
+
     tasks.withType(JavaCompile) {
         options.encoding = 'UTF-8'
     }
+}
+
+// The landing page is a Vue 3 app under web/, built by Vite into web/dist. Its output
+// becomes part of fly-narwhal-web's static resources so one `./gradlew` invocation
+// produces a binary with the UI already inside it.
+ext.webUiDir = file('web')
+ext.webUiDist = file('web/dist')
+ext.webUiOut = layout.buildDirectory.dir('generated-resources/web-ui')
+
+ext.npmExecutable = {
+    // Windows CI and local shells use npm.cmd; everything else uses npm.
+    def os = System.getProperty('os.name', '').toLowerCase(Locale.ROOT)
+    return os.contains('windows') ? 'npm.cmd' : 'npm'
+}
+
+def execOps = project.services.get(ExecOperations)
+
+tasks.register('buildWebUi') {
+    group = 'build'
+    description = 'Builds the Vue landing page with Vite into web/dist.'
+    // Skip with -PskipWebUi or FLY_NARWHAL_SKIP_WEB_UI=1 when iterating on Java only.
+    onlyIf {
+        if (project.hasProperty('skipWebUi') || '1' == System.getenv('FLY_NARWHAL_SKIP_WEB_UI')) {
+            logger.lifecycle('buildWebUi skipped by request')
+            return false
+        }
+        if (!new File(webUiDir, 'package.json').exists()) {
+            throw new GradleException("Missing web/package.json — cannot build the landing page")
+        }
+        return true
+    }
+    inputs.dir(new File(webUiDir, 'src'))
+    inputs.dir(new File(webUiDir, 'public'))
+    inputs.file(new File(webUiDir, 'package.json'))
+    inputs.file(new File(webUiDir, 'vite.config.js'))
+    inputs.file(new File(webUiDir, 'index.html'))
+    outputs.dir(webUiDist)
+    outputs.upToDateWhen { false }
+
+    doLast {
+        def npm = npmExecutable()
+        def nodeModules = new File(webUiDir, 'node_modules')
+
+        // `npm ci` needs the lockfile and does a clean install, which is what CI wants.
+        // Locally the lockfile may be out of sync mid-development, so fall back to the
+        // looser `npm install` rather than failing the whole Java build over it.
+        if (!nodeModules.exists()) {
+            def hasLock = new File(webUiDir, 'package-lock.json').exists()
+            def installCmd = hasLock ? ['ci', '--no-audit', '--no-fund'] : ['install', '--no-audit', '--no-fund']
+            execOps.exec {
+                workingDir(webUiDir)
+                commandLine([npm] + installCmd)
+            }
+        }
+
+        execOps.exec {
+            workingDir(webUiDir)
+            commandLine(npm, 'run', 'build')
+        }
+
+        def dist = webUiDist
+        if (!new File(dist, 'index.html').exists()) {
+            throw new GradleException("Vite build produced no index.html in ${dist}")
+        }
+    }
+}
+
+// Copy the Vite output into a generated resources dir so web/dist never has to be
+// committed and src/main/resources/static stays hand-written sources only.
+tasks.register('copyWebUiResources', Sync) {
+    dependsOn(tasks.named('buildWebUi'))
+    from(webUiDist)
+    into(webUiOut)
 }

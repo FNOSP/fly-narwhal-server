@@ -445,6 +445,14 @@ tasks.named('processResources') {
         into("")
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     }
+    // Vue landing page, built by the root project's buildWebUi task and copied into
+    // its generated-resources dir. Ends up under classpath:/static/ next to the
+    // hand-written static sources so Spring Boot serves both.
+    dependsOn(rootProject.tasks.named('copyWebUiResources'))
+    from(rootProject.ext.webUiOut) {
+        into("static")
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    }
     if (externalAuthxEnabled && authxVerifierSrcDir != null && authxVerifierSrcDir.exists()) {
         dependsOn(tasks.named('buildAuthxVerifierBinaries'))
         // Deliberately NOT registered in META-INF/native-image/.../resource-config.json: the
