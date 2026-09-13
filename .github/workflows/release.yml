@@ -106,13 +106,24 @@ jobs:
             exit 1
           fi
 
+          # Authx verifier ships as a standalone file next to the server binary; the server
+          # resolves it from its own directory. Fail loudly rather than publish a tarball
+          # that silently cannot verify signatures.
+          AUTHX_SRC="fly-narwhal-web/build/generated-resources/authx-verifier/native/authx/linux-${{ matrix.arch }}/flynarwhal-authx"
+          if [ ! -x "$AUTHX_SRC" ]; then
+            echo "Authx verifier missing or not executable: $AUTHX_SRC" >&2
+            find fly-narwhal-web/build/generated-resources/authx-verifier -type f 2>/dev/null >&2 || true
+            exit 1
+          fi
+
           NAME="fly-narwhal-server-linux-${{ matrix.arch }}-${VERSION}"
           mkdir -p dist/native
 
           # Only the archive is published: the binary needs its sibling lib*.so next to it,
           # so a lone executable would not run. tar also preserves the executable bit.
+          cp "$AUTHX_SRC" "$NATIVE_DIR/flynarwhal-authx"
           ( cd "$NATIVE_DIR" && tar -czf "$GITHUB_WORKSPACE/dist/native/${NAME}.tar.gz" \
-              fly-narwhal-server lib*.so )
+              fly-narwhal-server flynarwhal-authx lib*.so )
 
           echo "NAME=${NAME}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
@@ -216,79 +227,5 @@ jobs:
           generate_release_notes: false
           draft: false
           prerelease: ${{ contains(steps.release_tag.outputs.tag, '-') }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # The fnOS AppCenter app is packaged from the fn-app-0127 branch, which carries the
-  # fnpack tool and the app templates. It still bundles a jar and declares a
-  # java-21-openjdk dependency; moving it onto the native binary means changing those
-  # templates, which is deliberately out of scope here.
-  fnos:
-    name: Publish fnOS app
-    needs: release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout fn-app-0127 (fnpack app source)
-        uses: actions/checkout@v4
-        with:
-          ref: fn-app-0127
-          fetch-depth: 0
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-          cache: 'gradle'
-
-      - name: Set up Go 1.22
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22.x'
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      - name: Prepare Release Tag
-        id: release_tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.tag_name }}" ]; then
-            echo "tag=${{ github.event.inputs.tag_name }}" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            TAG_NAME=${GITHUB_REF#refs/tags/}
-            echo "tag=${TAG_NAME}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Build fnOS app package
-        env:
-          FLY_NARWHAL_API_SECRET: ${{ secrets.FLY_NARWHAL_API_SECRET }}
-          FLY_NARWHAL_BUILD_AUTHX_VERIFIER: '1'
-        run: |
-          set -euo pipefail
-          ./gradlew --stacktrace --info :fly-narwhal-web:bootJar :fly-narwhal-web:verifyAuthxVerifierBinary
-
-          FNAPP_JAR=$(ls -t fly-narwhal-web/build/libs/fly-narwhal-server-*.jar | head -n 1)
-          mkdir -p fnosAppCenter/App.Native.flyNarwhalServer/app/server
-          cp "$FNAPP_JAR" fnosAppCenter/App.Native.flyNarwhalServer/app/server/fly-narwhal-server.jar
-
-          cd fnosAppCenter
-          chmod +x fnpack-1.2.0-linux-amd64
-          ./fnpack-1.2.0-linux-amd64 build --directory App.Native.flyNarwhalServer
-
-          VERSION=$(grep -E '^version\s*=' App.Native.flyNarwhalServer/manifest | sed -E 's/.*=\s*([0-9.]+).*/\1/')
-          VERSION_UNDERSCORED=$(echo "$VERSION" | tr '.' '_')
-          mkdir -p ../dist/fpk
-          mv App.Native.flyNarwhalServer.fpk \
-            "../dist/fpk/App.Native.flyNarwhalServer.amd64.${VERSION_UNDERSCORED}.fpk"
-
-      - name: Upload fnOS package to release
-        if: steps.release_tag.outputs.tag != ''
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.release_tag.outputs.tag }}
-          files: dist/fpk/*.fpk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

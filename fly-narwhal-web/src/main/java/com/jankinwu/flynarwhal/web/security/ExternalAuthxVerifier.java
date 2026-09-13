@@ -1,9 +1,11 @@
 package com.jankinwu.flynarwhal.web.security;
 
 import com.jankinwu.flynarwhal.web.config.BuildVersionConfiguration;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -24,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+@Slf4j
 final class ExternalAuthxVerifier {
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(2);
     private static volatile Path extractedPath;
@@ -186,13 +189,25 @@ final class ExternalAuthxVerifier {
         }
         attempted = true;
 
+        // An external binary next to the executable is used as-is: it is already an
+        // executable file, so copying it to a temp file would only add filesystem churn
+        // for no benefit.
+        Path external = resolveExternalBinary();
+        if (external != null) {
+            tryMakeExecutable(external);
+            extractedPath = external;
+            return;
+        }
+
         String resourcePath = detectBinaryResourcePath();
         if (resourcePath == null) {
+            log.warn("authx verifier not found: no external binary and no matching resource for this platform");
             return;
         }
 
         try (InputStream in = ExternalAuthxVerifier.class.getClassLoader().getResourceAsStream(resourcePath)) {
             if (in == null) {
+                log.warn("authx verifier resource {} is not readable (missing from the native image?)", resourcePath);
                 return;
             }
             Path temp = Files.createTempFile("flynarwhal-authx-", binarySuffix());
@@ -200,7 +215,8 @@ final class ExternalAuthxVerifier {
             Files.copy(in, temp, StandardCopyOption.REPLACE_EXISTING);
             tryMakeExecutable(temp);
             extractedPath = temp;
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
+            log.warn("Failed to extract authx verifier from resource {}: {}", resourcePath, t.toString());
             extractedPath = null;
         }
     }
@@ -241,6 +257,47 @@ final class ExternalAuthxVerifier {
         }
 
         pool = new VerifierPool(bin, size);
+    }
+
+    // Resolves the verifier shipped as a standalone file rather than embedded in the image.
+    // Checked before the classpath resource so a deployment can override the bundled copy
+    // without rebuilding the native image.
+    private static Path resolveExternalBinary() {
+        String configured = System.getProperty("fly-narwhal.external-authx.bin");
+        if (configured != null && !configured.isBlank()) {
+            File explicit = new File(configured.trim());
+            if (explicit.isFile()) {
+                return explicit.toPath();
+            }
+            log.warn("fly-narwhal.external-authx.bin points at a missing file: {}", configured);
+        }
+
+        File exeDir = currentExecutableDir();
+        if (exeDir == null) {
+            return null;
+        }
+        File sibling = new File(exeDir, "flynarwhal-authx" + binarySuffix());
+        return sibling.isFile() ? sibling.toPath() : null;
+    }
+
+    // The directory holding the running executable. A native image has no jar to locate, so
+    // resolve the process itself: /proc/self/exe is authoritative on Linux (it follows the
+    // path even after the file is replaced), with ProcessHandle as the portable fallback.
+    private static File currentExecutableDir() {
+        try {
+            File self = new File("/proc/self/exe").getCanonicalFile();
+            if (self.isFile()) {
+                return self.getParentFile();
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            return ProcessHandle.current().info().command()
+                    .map(cmd -> new File(cmd).getAbsoluteFile().getParentFile())
+                    .orElse(null);
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private static String detectBinaryResourcePath() {

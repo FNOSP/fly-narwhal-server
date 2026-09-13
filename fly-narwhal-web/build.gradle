@@ -332,22 +332,51 @@ tasks.register('prepareAuthxVerifier') {
     }
 }
 
+// Normalizes the JVM's os.name/os.arch into the Go toolchain's GOOS/GOARCH. Also used by
+// verifyAuthxVerifierBinary to pick which binary to run.
+def hostGoOs = {
+    def os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT)
+    if (os.contains("linux")) return "linux"
+    if (os.contains("mac") || os.contains("darwin")) return "darwin"
+    if (os.contains("windows")) return "windows"
+    throw new GradleException("Unsupported OS for authx verifier: " + os)
+}
+def hostGoArch = {
+    def arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT)
+    if (arch.contains("aarch64") || arch.contains("arm64")) return "arm64"
+    if (arch.contains("x86_64") || arch.contains("amd64") || arch.contains("x64")) return "amd64"
+    throw new GradleException("Unsupported architecture for authx verifier: " + arch)
+}
+
+// Only the host platform's verifier is needed: the release tarball ships one arch, and
+// native-image only builds for the host. Cross-compiling the other targets would just add
+// dead weight. FLY_NARWHAL_AUTHX_VERIFIER_TARGETS overrides the selection with a
+// comma-separated list of <os>_<arch> pairs.
+def authxTargets = {
+    def override = System.getenv("FLY_NARWHAL_AUTHX_VERIFIER_TARGETS")
+    if (override != null && !override.trim().isEmpty()) {
+        return override.split(",").collect { it.trim() }.findAll { !it.isEmpty() }.collect { spec ->
+            def parts = spec.split("_")
+            if (parts.length != 2) {
+                throw new GradleException("Invalid authx verifier target '${spec}', expected <os>_<arch>")
+            }
+            [os: parts[0], arch: parts[1], ext: parts[0] == "windows" ? ".exe" : ""]
+        }
+    }
+    def os = hostGoOs()
+    def arch = hostGoArch()
+    return [[os: os, arch: arch, ext: os == "windows" ? ".exe" : ""]]
+}
+
 tasks.register('buildAuthxVerifierBinaries') {
     onlyIf { externalAuthxEnabled && authxVerifierSrcDir != null && authxVerifierSrcDir.exists() }
     dependsOn(tasks.named('prepareAuthxVerifier'))
+    outputs.dir(authxVerifierResDir)
     doLast {
         def workDir = authxVerifierWorkDir.get().asFile
         def outRoot = new File(authxVerifierResDir.get().asFile, "native/authx")
-        def targets = [
-            [os: "linux", arch: "amd64", ext: ""],
-            [os: "linux", arch: "arm64", ext: ""],
-            [os: "darwin", arch: "amd64", ext: ""],
-            [os: "darwin", arch: "arm64", ext: ""],
-            [os: "windows", arch: "amd64", ext: ".exe"],
-            [os: "windows", arch: "arm64", ext: ".exe"]
-        ]
 
-        for (def t : targets) {
+        for (def t : authxTargets()) {
             def classifier = "${t.os}-${t.arch}".toString()
             def outDir = new File(outRoot, classifier)
             outDir.mkdirs()
@@ -387,10 +416,8 @@ tasks.register('verifyAuthxVerifierBinary') {
             .collect { String.format("%02x", it) }
             .join("")
 
-        def os = System.getProperty("os.name", "").toLowerCase()
-        def arch = System.getProperty("os.arch", "").toLowerCase()
-        def osPart = os.contains("linux") ? "linux" : (os.contains("mac") || os.contains("darwin")) ? "darwin" : os.contains("windows") ? "windows" : "unknown"
-        def archPart = (arch.contains("aarch64") || arch.contains("arm64")) ? "arm64" : (arch.contains("x86_64") || arch.contains("amd64") || arch.contains("x64")) ? "amd64" : "unknown"
+        def osPart = hostGoOs()
+        def archPart = hostGoArch()
         def ext = osPart == "windows" ? ".exe" : ""
 
         def bin = new File(authxVerifierResDir.get().asFile, "native/authx/${osPart}-${archPart}/flynarwhal-authx${ext}".toString())
@@ -420,6 +447,11 @@ tasks.named('processResources') {
     }
     if (externalAuthxEnabled && authxVerifierSrcDir != null && authxVerifierSrcDir.exists()) {
         dependsOn(tasks.named('buildAuthxVerifierBinaries'))
+        // Deliberately NOT registered in META-INF/native-image/.../resource-config.json: the
+        // verifier ships as a standalone file next to the server binary and is located at
+        // runtime from that directory (ExternalAuthxVerifier.resolveExternalBinary). This
+        // copy only feeds jar mode; embedding it in the native image would bloat every build
+        // with unused cross-platform Go binaries.
         from(authxVerifierResDir) {
             into("")
             duplicatesStrategy = DuplicatesStrategy.EXCLUDE
