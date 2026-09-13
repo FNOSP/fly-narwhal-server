@@ -9,9 +9,11 @@ import com.jankinwu.flynarwhal.core.dto.request.EpisodeDetailRequest;
 import com.jankinwu.flynarwhal.core.dto.response.EpisodeSegmentsResponse;
 import com.jankinwu.flynarwhal.core.ffmpeg.FFmpegWrapper;
 import com.jankinwu.flynarwhal.core.scanner.MediaFileScanner;
+import com.jankinwu.flynarwhal.web.entity.CommercialSegment;
 import com.jankinwu.flynarwhal.web.entity.EpisodeSegment;
 import com.jankinwu.flynarwhal.web.entity.TvSeasonInfo;
 import com.jankinwu.flynarwhal.web.entity.UserSmartSkipConfig;
+import com.jankinwu.flynarwhal.web.mapper.CommercialSegmentMapper;
 import com.jankinwu.flynarwhal.web.mapper.DbVersionMapper;
 import com.jankinwu.flynarwhal.web.mapper.EpisodeSegmentMapper;
 import com.jankinwu.flynarwhal.web.mapper.TvSeasonInfoMapper;
@@ -42,6 +44,7 @@ public class AnalysisService {
 
     private final TvSeasonInfoMapper tvSeasonInfoMapper;
     private final EpisodeSegmentMapper episodeSegmentMapper;
+    private final CommercialSegmentMapper commercialSegmentMapper;
     private final DbVersionMapper dbVersionMapper;
     private final UserSmartSkipConfigMapper userSmartSkipConfigMapper;
     private final AnalyzerFactory analyzerFactory;
@@ -60,6 +63,7 @@ public class AnalysisService {
 
     public AnalysisService(TvSeasonInfoMapper tvSeasonInfoMapper,
                            EpisodeSegmentMapper episodeSegmentMapper,
+                           CommercialSegmentMapper commercialSegmentMapper,
                            DbVersionMapper dbVersionMapper,
                            UserSmartSkipConfigMapper userSmartSkipConfigMapper,
                            AnalyzerFactory analyzerFactory,
@@ -68,6 +72,7 @@ public class AnalysisService {
                            AnalysisEntityMapper analysisEntityMapper) {
         this.tvSeasonInfoMapper = tvSeasonInfoMapper;
         this.episodeSegmentMapper = episodeSegmentMapper;
+        this.commercialSegmentMapper = commercialSegmentMapper;
         this.dbVersionMapper = dbVersionMapper;
         this.userSmartSkipConfigMapper = userSmartSkipConfigMapper;
         this.analyzerFactory = analyzerFactory;
@@ -223,8 +228,22 @@ public class AnalysisService {
         response.setCredits(toSegmentDTO(segment.getCreditsStart(), segment.getCreditsEnd()));
         response.setRecap(toSegmentDTO(segment.getRecapStart(), segment.getRecapEnd()));
         response.setPreview(toSegmentDTO(segment.getPreviewStart(), segment.getPreviewEnd()));
-        response.setCommercial(toSegmentDTO(segment.getCommercialStart(), segment.getCommercialEnd()));
+        response.setCommercials(loadCommercialSegments(segment.getId()));
         return response;
+    }
+
+    /** Commercial segments live in their own child table, in ordinal order. */
+    private List<SegmentDTO> loadCommercialSegments(Long episodeSegmentId) {
+        if (episodeSegmentId == null) {
+            return List.of();
+        }
+        List<CommercialSegment> rows = commercialSegmentMapper.selectList(
+                new QueryWrapper<CommercialSegment>()
+                        .eq("episode_segment_id", episodeSegmentId)
+                        .orderByAsc("ordinal"));
+        return rows.stream()
+                .map(row -> new SegmentDTO(row.getStartTime(), row.getEndTime(), true))
+                .collect(Collectors.toList());
     }
 
     private SegmentDTO toSegmentDTO(BigDecimal start, BigDecimal end) {
@@ -373,12 +392,18 @@ public class AnalysisService {
             applySegment(segment, AnalysisMode.CREDITS, ep.getCreditsSegment());
             applySegment(segment, AnalysisMode.RECAP, sanitizeRecapSegment(ep.getRecapSegment(), ep.getIntroSegment()));
             applySegment(segment, AnalysisMode.PREVIEW, ep.getPreviewSegment());
-            applySegment(segment, AnalysisMode.COMMERCIAL, ep.getCommercialSegment());
 
             segment.setAction(buildActions(ep));
             segment.setStatus(failed ? AnalysisStatus.FAILED : AnalysisStatus.COMPLETED);
 
-            saveOrUpdateEpisodeSegment(segment, now, isNew);
+            // The commercial rows carry the parent's generated id, so they must commit
+            // together with it — a partial write would leave orphans pointing at nothing.
+            EpisodeSegment persisted = segment;
+            boolean newRow = isNew;
+            transactionTemplate.executeWithoutResult(tx -> {
+                saveOrUpdateEpisodeSegment(persisted, now, newRow);
+                replaceCommercialSegments(persisted.getId(), ep.getCommercialSegments(), now);
+            });
 
             return failed;
         } catch (Exception e) {
@@ -415,7 +440,36 @@ public class AnalysisService {
             case CREDITS: segment.setCreditsStart(start); segment.setCreditsEnd(end); break;
             case RECAP: segment.setRecapStart(start); segment.setRecapEnd(end); break;
             case PREVIEW: segment.setPreviewStart(start); segment.setPreviewEnd(end); break;
-            case COMMERCIAL: segment.setCommercialStart(start); segment.setCommercialEnd(end); break;
+        }
+    }
+
+    /**
+     * Rewrites the child rows for one episode: the analysis always produces the full
+     * set, so the previous rows are dropped rather than diffed.
+     */
+    private void replaceCommercialSegments(Long episodeSegmentId, List<Segment> commercials, LocalDateTime now) {
+        if (episodeSegmentId == null) {
+            return;
+        }
+        commercialSegmentMapper.delete(
+                new QueryWrapper<CommercialSegment>().eq("episode_segment_id", episodeSegmentId));
+
+        if (commercials == null || commercials.isEmpty()) {
+            return;
+        }
+        int ordinal = 0;
+        for (Segment commercial : commercials) {
+            if (commercial == null || !commercial.isValid()) {
+                continue;
+            }
+            CommercialSegment row = new CommercialSegment();
+            row.setEpisodeSegmentId(episodeSegmentId);
+            row.setOrdinal(ordinal++);
+            row.setStartTime(BigDecimal.valueOf(commercial.getStart()));
+            row.setEndTime(BigDecimal.valueOf(commercial.getEnd()));
+            row.setCreateTime(now);
+            row.setUpdateTime(now);
+            commercialSegmentMapper.insert(row);
         }
     }
 
@@ -476,8 +530,15 @@ public class AnalysisService {
                 if (recap != null) ep.setRecapSegment(recap);
                 Segment preview = toSegment(existing.getPreviewStart(), existing.getPreviewEnd());
                 if (preview != null) ep.setPreviewSegment(preview);
-                Segment commercial = toSegment(existing.getCommercialStart(), existing.getCommercialEnd());
-                if (commercial != null) ep.setCommercialSegment(commercial);
+
+                List<CommercialSegment> commercials = commercialSegmentMapper.selectList(
+                        new QueryWrapper<CommercialSegment>()
+                                .eq("episode_segment_id", existing.getId())
+                                .orderByAsc("ordinal"));
+                for (CommercialSegment row : commercials) {
+                    ep.addCommercialSegment(new Segment(
+                            row.getStartTime().doubleValue(), row.getEndTime().doubleValue(), true));
+                }
 
                 parseActions(existing.getAction(), ep);
             }

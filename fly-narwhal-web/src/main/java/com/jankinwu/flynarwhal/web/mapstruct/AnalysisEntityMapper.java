@@ -32,8 +32,6 @@ public interface AnalysisEntityMapper {
     @Mapping(target = "recapEnd", ignore = true)
     @Mapping(target = "previewStart", ignore = true)
     @Mapping(target = "previewEnd", ignore = true)
-    @Mapping(target = "commercialStart", ignore = true)
-    @Mapping(target = "commercialEnd", ignore = true)
     @Mapping(target = "action", ignore = true)
     @Mapping(target = "createTime", ignore = true)
     @Mapping(target = "updateTime", ignore = true)
@@ -53,8 +51,6 @@ public interface AnalysisEntityMapper {
     @Mapping(target = "recapEnd", ignore = true)
     @Mapping(target = "previewStart", ignore = true)
     @Mapping(target = "previewEnd", ignore = true)
-    @Mapping(target = "commercialStart", ignore = true)
-    @Mapping(target = "commercialEnd", ignore = true)
     @Mapping(target = "createTime", ignore = true)
     @Mapping(target = "updateTime", ignore = true)
     void updateEpisodeFromQueuedEpisode(@MappingTarget EpisodeSegment target, QueuedEpisode source);

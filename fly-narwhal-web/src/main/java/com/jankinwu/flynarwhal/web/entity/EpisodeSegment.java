@@ -42,10 +42,6 @@ public class EpisodeSegment {
 
     private BigDecimal previewEnd;
 
-    private BigDecimal commercialStart;
-
-    private BigDecimal commercialEnd;
-
     private byte[] introFingerprint;
 
     private byte[] creditsFingerprint;
