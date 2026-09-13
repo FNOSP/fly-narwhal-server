@@ -6,6 +6,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -15,5 +17,7 @@ public class EpisodeSegmentsResponse {
     private SegmentDTO credits;
     private SegmentDTO recap;
     private SegmentDTO preview;
-    private SegmentDTO commercial;
+
+    /** An episode can hold several ad breaks, so commercials are a list. */
+    private List<SegmentDTO> commercials;
 }

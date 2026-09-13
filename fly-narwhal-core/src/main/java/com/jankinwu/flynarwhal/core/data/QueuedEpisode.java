@@ -5,6 +5,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
@@ -42,7 +45,13 @@ public class QueuedEpisode {
     private Segment creditsSegment;
     private Segment recapSegment;
     private Segment previewSegment;
-    private Segment commercialSegment;
+
+    /**
+     * Commercials legitimately occur several times per episode, so unlike the other
+     * modes this is a list (upstream AllowsMultipleMatches only for Commercial).
+     */
+    @Builder.Default
+    private List<Segment> commercialSegments = new ArrayList<>();
     private byte[] introFingerprint;
     private byte[] creditsFingerprint;
     private byte[] recapFingerprint;
@@ -76,7 +85,7 @@ public class QueuedEpisode {
             case CREDITS: return creditsSegment;
             case RECAP: return recapSegment;
             case PREVIEW: return previewSegment;
-            case COMMERCIAL: return commercialSegment;
+            case COMMERCIAL: return getCommercialSegment();
             default: return null;
         }
     }
@@ -87,7 +96,26 @@ public class QueuedEpisode {
             case CREDITS: creditsSegment = segment; break;
             case RECAP: recapSegment = segment; break;
             case PREVIEW: previewSegment = segment; break;
-            case COMMERCIAL: commercialSegment = segment; break;
+            case COMMERCIAL: setCommercialSegment(segment); break;
+        }
+    }
+
+    /** First commercial segment, or null when none were found. */
+    public Segment getCommercialSegment() {
+        return commercialSegments.isEmpty() ? null : commercialSegments.get(0);
+    }
+
+    /** Replaces the commercial list with a single segment (null clears it). */
+    public void setCommercialSegment(Segment segment) {
+        commercialSegments = new ArrayList<>();
+        if (segment != null) {
+            commercialSegments.add(segment);
+        }
+    }
+
+    public void addCommercialSegment(Segment segment) {
+        if (segment != null) {
+            commercialSegments.add(segment);
         }
     }
 

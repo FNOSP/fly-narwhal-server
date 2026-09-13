@@ -22,6 +22,10 @@ public class BatchChapterAnalyzer implements MediaFileAnalyzer {
             if (episode.isAnalyzed(mode)) continue;
 
             try {
+                if (mode == AnalysisMode.COMMERCIAL) {
+                    analyzeCommercials(episode);
+                    continue;
+                }
                 Segment segment = chapterAnalyzer.findMatchingChapter(episode, mode);
                 if (segment != null && segment.isValid()) {
                     log.info("Found {} via Chapters for {}: {}-{}", mode, episode.getPath(), segment.getStart(), segment.getEnd());
@@ -36,6 +40,23 @@ public class BatchChapterAnalyzer implements MediaFileAnalyzer {
                 log.error("Error in Chapter analysis for {}", episode.getPath(), e);
             }
         }
+    }
+
+    /**
+     * Commercials are the one mode that may produce several segments per episode, so all
+     * matches are kept (upstream AllowsMultipleMatches).
+     */
+    private void analyzeCommercials(QueuedEpisode episode) {
+        List<Segment> segments = chapterAnalyzer.findMatchingChapters(episode, AnalysisMode.COMMERCIAL);
+        if (segments.isEmpty()) {
+            return;
+        }
+        for (Segment segment : segments) {
+            log.info("Found COMMERCIAL via Chapters for {}: {}-{}", episode.getPath(), segment.getStart(), segment.getEnd());
+            episode.addCommercialSegment(segment);
+        }
+        episode.setCommercialAnalyzed(true);
+        episode.setCommercialAction(AnalyzerAction.CHAPTER);
     }
 
     private void tryRecapBlackFrameFallback(QueuedEpisode episode) {
