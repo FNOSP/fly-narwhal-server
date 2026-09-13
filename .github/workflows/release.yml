@@ -195,7 +195,33 @@ jobs:
           TAG_NAME="${{ steps.release_tag.outputs.tag }}"
 
           # 在此处手动填写发布日志
-          NOTES="1. 修复应用中心应用自动更新失败的问题（需要客户端 1.10.0 及以上版本）"
+          NOTES=$(cat <<'RELEASE_NOTES'
+          ## 0.7.0-alpha
+
+          ### 亮点
+
+          - **服务端改为 GraalVM 原生镜像**：发布物由 jar 改为原生二进制，目标机器不再需要安装 JVM。amd64 与 arm64 各自独立构建、分别发布。
+          - **新增 Smart-skip 片头片尾分析**：支持智能跳过片头、片尾与 Credits，并对检测逻辑做了上游对齐。
+          - **新增客户端版本校验**：服务端会校验客户端版本，低版本客户端将被拦截并提示升级。
+
+          ### 变更
+
+          - 发布产物为 tar.gz 压缩包，内含 `fly-narwhal-server`、`flynarwhal-authx` 与依赖的 `lib*.so`；必须整体解压后运行，单独取出可执行文件无法启动。
+          - 鉴权校验器（authx verifier）改为独立文件随包发布，不再内嵌进二进制。
+          - 随包提供 `SHA256SUMS` 校验和文件。
+
+          ### 修复
+
+          - 改善 FFmpeg 调用方式与路径处理。
+          - 修复自动更新器启动失败的问题。
+          - 修复配置读取与 AOT 日志写入 fnOS 应用目录的问题。
+
+          ### 说明
+
+          - 原生镜像仅支持 amd64 / arm64 两种架构。
+          - 本版本为 Alpha，功能尚未稳定，不建议用于正式环境。
+          RELEASE_NOTES
+          )
 
           # 如果是通过 GitHub 页面手动触发并输入了日志，则优先使用输入的内容
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_body }}" ]; then
@@ -204,7 +230,7 @@ jobs:
 
           WARNING=""
           if [[ "$TAG_NAME" =~ [Aa]lpha ]]; then
-            WARNING=$'\n\n> **此版本为开发中的版本，请酌情下载安装。**\n'
+            WARNING=$'\n\n> ⚠️ **此版本为测试版本（Alpha），仅供内部验证，禁止下载安装使用。**\n> ⚠️ **This is a test (Alpha) build for internal verification only. Do NOT download or install.**\n'
           fi
 
           {
