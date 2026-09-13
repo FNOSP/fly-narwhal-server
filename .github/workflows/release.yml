@@ -41,7 +41,7 @@ jobs:
       - name: Checkout authx verifier (private)
         uses: actions/checkout@v4
         with:
-          repository: Jankin-Wu/fly-narwhal-authx-verifier
+            repository: Jankin-Wu/fly-narwhal-authx-verifier
           token: ${{ secrets.AUTHX_VERIFIER_REPO_TOKEN }}
           path: authx-verifier
 
@@ -106,13 +106,24 @@ jobs:
             exit 1
           fi
 
+          # Authx verifier ships as a standalone file next to the server binary; the server
+          # resolves it from its own directory. Fail loudly rather than publish a tarball
+          # that silently cannot verify signatures.
+          AUTHX_SRC="fly-narwhal-web/build/generated-resources/authx-verifier/native/authx/linux-${{ matrix.arch }}/flynarwhal-authx"
+          if [ ! -x "$AUTHX_SRC" ]; then
+            echo "Authx verifier missing or not executable: $AUTHX_SRC" >&2
+            find fly-narwhal-web/build/generated-resources/authx-verifier -type f 2>/dev/null >&2 || true
+            exit 1
+          fi
+
           NAME="fly-narwhal-server-linux-${{ matrix.arch }}-${VERSION}"
           mkdir -p dist/native
 
           # Only the archive is published: the binary needs its sibling lib*.so next to it,
           # so a lone executable would not run. tar also preserves the executable bit.
+          cp "$AUTHX_SRC" "$NATIVE_DIR/flynarwhal-authx"
           ( cd "$NATIVE_DIR" && tar -czf "$GITHUB_WORKSPACE/dist/native/${NAME}.tar.gz" \
-              fly-narwhal-server lib*.so )
+              fly-narwhal-server flynarwhal-authx lib*.so )
 
           echo "NAME=${NAME}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
