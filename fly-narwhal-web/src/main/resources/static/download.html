@@ -626,8 +626,9 @@
     const REPO = 'FNOSP/FlyNarwhal';
     const MIRROR_PREFIX = 'https://ghfast.top/';
     // Fallback version used when the GitHub API is unreachable, so the page
-    // still offers working pinned download links. Keep in sync with releases.
-    const FALLBACK_TAG = 'v2.3.1';
+    // still offers working pinned download links. Must be a STABLE tag — the
+    // list-by-tag endpoint returns prereleases too. Keep in sync with releases.
+    const FALLBACK_TAG = 'v2.3.3';
 
     // Display order: earlier entries render first (primary) within each group.
     const OS_RULES = [
