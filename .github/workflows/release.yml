@@ -41,7 +41,7 @@ jobs:
       - name: Checkout authx verifier (private)
         uses: actions/checkout@v4
         with:
-            repository: Jankin-Wu/fly-narwhal-authx-verifier
+          repository: Jankin-Wu/fly-narwhal-authx-verifier
           token: ${{ secrets.AUTHX_VERIFIER_REPO_TOKEN }}
           path: authx-verifier
 
