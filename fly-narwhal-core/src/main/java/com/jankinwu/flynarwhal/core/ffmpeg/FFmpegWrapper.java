@@ -31,7 +31,9 @@ public class FFmpegWrapper {
     private static final Pattern DURATION_PATTERN = Pattern.compile("Duration: (\\d{2}):(\\d{2}):(\\d{2}\\.\\d{2})");
     private static final Pattern BLACK_FRAME_PATTERN = Pattern.compile("frame:(\\d+)\\s+pblack:(\\d+)\\s+pts:\\d+\s+t:([\\d\\.]+)");
     private static final Pattern CHAPTER_START_PATTERN = Pattern.compile("Chapter #\\d+:\\d+: start (\\d+\\.\\d+), end (\\d+\\.\\d+)");
-    private static final Pattern CHAPTER_TITLE_PATTERN = Pattern.compile("Metadata:\\s+title\\s+:\\s+(.+)");
+    // ffmpeg prints the title on its own line under a "Metadata:" header, not on the same
+    // line as the header: "  Metadata:" then "    title           : Intro".
+    private static final Pattern CHAPTER_TITLE_PATTERN = Pattern.compile("^\\s*title\\s+:\\s*(.+)$");
     private static final Pattern SILENCE_START_PATTERN = Pattern.compile("silence_start:\\s*(-?[\\d\\.]+)");
     private static final Pattern SILENCE_END_PATTERN = Pattern.compile("silence_end:\\s*(-?[\\d\\.]+)");
     private static final Pattern BLACK_DETECT_PATTERN = Pattern.compile("black_start:([\\d\\.]+)\\s+black_end:([\\d\\.]+)");
