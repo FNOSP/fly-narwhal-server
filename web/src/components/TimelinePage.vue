@@ -1,4 +1,5 @@
 <script setup>
+import { ref } from 'vue'
 import ChangelogText from './ChangelogText.vue'
 import { useChangelog, CHANGELOG_URL } from '../composables/useChangelog'
 
@@ -12,6 +13,14 @@ const CAT_META = {
 
 function catMeta(name) {
     return CAT_META[name] || { label: name, color: 'var(--ink-soft)', bg: 'rgba(0, 0, 0, 0.05)' }
+}
+
+// Cards stay collapsed (version + date + counts) until hovered; on touch
+// devices, where hover is unreliable, a tap pins a card open instead.
+const open = ref(null)
+
+function toggle(version) {
+    open.value = open.value === version ? null : version
 }
 </script>
 
@@ -65,12 +74,13 @@ function catMeta(name) {
                     :key="v.version"
                     v-reveal="Math.min(i, 5) * 60"
                     class="tl__item"
+                    :class="{ 'tl__item--open': open === v.version }"
                 >
                     <div class="tl__rail" aria-hidden="true">
                         <span class="tl__dot" :class="{ 'tl__dot--latest': latest && v.version === latest.version }"></span>
                     </div>
 
-                    <article class="tl__card">
+                    <article class="tl__card" @click="toggle(v.version)">
                         <header class="tl__head">
                             <span class="tl__v">v{{ v.version }}</span>
                             <time v-if="v.date" class="tl__date">{{ v.date }}</time>
@@ -85,20 +95,27 @@ function catMeta(name) {
                                     {{ catMeta(cat.name).label }} {{ cat.items.length }}
                                 </span>
                             </span>
+                            <svg class="tl__chevron" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M6 9l6 6 6-6" />
+                            </svg>
                         </header>
 
-                        <div v-for="cat in v.categories" :key="cat.name" class="clg-cat">
-                            <span class="clg-tag" :style="{ color: catMeta(cat.name).color, background: catMeta(cat.name).bg }">
-                                {{ catMeta(cat.name).label }}
-                            </span>
-                            <ul class="clg-list">
-                                <li v-for="(item, ii) in cat.items" :key="ii" class="clg-item">
-                                    <strong v-if="item.title.length" class="clg-item__title">
-                                        <ChangelogText :nodes="item.title" />
-                                    </strong>
-                                    <span class="clg-item__desc"><ChangelogText :nodes="item.desc" /></span>
-                                </li>
-                            </ul>
+                        <div class="tl__panel">
+                            <div class="tl__panel-inner">
+                                <div v-for="cat in v.categories" :key="cat.name" class="clg-cat">
+                                    <span class="clg-tag" :style="{ color: catMeta(cat.name).color, background: catMeta(cat.name).bg }">
+                                        {{ catMeta(cat.name).label }}
+                                    </span>
+                                    <ul class="clg-list">
+                                        <li v-for="(item, ii) in cat.items" :key="ii" class="clg-item">
+                                            <strong v-if="item.title.length" class="clg-item__title">
+                                                <ChangelogText :nodes="item.title" />
+                                            </strong>
+                                            <span class="clg-item__desc"><ChangelogText :nodes="item.desc" /></span>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
                         </div>
                     </article>
                 </div>
@@ -314,11 +331,13 @@ function catMeta(name) {
 }
 
 .tl__card {
+    position: relative;
     padding: clamp(22px, 3vw, 30px) clamp(20px, 3vw, 32px);
     border-radius: var(--radius-lg);
     background: var(--surface);
     border: 1px solid var(--hairline);
     box-shadow: var(--shadow-sm);
+    cursor: pointer;
     transition: box-shadow 0.35s var(--ease), border-color 0.35s var(--ease);
 }
 
@@ -327,11 +346,45 @@ function catMeta(name) {
     border-color: rgba(0, 122, 255, 0.24);
 }
 
+/* Details stay folded until hover; a tap pins a card open on touch devices,
+   where hover never fires. */
+.tl__panel {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.5s var(--ease);
+}
+
+.tl__panel-inner {
+    overflow: hidden;
+}
+
+.tl__item:hover .tl__panel,
+.tl__item--open .tl__panel,
+.tl__card:focus-within .tl__panel {
+    grid-template-rows: 1fr;
+}
+
+.tl__chevron {
+    position: absolute;
+    top: clamp(24px, 3vw, 32px);
+    right: clamp(18px, 3vw, 28px);
+    color: var(--ink-muted);
+    transition: transform 0.35s var(--ease), color 0.35s var(--ease);
+}
+
+.tl__item:hover .tl__chevron,
+.tl__item--open .tl__chevron {
+    transform: rotate(180deg);
+    color: var(--brand);
+}
+
 .tl__head {
     display: flex;
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
+    /* Leave room for the absolutely-positioned chevron. */
+    padding-right: 32px;
 }
 
 .tl__v {
