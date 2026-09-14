@@ -1,5 +1,4 @@
 <script setup>
-import { ref } from 'vue'
 import ChangelogText from './ChangelogText.vue'
 import { useChangelog, CHANGELOG_URL } from '../composables/useChangelog'
 
@@ -13,13 +12,6 @@ const CAT_META = {
 
 function catMeta(name) {
     return CAT_META[name] || { label: name, color: 'var(--ink-soft)', bg: 'rgba(0, 0, 0, 0.05)' }
-}
-
-// Accordion over the full history; one version open at a time.
-const open = ref(null)
-
-function toggle(version) {
-    open.value = open.value === version ? null : version
 }
 </script>
 
@@ -74,14 +66,6 @@ function toggle(version) {
                         <time v-if="latest.date" class="clg-latest__date">{{ latest.date }}</time>
                     </header>
 
-                    <div v-for="(note, i) in latest.notes" :key="i" class="clg-note">
-                        <ChangelogText :nodes="note" />
-                    </div>
-
-                    <p v-for="(para, i) in latest.intro" :key="`i${i}`" class="clg-intro">
-                        <ChangelogText :nodes="para" />
-                    </p>
-
                     <div v-for="cat in latest.categories" :key="cat.name" class="clg-cat">
                         <span class="clg-tag" :style="{ color: catMeta(cat.name).color, background: catMeta(cat.name).bg }">
                             {{ catMeta(cat.name).label }}
@@ -97,53 +81,22 @@ function toggle(version) {
                     </div>
                 </article>
 
-                <!-- full history -->
-                <div class="clg-history">
-                    <h3 v-reveal class="clg-history__title">全部版本</h3>
-
-                    <div v-for="(v, i) in history" :key="v.version" v-reveal="Math.min(i, 4) * 70" class="clg-ver" :class="{ 'clg-ver--open': open === v.version }">
-                        <button class="clg-ver__head" type="button" :aria-expanded="open === v.version" @click="toggle(v.version)">
-                            <span class="clg-ver__v">v{{ v.version }}</span>
-                            <time v-if="v.date" class="clg-ver__date">{{ v.date }}</time>
-                            <span class="clg-ver__counts">
-                                <span
-                                    v-for="cat in v.categories.filter((c) => c.items.length)"
-                                    :key="cat.name"
-                                    class="clg-count"
-                                >
-                                    <i :style="{ background: catMeta(cat.name).color }"></i>
-                                    {{ catMeta(cat.name).label }} {{ cat.items.length }}
-                                </span>
-                            </span>
-                            <svg class="clg-ver__chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M6 9l6 6 6-6" />
-                            </svg>
-                        </button>
-
-                        <div class="clg-ver__panel">
-                            <div class="clg-ver__inner">
-                                <div v-for="(note, ni) in v.notes" :key="ni" class="clg-note clg-note--sm">
-                                    <ChangelogText :nodes="note" />
-                                </div>
-                                <p v-for="(para, pi) in v.intro" :key="`p${pi}`" class="clg-intro">
-                                    <ChangelogText :nodes="para" />
-                                </p>
-                                <div v-for="cat in v.categories" :key="cat.name" class="clg-cat">
-                                    <span class="clg-tag clg-tag--sm" :style="{ color: catMeta(cat.name).color, background: catMeta(cat.name).bg }">
-                                        {{ catMeta(cat.name).label }}
-                                    </span>
-                                    <ul class="clg-list">
-                                        <li v-for="(item, ii) in cat.items" :key="ii" class="clg-item">
-                                            <strong v-if="item.title.length" class="clg-item__title">
-                                                <ChangelogText :nodes="item.title" />
-                                            </strong>
-                                            <span class="clg-item__desc"><ChangelogText :nodes="item.desc" /></span>
-                                        </li>
-                                    </ul>
-                                </div>
-                            </div>
+                <!-- entry to the full timeline page -->
+                <div v-reveal="120" class="clg-more">
+                    <a class="clg-more__link" href="#/timeline">
+                        <div class="clg-more__art" aria-hidden="true">
+                            <span v-for="n in 3" :key="n" class="clg-more__dot" :class="{ 'clg-more__dot--end': n === 3 }"></span>
                         </div>
-                    </div>
+                        <div class="clg-more__body">
+                            <h3 class="clg-more__title">全部版本更新日志</h3>
+                            <p class="clg-more__desc">
+                                从 2.0.0-alpha 到今天共 {{ history.length }} 个版本，在垂直时间轴上完整回顾每一次发版。
+                            </p>
+                        </div>
+                        <svg class="clg-more__arrow" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M5 12h14M13 6l6 6-6 6" />
+                        </svg>
+                    </a>
                 </div>
             </template>
         </div>
@@ -294,239 +247,107 @@ function toggle(version) {
     font-variant-numeric: tabular-nums;
 }
 
-/* ---------- shared blocks ---------- */
+/* ---------- entry to the timeline page ---------- */
 
-.clg-note {
-    margin-top: 14px;
-    padding: 12px 16px;
-    border-radius: var(--radius-sm);
-    background: rgba(0, 122, 255, 0.06);
-    border: 1px solid rgba(0, 122, 255, 0.14);
-    font-size: 13.5px;
-    line-height: 1.75;
-    color: var(--ink-soft);
-}
-
-.clg-note :deep(a) {
-    font-weight: 600;
-}
-
-.clg-note--sm {
-    margin-top: 0;
-    margin-bottom: 16px;
-    font-size: 12.5px;
-}
-
-.clg-intro {
-    margin-top: 16px;
-    font-size: 15px;
-    line-height: 1.8;
-    color: var(--ink-soft);
-}
-
-.clg-cat {
-    margin-top: clamp(22px, 3vw, 30px);
-}
-
-.clg-tag {
-    display: inline-block;
-    padding: 5px 13px;
-    border-radius: 999px;
-    font-size: 12.5px;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-    margin-bottom: 14px;
-}
-
-.clg-tag--sm {
-    padding: 3px 10px;
-    font-size: 11.5px;
-    margin-bottom: 10px;
-}
-
-.clg-list {
-    list-style: none;
-    display: grid;
-    gap: 12px;
-}
-
-.clg-item {
-    position: relative;
-    padding-left: 18px;
-    font-size: 14.5px;
-    line-height: 1.75;
-}
-
-.clg-item::before {
-    content: '';
-    position: absolute;
-    left: 2px;
-    top: 0.72em;
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: rgba(0, 0, 0, 0.22);
-}
-
-.clg-item__title {
-    font-weight: 650;
-    color: var(--ink);
-    margin-right: 4px;
-}
-
-.clg-item__desc {
-    color: var(--ink-muted);
-}
-
-.clg-item :deep(.clg-code),
-.clg-latest :deep(.clg-code) {
-    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 0.9em;
-    background: rgba(0, 0, 0, 0.055);
-    padding: 1px 6px;
-    border-radius: 5px;
-    color: var(--ink-soft);
-}
-
-/* ---------- history ---------- */
-
-.clg-history {
+.clg-more {
     max-width: 860px;
-    margin: clamp(56px, 8vw, 96px) auto 0;
+    margin: 26px auto 0;
 }
 
-.clg-history__title {
-    font-size: 15px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--ink-muted);
-    text-align: center;
-    margin-bottom: 22px;
-}
-
-.clg-ver {
-    border-radius: var(--radius-md);
+.clg-more__link {
+    display: flex;
+    align-items: center;
+    gap: clamp(18px, 3vw, 28px);
+    padding: clamp(20px, 3vw, 28px) clamp(22px, 3.5vw, 34px);
+    border-radius: var(--radius-lg);
     background: var(--surface);
     border: 1px solid var(--hairline);
-    overflow: hidden;
-    transition: border-color 0.3s var(--ease), box-shadow 0.3s var(--ease);
+    box-shadow: var(--shadow-sm);
+    color: var(--ink);
+    transition: transform 0.35s var(--ease), box-shadow 0.35s var(--ease),
+        border-color 0.35s var(--ease);
 }
 
-.clg-ver + .clg-ver {
-    margin-top: 10px;
-}
-
-.clg-ver--open {
-    border-color: rgba(0, 122, 255, 0.32);
+.clg-more__link:hover {
+    transform: translateY(-3px);
     box-shadow: var(--shadow-md);
+    border-color: rgba(0, 122, 255, 0.3);
 }
 
-.clg-ver__head {
+/* Mini vertical timeline preview. */
+.clg-more__art {
+    position: relative;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 14px;
-    width: 100%;
-    padding: 16px 20px;
-    text-align: left;
-}
-
-.clg-ver__v {
-    font-size: 16px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -0.01em;
-}
-
-.clg-ver__date {
-    font-size: 13px;
-    color: var(--ink-muted);
-    font-variant-numeric: tabular-nums;
-}
-
-.clg-ver__counts {
-    display: flex;
-    gap: 12px;
-    margin-left: auto;
-}
-
-.clg-count {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--ink-muted);
-    white-space: nowrap;
-}
-
-.clg-count i {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    opacity: 0.85;
-}
-
-.clg-ver__chevron {
+    gap: 11px;
+    padding: 2px 0;
     flex-shrink: 0;
+}
+
+.clg-more__art::before {
+    content: '';
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
+    border-radius: 1px;
+    background: linear-gradient(180deg, var(--brand), rgba(0, 122, 255, 0.15));
+}
+
+.clg-more__dot {
+    position: relative;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--brand);
+    opacity: 0.55;
+}
+
+.clg-more__dot--end {
+    width: 13px;
+    height: 13px;
+    opacity: 1;
+    box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.16);
+}
+
+.clg-more__title {
+    font-size: 18px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    margin-bottom: 6px;
+}
+
+.clg-more__desc {
+    font-size: 14px;
+    line-height: 1.65;
     color: var(--ink-muted);
+}
+
+.clg-more__arrow {
+    flex-shrink: 0;
+    margin-left: auto;
+    color: var(--brand);
     transition: transform 0.35s var(--ease);
 }
 
-.clg-ver--open .clg-ver__chevron {
-    transform: rotate(180deg);
-    color: var(--brand);
+.clg-more__link:hover .clg-more__arrow {
+    transform: translateX(6px);
 }
 
-.clg-ver__panel {
-    display: grid;
-    grid-template-rows: 0fr;
-    transition: grid-template-rows 0.45s var(--ease);
-}
-
-.clg-ver--open .clg-ver__panel {
-    grid-template-rows: 1fr;
-}
-
-.clg-ver__inner {
-    overflow: hidden;
-    padding: 0 20px;
-}
-
-.clg-ver--open .clg-ver__inner {
-    padding: 4px 20px 26px;
-}
-
-.clg-ver__inner .clg-item {
-    font-size: 13.5px;
-}
-
-@media (max-width: 640px) {
-    .clg-ver__counts {
+@media (max-width: 560px) {
+    .clg-more__art {
         display: none;
-    }
-
-    .clg-ver__head {
-        padding: 15px 16px;
-        gap: 10px;
-    }
-
-    .clg-ver__inner {
-        padding: 0 16px;
-    }
-
-    .clg-ver--open .clg-ver__inner {
-        padding: 4px 16px 22px;
-    }
-
-    .clg-item {
-        font-size: 13.5px;
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
     .skel__bar {
         animation: none;
+    }
+
+    .clg-more__link:hover {
+        transform: none;
     }
 }
 </style>

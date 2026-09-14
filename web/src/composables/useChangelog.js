@@ -34,9 +34,10 @@ function parseInline(text) {
 }
 
 /**
- * Keep-a-Changelog layout: `## [X.Y.Z] - date` sections containing
- * `### Category` groups of `- **Title**: description` bullets, optional
- * `> quote` notes and bare intro paragraphs.
+ * Keep-a-Changelog layout: `## [X.Y.Z] - date` sections holding
+ * `### Category` groups of `- **Title**: description` bullets. Quote notes
+ * and intro paragraphs are intentionally skipped — the page only shows the
+ * Added / Changed / Fixed content.
  */
 function parseChangelog(text) {
     const versions = []
@@ -45,7 +46,7 @@ function parseChangelog(text) {
         const header = (lines.shift() || '').trim()
         const m = header.match(/^\[([^\]]+)\](?:\s*-\s*(.+))?$/)
         if (!m) continue
-        const version = { version: m[1], date: (m[2] || '').trim(), notes: [], intro: [], categories: [] }
+        const version = { version: m[1], date: (m[2] || '').trim(), categories: [] }
         let current = null
         for (const raw of lines) {
             const line = raw.replace(/\s+$/, '')
@@ -56,11 +57,7 @@ function parseChangelog(text) {
                 version.categories.push(current)
                 continue
             }
-            if (line.startsWith('>')) {
-                const quote = line.replace(/^>\s?/, '').trim()
-                if (quote) version.notes.push(parseInline(quote))
-                continue
-            }
+            if (line.startsWith('>')) continue
             const item = line.match(/^[-*]\s+(.+)$/)
             if (item) {
                 if (!current) {
@@ -74,53 +71,68 @@ function parseChangelog(text) {
                         ? { title: parseInline(titled[1]), desc: parseInline(titled[2]) }
                         : { title: [], desc: parseInline(body) },
                 )
-                continue
             }
-            if (!current) version.intro.push(parseInline(line))
         }
         versions.push(version)
     }
     return versions
 }
 
+// Module-level cache: the landing card and the timeline page share one fetch.
+let cached = null
+let inflight = null
+
+async function fetchAll() {
+    if (cached) return cached
+    if (inflight) return inflight
+    inflight = (async () => {
+        try {
+            let text = null
+            for (const url of SOURCES) {
+                try {
+                    const res = await fetch(url)
+                    if (res.ok) {
+                        text = await res.text()
+                        break
+                    }
+                } catch {
+                    // CDN down or blocked — try the next source.
+                }
+            }
+            if (text === null) return { error: true }
+            const versions = parseChangelog(text)
+            return {
+                error: false,
+                // The newest release: first versioned entry that carries content
+                // (skips the always-present, usually empty `[Unreleased]` bucket).
+                latest:
+                    versions.find((v) => v.version !== 'Unreleased' && v.categories.some((c) => c.items.length)) ||
+                    versions[0] ||
+                    null,
+                history: versions.filter((v) => v.version !== 'Unreleased'),
+            }
+        } finally {
+            inflight = null
+        }
+    })()
+    const result = await inflight
+    if (!result.error) cached = result
+    return result
+}
+
 export function useChangelog() {
     const loading = ref(true)
     const error = ref(false)
-    // The newest release section: first versioned entry that carries content
-    // (skips the always-present, usually empty `[Unreleased]` bucket).
     const latest = ref(null)
     const history = ref([])
 
-    async function load() {
-        loading.value = true
-        error.value = false
-        let text = null
-        for (const url of SOURCES) {
-            try {
-                const res = await fetch(url)
-                if (res.ok) {
-                    text = await res.text()
-                    break
-                }
-            } catch {
-                // CDN down or blocked — try the next source.
-            }
-        }
-        if (text === null) {
-            loading.value = false
-            error.value = true
-            return
-        }
-        const versions = parseChangelog(text)
-        latest.value =
-            versions.find((v) => v.version !== 'Unreleased' && (v.categories.length || v.intro.length)) ||
-            versions[0] ||
-            null
-        history.value = versions.filter((v) => v.version !== 'Unreleased')
+    onMounted(async () => {
+        const result = await fetchAll()
+        error.value = result.error
+        latest.value = result.latest
+        history.value = result.history
         loading.value = false
-    }
-
-    onMounted(load)
+    })
 
     return { loading, error, latest, history }
 }
