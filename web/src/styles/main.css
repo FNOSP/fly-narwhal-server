@@ -203,6 +203,66 @@ button {
     font-size: 16px;
 }
 
+/* ---------- changelog ----------
+   Shared by the landing-page latest-release card and the timeline page. */
+
+.clg-cat {
+    margin-top: clamp(20px, 3vw, 26px);
+}
+
+.clg-tag {
+    display: inline-block;
+    padding: 5px 13px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    margin-bottom: 14px;
+}
+
+.clg-list {
+    list-style: none;
+    display: grid;
+    gap: 12px;
+}
+
+.clg-item {
+    position: relative;
+    padding-left: 18px;
+    font-size: 14.5px;
+    line-height: 1.75;
+}
+
+.clg-item::before {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: 0.72em;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.22);
+}
+
+.clg-item__title {
+    font-weight: 650;
+    color: var(--ink);
+    margin-right: 4px;
+}
+
+.clg-item__desc {
+    color: var(--ink-muted);
+}
+
+.clg-code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.9em;
+    background: rgba(0, 0, 0, 0.055);
+    padding: 1px 6px;
+    border-radius: 5px;
+    color: var(--ink-soft);
+}
+
 /* ---------- motion preference ---------- */
 
 @media (prefers-reduced-motion: reduce) {
