@@ -41,8 +41,7 @@ function toggle(version) {
                 <p class="eyebrow">全部版本</p>
                 <h1 class="tlpage__title">每一次发版，都有迹可循。</h1>
                 <p class="tlpage__lede">
-                    共 {{ history.length || '…' }} 个版本，数据来自客户端仓库
-                    <a :href="CHANGELOG_URL" target="_blank" rel="noopener noreferrer">CHANGELOG.md</a>，打开页面时实时获取。
+                    共 {{ history.length || '…' }} 个版本，每一次新增、改进与修复，都完整记录在这里。
                 </p>
             </div>
 

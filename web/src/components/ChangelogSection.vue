@@ -26,8 +26,6 @@ function catMeta(name) {
                 </h2>
                 <p v-reveal="180" class="lede">
                     最新版本的完整变化，以及发布以来的全部更新记录。
-                    记录来自客户端仓库的
-                    <a :href="CHANGELOG_URL" target="_blank" rel="noopener noreferrer">CHANGELOG.md</a>。
                 </p>
             </div>
 
