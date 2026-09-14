@@ -28,7 +28,7 @@ const pillars = [
     {
         no: '04',
         title: '全平台覆盖',
-        desc: '新增 Linux 支持，三端五架构，六种安装包格式全都有。',
+        desc: '新增 Linux 支持，三端七格式，开箱即用。',
     },
 ]
 </script>
