@@ -90,7 +90,7 @@ function catMeta(name) {
                         <div class="clg-more__body">
                             <h3 class="clg-more__title">全部版本更新日志</h3>
                             <p class="clg-more__desc">
-                                从 2.0.0-alpha 到今天共 {{ history.length }} 个版本，在垂直时间轴上完整回顾每一次发版。
+                                从 2.0.0-alpha 到今天共 {{ history.length }} 个版本，每一次发版的完整记录都在这里。
                             </p>
                         </div>
                         <svg class="clg-more__arrow" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
