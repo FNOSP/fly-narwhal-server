@@ -30,10 +30,10 @@ const items = [
         visual: 'spec',
     },
     {
-        key: 'fullscreen',
+        key: 'strm',
         span: 'span2',
-        title: 'Windows 伪全屏',
-        desc: '全屏播放时，其他应用窗口仍可正常叠放显示。',
+        title: 'STRM 直连播放',
+        desc: '对齐飞牛影视 Web 端流程，解析 STRM 文件后直连云端地址播放。',
     },
     {
         key: 'detail',
