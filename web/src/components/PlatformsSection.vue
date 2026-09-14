@@ -2,7 +2,7 @@
 import { PLATFORM_LOGOS } from '../assets/platforms'
 
 const platforms = [
-    { os: 'windows', name: 'Windows', arch: ['x64'], note: '安装版支持自动更新，便携版解压即用' },
+    { os: 'windows', name: 'Windows', arch: ['x64', 'ARM64'], note: '安装版支持自动更新，便携版解压即用' },
     { os: 'macos', name: 'macOS', arch: ['Intel x64', 'Apple Silicon'], note: '通用 .dmg，覆盖两代芯片' },
     { os: 'linux', name: 'Linux', arch: ['x64', 'arm64'], note: 'deb / rpm / Arch / AppImage 全覆盖' },
 ]
