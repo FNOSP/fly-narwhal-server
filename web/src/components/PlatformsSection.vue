@@ -16,7 +16,7 @@ const formats = ['.exe', '.dmg', '.deb', '.rpm', '.pkg.tar.zst', '.AppImage', 'S
     <section id="platforms" class="plats">
         <div class="shell">
             <div class="plats__head">
-                <h2 v-reveal class="plats__title">三端 · 五架构 · 六格式</h2>
+                <h2 v-reveal class="plats__title">三端 · 七格式</h2>
                 <p v-reveal="100" class="plats__lede">
                     无论你的桌面是什么组合，都有一个开箱即用的安装包在等着。
                 </p>
