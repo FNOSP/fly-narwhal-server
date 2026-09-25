@@ -20,49 +20,38 @@ const FALLBACK_TAGS = ['v2.3.6', 'v2.3.5', 'v2.3.3']
 
 const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`
 
-// Display order: earlier entries render first (primary) within each group.
+// Display order of the platform tabs, and the per-platform architecture
+// labels shown in the arch toggle. macOS reads friendlier as Intel / Apple
+// Silicon than x86_64 / ARM64; the asset filenames still use the generic keys.
 const OS_RULES = [
-    {
-        os: 'windows',
-        label: 'Windows',
-        pattern: /_Windows_/i,
-        group: [
-            { key: 'amd64', label: '下载 x86_64' },
-            { key: 'aarch64', label: '下载 ARM64' },
-        ],
-    },
-    {
-        os: 'macos',
-        label: 'macOS',
-        pattern: /_MacOS_/i,
-        group: [
-            { key: 'amd64', label: '下载 Intel' },
-            { key: 'aarch64', label: '下载 Apple Silicon' },
-        ],
-    },
-    {
-        os: 'linux',
-        label: 'Linux',
-        pattern: /_Linux_/i,
-        group: [
-            { key: 'amd64', label: 'x86_64 (amd64)' },
-            { key: 'aarch64', label: 'ARM64 (aarch64)' },
-        ],
-    },
+    { os: 'windows', label: 'Windows', pattern: /_Windows_/i, archs: [
+        { key: 'amd64', label: 'x86_64' },
+        { key: 'aarch64', label: 'ARM64' },
+    ] },
+    { os: 'macos', label: 'macOS', pattern: /_MacOS_/i, archs: [
+        { key: 'amd64', label: 'Intel' },
+        { key: 'aarch64', label: 'Apple Silicon' },
+    ] },
+    { os: 'linux', label: 'Linux', pattern: /_Linux_/i, archs: [
+        { key: 'amd64', label: 'x86_64' },
+        { key: 'aarch64', label: 'ARM64' },
+    ] },
 ]
 
 const FORMAT_ORDER = { exe: 0, dmg: 1, deb: 2, rpm: 3, zst: 4, appimage: 5, zip: 9 }
 
-// `section` 0 is the primary install format, 1 the alternate distro packages,
-// 3 the portable archives (rendered as secondary buttons).
-const FORMAT_LABELS = {
-    exe: { sub: '.exe 安装包', section: 0 },
-    dmg: { sub: '.dmg', section: 0 },
-    deb: { sub: 'deb · Debian / Ubuntu', short: 'deb', section: 1 },
-    rpm: { sub: 'rpm · RHEL / Fedora', short: 'rpm', section: 1 },
-    zst: { sub: 'pkg · Arch Linux', short: 'pkg', section: 1 },
-    appimage: { sub: 'AppImage · 通用格式', short: 'AppImage', section: 1 },
-    zip: { sub: '.zip 压缩包', section: 3 },
+// Per-format presentation for the download rows. `ext` is the badge text,
+// `name`/`desc` are the human labels, `primary` marks the recommended pick for
+// its platform (exe / dmg / deb). AppImage stays untagged so Linux never shows
+// two “推荐” rows next to each other.
+const FORMATS = {
+    exe: { ext: '.exe', name: 'Windows 安装包', desc: '一键安装到本机', primary: true },
+    zip: { ext: '.zip', name: '便携压缩包', desc: '解压即用，无需安装' },
+    dmg: { ext: '.dmg', name: '磁盘映像', desc: '拖入「应用程序」即可使用', primary: true },
+    deb: { ext: '.deb', name: 'Debian / Ubuntu', desc: 'apt / dpkg 安装', primary: true },
+    rpm: { ext: '.rpm', name: 'RHEL / Fedora', desc: 'dnf / yum 安装' },
+    zst: { ext: 'pkg', name: 'Arch Linux', desc: 'pacman 安装' },
+    appimage: { ext: 'AppImage', name: '通用格式', desc: '单文件，任意发行版可运行' },
 }
 
 const ARCH_ALIASES = { amd64: 'amd64', x64: 'amd64', aarch64: 'aarch64', arm64: 'aarch64' }
@@ -74,7 +63,7 @@ function assetExt(name) {
     return idx >= 0 ? lower.slice(idx + 1) : ''
 }
 
-const formatOf = (name) => FORMAT_LABELS[assetExt(name)] || null
+const formatOf = (name) => FORMATS[assetExt(name)] || null
 
 const archKey = (name) => {
     const m = name.toLowerCase().match(/_(amd64|x64|aarch64|arm64)_/)
@@ -86,90 +75,43 @@ const sortAssets = (assets) =>
         .slice()
         .sort((a, b) => (FORMAT_ORDER[assetExt(a.name)] ?? 99) - (FORMAT_ORDER[assetExt(b.name)] ?? 99))
 
-function buildButton(asset, { label, sub, secondary = false, title = '' } = {}) {
+function buildRow(asset, fmtKey) {
+    const f = FORMATS[fmtKey]
     return {
-        url: MIRROR_PREFIX + (asset ? asset.browser_download_url : ''),
-        label,
-        sub,
-        secondary,
-        tip: title || sub || '',
+        key: fmtKey,
+        ext: f.ext,
+        name: f.name,
+        desc: f.desc,
+        primary: !!f.primary,
+        url: MIRROR_PREFIX + asset.browser_download_url,
+        file: asset.name,
     }
 }
 
-/** Bucket a release's assets per OS card, split by architecture key. */
-function collectAssets(releaseAssets) {
-    const result = {}
+/**
+ * Bucket a release's assets into the console's three-level shape:
+ * `platforms[os] = { archs: [...], byArch: { [arch]: Row[] } }`. Each platform
+ * only lists the architectures that actually have assets, and the arch toggle
+ * is hidden when a platform ships a single architecture.
+ */
+function buildPlatforms(releaseAssets) {
+    const platforms = {}
     for (const rule of OS_RULES) {
         const matched = sortAssets(
             releaseAssets.filter((a) => formatOf(a.name) && rule.pattern.test('_' + a.name + '_')),
         )
-        const byKey = {}
-        for (const arch of rule.group) byKey[arch.key] = []
-        const others = []
+        const byArch = {}
+        for (const arch of rule.archs) byArch[arch.key] = []
         for (const asset of matched) {
             const arch = archKey(asset.name)
-            if (byKey[arch]) byKey[arch].push(asset)
-            else others.push(asset)
+            if (byArch[arch]) byArch[arch].push(buildRow(asset, assetExt(asset.name)))
         }
-        result[rule.os] = { byKey, others }
-    }
-    return result
-}
-
-/**
- * Turn one OS card's bucket into the button groups the template renders.
- * Linux groups by architecture then lists one button per package format;
- * the other platforms list one button per architecture, splitting portable
- * archives out as secondary buttons.
- */
-function groupsFor(rule, bucket) {
-    const groups = []
-
-    if (rule.os === 'linux') {
-        for (const arch of rule.group) {
-            const list = bucket.byKey[arch.key]
-            if (!list.length) continue
-            groups.push({
-                title: arch.label,
-                buttons: list.map((asset) => {
-                    const fmt = formatOf(asset.name)
-                    return buildButton(asset, { label: fmt.short, sub: fmt.sub, title: fmt.sub })
-                }),
-            })
-        }
-    } else {
-        const primary = []
-        const secondary = []
-        for (const arch of rule.group) {
-            const list = bucket.byKey[arch.key]
-            if (!list.length) continue
-            const portableCount = list.filter((a) => formatOf(a.name).section === 3).length
-            for (const asset of list) {
-                const fmt = formatOf(asset.name)
-                const isPortable = fmt.section === 3
-                const suffix = isPortable ? (portableCount > 1 ? '（便携版）' : ' 便携版') : ''
-                const button = buildButton(asset, { label: arch.label + suffix, sub: fmt.sub })
-                ;(isPortable ? secondary : primary).push(button)
-            }
-        }
-        if (primary.length) groups.push({ title: '', buttons: primary })
-        // Portable archives render in the same group as the installers, flagged
-        // secondary, so the card stays a single visual cluster.
-        if (secondary.length) {
-            if (groups.length) groups[groups.length - 1].buttons.push(...secondary)
-            else groups.push({ title: '', buttons: secondary })
+        platforms[rule.os] = {
+            archs: rule.archs.filter((a) => byArch[a.key].length),
+            byArch,
         }
     }
-
-    for (const asset of bucket.others) {
-        const fmt = formatOf(asset.name)
-        groups.push({
-            title: '',
-            buttons: [buildButton(asset, { label: '下载其他格式', sub: fmt.sub, secondary: true })],
-        })
-    }
-
-    return groups
+    return platforms
 }
 
 export function useRelease() {
@@ -196,21 +138,31 @@ export function useRelease() {
         tag.value = release.tag_name
         publishedAt.value = release.published_at
         releaseUrl.value = release.html_url
-        const collected = collectAssets(release.assets)
-        const next = {}
-        for (const rule of OS_RULES) next[rule.os] = groupsFor(rule, collected[rule.os])
-        platformGroups.value = next
+        platformGroups.value = buildPlatforms(release.assets)
         error.value = false
         loading.value = false
     }
 
-    /** Every card falls back to a single link to the releases page. */
+    /** Every platform falls back to a single link to the releases page. */
     function applyReleasesPageFallback() {
         const next = {}
         for (const rule of OS_RULES) {
-            next[rule.os] = [
-                { title: '', buttons: [{ url: RELEASES_PAGE, label: '前往下载页面', sub: '', secondary: false, tip: '' }] },
-            ]
+            next[rule.os] = {
+                archs: [{ key: 'any', label: '全部架构' }],
+                byArch: {
+                    any: [
+                        {
+                            key: 'link',
+                            ext: '↗',
+                            name: '前往下载页面',
+                            desc: '在 GitHub Releases 选择安装包',
+                            primary: true,
+                            url: RELEASES_PAGE,
+                            file: '',
+                        },
+                    ],
+                },
+            }
         }
         platformGroups.value = next
         error.value = true
