@@ -1,11 +1,22 @@
 import { computed, onMounted, ref } from 'vue'
+import { cachedFetch } from '../lib/cachedJsonStore'
 
 const REPO = 'FNOSP/FlyNarwhal'
 const MIRROR_PREFIX = 'https://ghfast.top/'
-// Fallback version used when the GitHub API is unreachable, so the page still
-// offers working pinned download links. Must be a STABLE tag — the
-// list-by-tag endpoint returns prereleases too. Keep in sync with releases.
-const FALLBACK_TAG = 'v2.3.3'
+
+// GitHub 的未认证限额是 60 次/小时且按出口 IP 计数，同一出口下的所有访客
+// 共用这份配额。缓存 20 分钟把「每次刷新一次请求」压到「每浏览器 20 分钟
+// 至多一次」。代价是新版本发布后最长 20 分钟内页面仍显示上一版。
+const RELEASE_TTL = 20 * 60 * 1000
+const RELEASE_KEY = 'release:latest'
+
+// Fallback versions used when the GitHub API is unreachable (rate limit /
+// network), newest first. Any one of them gives users real pinned download
+// links, so the page degrades to a slightly older release rather than to a
+// bare link. Must be STABLE tags — the list-by-tag endpoint returns
+// prereleases too. A single constant goes stale on every release; a ladder
+// only needs opportunistically refreshing and self-heals if the newest 404s.
+const FALLBACK_TAGS = ['v2.3.6', 'v2.3.5', 'v2.3.3']
 
 const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`
 
@@ -210,27 +221,46 @@ export function useRelease() {
         const res = await fetch(`https://api.github.com/repos/${REPO}/${path}`, {
             headers: { Accept: 'application/vnd.github+json' },
         })
+        // 403/429 表示未认证限额用尽（按出口 IP 计数）。等待和重试都没用，
+        // 直接交给上层回退。
         if (!res.ok) throw new Error('HTTP ' + res.status)
         return res.json()
     }
 
     /**
-     * Fallback when the GitHub API is unreachable (rate limit / network): pin the
-     * known-good FALLBACK_TAG assets via the list-by-tag endpoint, which may still
-     * be cached; if that also fails, link to the releases page so users are never
-     * stuck without a way to download.
+     * One network round trip: latest, then the FALLBACK_TAGS ladder newest
+     * first. Throws only when every source failed.
+     */
+    async function fetchReleaseWithFallback() {
+        try {
+            return await fetchRelease('releases/latest')
+        } catch (e) {
+            console.error('获取最新版本失败，尝试回退版本', e)
+            for (const tag of FALLBACK_TAGS) {
+                try {
+                    return await fetchRelease('releases/tags/' + tag)
+                } catch (e2) {
+                    console.error('回退版本获取也失败', tag, e2)
+                }
+            }
+            throw new Error('all release sources failed')
+        }
+    }
+
+    /**
+     * Loads inside a 20-minute window. A fresh cache entry resolves without
+     * touching the network; an expired one refetches; and if that refetch
+     * fails, cachedFetch hands back the previous release so the page still
+     * shows real download buttons instead of the generic fallback.
      */
     async function load() {
         try {
-            applyRelease(await fetchRelease('releases/latest'))
+            const { data } = await cachedFetch(RELEASE_KEY, RELEASE_TTL, fetchReleaseWithFallback)
+            applyRelease(data)
         } catch (e) {
+            // Nothing cached and every source failed — link to the releases page.
             console.error('获取最新版本失败，使用回退版本链接', e)
-            try {
-                applyRelease(await fetchRelease('releases/tags/' + FALLBACK_TAG))
-            } catch (e2) {
-                console.error('回退版本获取也失败', e2)
-                applyReleasesPageFallback()
-            }
+            applyReleasesPageFallback()
         }
     }
 

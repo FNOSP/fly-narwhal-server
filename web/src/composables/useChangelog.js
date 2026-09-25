@@ -2,12 +2,19 @@ import { onMounted, ref } from 'vue'
 
 /**
  * Client changelog, fetched live so the page never ships a stale copy.
- * The jsDelivr CDN mirror comes first — raw.githubusercontent is often
- * unreachable from mainland China — with raw as the fallback.
+ *
+ * raw.githubusercontent comes first: it is the authoritative copy and only
+ * carries a 5-minute HTTP cache. jsDelivr used to be first but is not a
+ * separate content cache at all — it 301-redirects to raw — so leading with
+ * it bought nothing and cost an extra hop. It stays as the fallback because
+ * raw is often unreachable from mainland China.
+ *
+ * Order matters: the loop stops at the first source that answers, so a
+ * cached-but-old copy in front would hide new releases indefinitely.
  */
 const SOURCES = [
-    'https://cdn.jsdelivr.net/gh/FNOSP/FlyNarwhal@master/CHANGELOG.md',
     'https://raw.githubusercontent.com/FNOSP/FlyNarwhal/master/CHANGELOG.md',
+    'https://cdn.jsdelivr.net/gh/FNOSP/FlyNarwhal@master/CHANGELOG.md',
 ]
 
 export const CHANGELOG_URL = 'https://github.com/FNOSP/FlyNarwhal/blob/master/CHANGELOG.md'
@@ -78,45 +85,78 @@ function parseChangelog(text) {
     return versions
 }
 
-// Module-level cache: the landing card and the timeline page share one fetch.
-let cached = null
-let inflight = null
+// 上次取回的正文摘要与解析结果，用于避免重复解析同一份内容。
+// 只在本页面会话内有效——刷新即重新校验。
+let cachedDigest = null
+let cachedResult = null
 
-async function fetchAll() {
-    if (cached) return cached
-    if (inflight) return inflight
-    inflight = (async () => {
+/**
+ * 逐个源尝试，返回正文文本；全部失败返回 null。
+ *
+ * 必须用 cache: 'no-store'。raw 只发 max-age=300，默认的 cache 模式会让
+ * 浏览器直接拿自己那份缓存应答，导致刷新后最多 5 分钟看不到新版本。
+ *
+ * 为什么不用条件请求（If-None-Match）：raw 虽然发 etag，但没有
+ * Access-Control-Expose-Headers，浏览器不允许 JS 读取它，条件请求无法
+ * 发起；raw 也不发 Last-Modified。实测唯一可靠的做法就是每次都取回正文。
+ * 正文约 22KB，代价可以接受。注意 jsDelivr 的 ?query 缓存穿透同样无效
+ * （它只是个 301 跳转到 raw）。
+ */
+async function fetchChangelogText() {
+    for (const url of SOURCES) {
         try {
-            let text = null
-            for (const url of SOURCES) {
-                try {
-                    const res = await fetch(url)
-                    if (res.ok) {
-                        text = await res.text()
-                        break
-                    }
-                } catch {
-                    // CDN down or blocked — try the next source.
-                }
-            }
-            if (text === null) return { error: true }
-            const versions = parseChangelog(text)
-            return {
-                error: false,
-                // The newest release: first versioned entry that carries content
-                // (skips the always-present, usually empty `[Unreleased]` bucket).
-                latest:
-                    versions.find((v) => v.version !== 'Unreleased' && v.categories.some((c) => c.items.length)) ||
-                    versions[0] ||
-                    null,
-                history: versions.filter((v) => v.version !== 'Unreleased'),
-            }
-        } finally {
-            inflight = null
+            const res = await fetch(url, { cache: 'no-store' })
+            if (res.ok) return await res.text()
+        } catch {
+            // CDN down or blocked — try the next source.
         }
-    })()
-    const result = await inflight
-    if (!result.error) cached = result
+    }
+    return null
+}
+
+/** 正文的 SHA-256 摘要，用来判断内容是否变化。 */
+async function digestOf(text) {
+    try {
+        const buf = new TextEncoder().encode(text)
+        const hash = await crypto.subtle.digest('SHA-256', buf)
+        return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('')
+    } catch {
+        return null
+    }
+}
+
+function buildResult(text) {
+    const versions = parseChangelog(text)
+    return {
+        error: false,
+        // The newest release: first versioned entry that carries content
+        // (skips the always-present, usually empty `[Unreleased]` bucket).
+        latest:
+            versions.find((v) => v.version !== 'Unreleased' && v.categories.some((c) => c.items.length)) ||
+            versions[0] ||
+            null,
+        history: versions.filter((v) => v.version !== 'Unreleased'),
+    }
+}
+
+/**
+ * 取回并解析更新日志。每次调用都会向服务端校验一次（不是本地 TTL 缓存），
+ * 这样刷新页面总能同步到 GitHub 上的最新版本。内容没变时跳过重复解析。
+ */
+async function fetchAll() {
+    const text = await fetchChangelogText()
+    if (text === null) {
+        // 网络全挂时优先给上次的内容，旧日志好过「无法加载」。
+        return cachedResult || { error: true, latest: null, history: [] }
+    }
+
+    const digest = await digestOf(text)
+    // 摘要不可用（无 crypto.subtle）时退化为每次都重新解析。
+    if (digest !== null && digest === cachedDigest && cachedResult) return cachedResult
+
+    const result = buildResult(text)
+    cachedDigest = digest
+    cachedResult = result
     return result
 }
 
