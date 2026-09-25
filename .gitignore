@@ -48,6 +48,7 @@ out/
 ### Vue landing page (web/) ###
 /web/node_modules/
 /web/dist/
+/web/.vite/
 
 ### Runtime & local state — never commit ###
 # The auth code is shown exactly once and lives beside the server binary.
