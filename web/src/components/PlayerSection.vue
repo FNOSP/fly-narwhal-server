@@ -55,8 +55,8 @@ const compare = [
                     <span class="line-mask"><span style="--line-delay: 110ms">装进你的桌面。</span></span>
                 </h2>
                 <p v-reveal="160" class="lede player__lede">
-                    基于 media_kit 与全量 libmpv 构建。macOS 与 Linux 打包完整解码库，
-                    高码率片源本地直接处理，不再依赖服务端转码。
+                    基于 mpv 同款播放内核，8K、HDR 等大片直接在你的电脑上流畅播放，
+                    不占服务器计算资源，不卡顿。
                 </p>
             </div>
 
