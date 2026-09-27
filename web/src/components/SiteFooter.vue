@@ -32,7 +32,7 @@ const credits = [
         { name: 'Jsoup', url: 'https://jsoup.org', note: 'HTML 解析' },
         { name: 'Brotli', url: 'https://github.com/google/brotli', note: '响应解压' },
         { name: 'intro-skipper', url: 'https://github.com/intro-skipper/intro-skipper', note: '自动检测并跳过片头片尾的 Jellyfin 插件' },
-        { name: 'fnos-tv', url: 'https://github.com/thshu/fnos-tv', note: '基于飞牛影视接口开发的网页端，接口调用方式参考' },
+        { name: 'fnos-tv', url: 'https://github.com/thshu/fnos-tv', note: '基于飞牛影视接口开发的网页端，弹幕功能参考' },
     ]},
 ]
 </script>
@@ -75,7 +75,7 @@ const credits = [
 
             <div class="footer__legal">
                 <p>本项目为飞牛 OS 爱好者开发的第三方影视客户端，与飞牛影视官方无关。使用前请确保遵守相关服务条款。</p>
-                <p class="footer__copy">© {{ year }} FNOSP · 基于开源协议发布</p>
+                <p class="footer__copy">© {{ year }} FNOSP · 基于 AGPL-3.0 开源协议发布</p>
             </div>
         </div>
     </footer>

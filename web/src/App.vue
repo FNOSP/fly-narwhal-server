@@ -91,7 +91,7 @@ function scrollToDownload() {
         <SiteNav :solid="navSolid" :progress="docProgress" @download="scrollToDownload" @auth="auth.request" />
 
         <main>
-            <HeroSection :version-label="versionLabel" :release-url="releaseUrl" @download="scrollToDownload" @auth="auth.request" />
+            <HeroSection :version-label="versionLabel" @download="scrollToDownload" @auth="auth.request" />
             <RenewSection />
             <ScreenshotSection />
             <FeatureSection />

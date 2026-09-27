@@ -4,7 +4,6 @@ import { useScrollProgress } from '../composables/useParallax'
 
 defineProps({
     versionLabel: { type: String, default: '' },
-    releaseUrl: { type: String, default: '' },
 })
 
 const emit = defineEmits(['download', 'auth'])
@@ -53,12 +52,7 @@ const glowScale = computed(() => 1 + progress.value * 0.35)
                 <button class="btn btn-ghost btn-lg" type="button" @click="emit('auth')">获取授权码</button>
             </div>
 
-            <a
-                class="hero__badge"
-                :href="releaseUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-            >
+            <a class="hero__badge" href="#changelog">
                 <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
                     <path
                         d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 12.5a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11zM7.25 4h1.5v4.5l3 1.8-.75 1.24L7.25 9.5V4z"
