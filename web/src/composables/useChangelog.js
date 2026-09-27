@@ -1,4 +1,5 @@
 import { onMounted, ref } from 'vue'
+import { useRelease } from './useRelease'
 
 /**
  * Client changelog, fetched live so the page never ships a stale copy.
@@ -160,11 +161,35 @@ async function fetchAll() {
     return result
 }
 
+/**
+ * 比较「2.3.6」「v2.3.6-rc.1」这类版本号，返回负数 / 0 / 正数。
+ *
+ * 只取前导数字段（截断到预发布标记），够覆盖本项目的发版方式；无法解析时
+ * 退化成字符串比较，保证永远有一个确定的顺序而不是抛错。
+ */
+function compareVersions(a, b) {
+    const parse = (v) => String(v).replace(/^v/i, '').split(/[-+]/)[0].split('.').map((s) => parseInt(s, 10))
+    const pa = parse(a)
+    const pb = parse(b)
+    if (pa.some(Number.isNaN) || pb.some(Number.isNaN)) return String(a).localeCompare(String(b))
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const d = (pa[i] || 0) - (pb[i] || 0)
+        if (d) return d
+    }
+    return 0
+}
+
 export function useChangelog() {
     const loading = ref(true)
     const error = ref(false)
     const latest = ref(null)
     const history = ref([])
+
+    // 下载区用的是 20 分钟 localStorage 缓存，更新日志则是每次刷新都取回。
+    // 刚发版时下载区会暂时停在上一版，两个区域当场对不上；发现更新日志的
+    // 版本更高就让下载区立刻重新拉一次，而不是干等缓存过期。
+    const release = useRelease()
+    let refreshed = false
 
     onMounted(async () => {
         const result = await fetchAll()
@@ -172,6 +197,14 @@ export function useChangelog() {
         latest.value = result.latest
         history.value = result.history
         loading.value = false
+
+        if (result.latest?.version && release.tag.value) {
+            // 更新日志的版本更高 = 下载区还停在缓存里的上一版，立刻重取。
+            if (!refreshed && compareVersions(result.latest.version, release.tag.value) > 0) {
+                refreshed = true
+                release.refresh()
+            }
+        }
     })
 
     return { loading, error, latest, history }
