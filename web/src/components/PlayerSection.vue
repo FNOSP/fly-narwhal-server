@@ -69,16 +69,23 @@ const compare = [
                         <span class="player__dot"></span>
                         <span class="player__dot"></span>
                         <span class="player__dot"></span>
-                        <span class="player__tag">8K · HDR · 硬解直出</span>
+                        <span class="player__tag">8K · 60fps · HDR · 硬解直出</span>
                     </div>
-                    <img
-                        src="/img/screenshot-player-8k.jpg"
-                        alt="飞鲸影视播放 8K HDR 高码率片源"
-                        loading="lazy"
-                        decoding="async"
-                    />
+                    <video
+                        class="player__video"
+                        src="/video/8k-60fps-demo.mp4"
+                        autoplay
+                        loop
+                        muted
+                        playsinline
+                        preload="metadata"
+                        aria-label="飞鲸影视播放 8K 60fps HDR 高码率片源"
+                    ></video>
                     <div class="player__scanline" aria-hidden="true"></div>
                 </div>
+                <p v-reveal="200" class="player__note">
+                    硬解播放 8K HDR 视频的能力将在未来版本推出，敬请期待
+                </p>
             </div>
 
             <ul class="player__chips" aria-label="播放能力">
@@ -189,9 +196,20 @@ const compare = [
     color: #8FC5FF;
 }
 
-.player__frame img {
+.player__video {
+    display: block;
     width: 100%;
     height: auto;
+    background: #000;
+}
+
+.player__note {
+    margin: 14px auto 0;
+    max-width: 620px;
+    text-align: center;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: rgba(245, 245, 247, 0.55);
 }
 
 /* A slow light sweep across the "screen" — reads as the picture coming alive. */
