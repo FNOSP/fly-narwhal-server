@@ -2,10 +2,6 @@
 import { computed, ref } from 'vue'
 import { useScrollProgress } from '../composables/useParallax'
 
-defineProps({
-    versionLabel: { type: String, default: '' },
-})
-
 const emit = defineEmits(['download', 'auth'])
 
 const root = ref(null)
@@ -23,7 +19,7 @@ const orbBY = computed(() => `${(1 - progress.value) * 70}px`)
         <div class="cta__orb cta__orb--b" :style="{ transform: `translate3d(0, ${orbBY}, 0)` }" aria-hidden="true"></div>
 
         <div class="shell cta__inner">
-            <p v-reveal class="cta__kicker">飞鲸影视 2.0 · 焕新出发<span v-if="versionLabel"> · {{ versionLabel }}</span></p>
+            <p v-reveal class="cta__kicker">飞鲸影视 2.0 · 焕新出发</p>
 
             <h2 v-reveal:mask class="cta__title">
                 <span class="line-mask"><span style="--line-delay: 0ms">把飞牛影视，</span></span>
