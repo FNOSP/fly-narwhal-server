@@ -29,16 +29,16 @@ const features = [
     },
     {
         icon: 'devices',
-        title: '三端六架构',
+        title: '三端双架构',
         desc: 'Windows x64、macOS Intel / Apple Silicon、Linux x64 / arm64 全平台覆盖，提供 exe、dmg、deb、rpm、pkg.tar.zst 与 AppImage。',
     },
 ]
 
 const stats = [
     { value: 3, suffix: '', label: '桌面平台' },
-    { value: 6, suffix: '', label: '安装包格式' },
-    { value: 5, suffix: '', label: 'CPU 架构组合' },
-    { value: 2, suffix: '', label: '智能跳过区间' },
+    { value: 7, suffix: '', label: '安装包格式' },
+    { value: 2, suffix: '', label: 'CPU 架构组合' },
+    // { value: 2, suffix: '', label: '智能跳过区间' },
 ]
 
 const root = ref(null)
