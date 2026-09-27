@@ -110,7 +110,7 @@ function scrollToDownload() {
             />
             <ChangelogSection />
             <FaqSection />
-            <CtaSection :version-label="versionLabel" @download="scrollToDownload" @auth="auth.request" />
+            <CtaSection @download="scrollToDownload" @auth="auth.request" />
         </main>
 
         <SiteFooter />
