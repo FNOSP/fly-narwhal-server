@@ -32,7 +32,7 @@ export function useAuthCode() {
                 if (result.data === 'exists') {
                     show({
                         title: '授权码',
-                        desc: '授权码已存在。如需重新生成，请删除飞鲸服务端可执行文件所在目录下的 auth_code 文件后再次获取。',
+                        desc: '授权码已存在。如需重新生成，请到文件管理 -> 应用文件 -> App.Native.flyNarwhalServer -> data 目录中，把「auth_code」文件删除后再次获取。',
                     })
                 } else {
                     show({ title: '授权码', desc: '此授权码只展示一次，请立即复制并妥善保存！', code: result.data })
