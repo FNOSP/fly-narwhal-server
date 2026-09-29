@@ -95,13 +95,13 @@ public class IqiyiDanmuFetcher extends AbstractDanmuFetcher {
     public Map<String, String> getEpisodeUrl(String url) {
         try {
             String html = restTemplate.getForObject(url, String.class);
-            if (html == null) return Map.of("1", url);
+            if (html == null) return Map.of();
 
             String albumId = firstMatch(html, "\"albumId\"\\s*:\\s*\"?(\\d+)\"?");
             if (albumId == null) {
                 albumId = firstMatch(html, "albumId\\s*[:=]\\s*\"?(\\d+)\"?");
             }
-            if (albumId == null) return Map.of("1", url);
+            if (albumId == null) return Map.of();
 
             Map<String, String> map = new HashMap<>();
             int page = 1;
@@ -117,12 +117,9 @@ public class IqiyiDanmuFetcher extends AbstractDanmuFetcher {
                 }
                 page++;
             }
-            if (map.isEmpty()) {
-                map.put("1", url);
-            }
             return map;
         } catch (Exception e) {
-            return Map.of("1", url);
+            return Map.of();
         }
     }
 

@@ -40,6 +40,7 @@ public class MgtvDanmuFetcher extends AbstractDanmuFetcher {
             while (true) {
                 String api = "https://pcweb.api.mgtv.com/episode/list?version=5.5.35&video_id=" + videoId + "&page=" + page + "&size=50";
                 String json = restTemplate.getForObject(api, String.class);
+                if (json == null || json.isEmpty()) break;
                 JsonNode root = objectMapper.readTree(json);
                 JsonNode list = root.path("data").path("list");
                 if (list.isArray()) {

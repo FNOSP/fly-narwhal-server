@@ -52,12 +52,12 @@ public class TencentDanmuFetcher extends AbstractDanmuFetcher {
             }
 
             if (cid == null) {
-                return Map.of("1", url);
+                return Map.of();
             }
 
             String api = "https://s.video.qq.com/get_playsource?id=" + cid + "&plat=2&type=4&data_type=2&video_type=10&otype=json";
             String body = restTemplate.getForObject(api, String.class);
-            if (body == null) return Map.of("1", url);
+            if (body == null) return Map.of();
             String json = stripJsonp(body);
             JsonNode root = objectMapper.readTree(json);
 
@@ -85,9 +85,12 @@ public class TencentDanmuFetcher extends AbstractDanmuFetcher {
                 }
             }
 
-            return map.isEmpty() ? Map.of("1", url) : map;
+            // Do NOT fall back to a single entry keyed "1" when nothing matched:
+            // that pins the detail-page URL onto episode 1, and any request for a
+            // different episode would silently receive episode 1's danmaku.
+            return map;
         } catch (Exception e) {
-            return Map.of("1", url);
+            return Map.of();
         }
     }
 

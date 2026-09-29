@@ -38,11 +38,11 @@ public class BilibiliDanmuFetcher extends AbstractDanmuFetcher {
         try {
             if (url.contains("/ep")) {
                 Matcher m = Pattern.compile("ep(\\d+)").matcher(url);
-                if (!m.find()) return Map.of("1", url);
+                if (!m.find()) return Map.of();
                 String epId = m.group(1);
                 String api = "https://api.bilibili.com/pgc/view/web/season?ep_id=" + epId;
                 String json = restTemplate.getForObject(api, String.class);
-                if (json == null) return Map.of("1", url);
+                if (json == null) return Map.of();
                 JsonNode root = objectMapper.readTree(json);
                 JsonNode episodes = root.path("result").path("episodes");
                 Map<String, String> map = new HashMap<>();
@@ -55,7 +55,7 @@ public class BilibiliDanmuFetcher extends AbstractDanmuFetcher {
                         }
                     }
                 }
-                return map.isEmpty() ? Map.of("1", url) : map;
+                return map;
             }
 
             Matcher seasonMatcher = Pattern.compile("/ss(\\d+)").matcher(url);
@@ -63,7 +63,7 @@ public class BilibiliDanmuFetcher extends AbstractDanmuFetcher {
                 String seasonId = seasonMatcher.group(1);
                 String api = "https://api.bilibili.com/pgc/view/web/season?season_id=" + seasonId;
                 String json = restTemplate.getForObject(api, String.class);
-                if (json == null) return Map.of("1", url);
+                if (json == null) return Map.of();
                 JsonNode root = objectMapper.readTree(json);
                 JsonNode episodes = root.path("result").path("episodes");
                 Map<String, String> map = new HashMap<>();
@@ -76,15 +76,15 @@ public class BilibiliDanmuFetcher extends AbstractDanmuFetcher {
                         }
                     }
                 }
-                return map.isEmpty() ? Map.of("1", url) : map;
+                return map;
             }
 
             Matcher bvMatcher = Pattern.compile("(BV[a-zA-Z0-9]+)").matcher(url);
-            if (!bvMatcher.find()) return Map.of("1", url);
+            if (!bvMatcher.find()) return Map.of();
             String bvid = bvMatcher.group(1);
             String api = "https://api.bilibili.com/x/web-interface/view?bvid=" + bvid;
             String json = restTemplate.getForObject(api, String.class);
-            if (json == null) return Map.of("1", url);
+            if (json == null) return Map.of();
             JsonNode root = objectMapper.readTree(json);
             JsonNode pages = root.path("data").path("pages");
             Map<String, String> map = new HashMap<>();
@@ -96,9 +96,9 @@ public class BilibiliDanmuFetcher extends AbstractDanmuFetcher {
                     }
                 }
             }
-            return map.isEmpty() ? Map.of("1", url) : map;
+            return map;
         } catch (Exception e) {
-            return Map.of("1", url);
+            return Map.of();
         }
     }
 
