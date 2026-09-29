@@ -245,6 +245,7 @@ public class DanmuAppService {
 
         if (epKey != null || (episodeTitleKey != null && !episodeTitleKey.isEmpty())) {
             List<String> mergedUrls = new ArrayList<>();
+            boolean exactMatch;
 
             String epNorm = normalizeEpisodeNumberKey(epKey);
             if (epNorm != null) {
@@ -256,6 +257,7 @@ public class DanmuAppService {
                     }
                 }
             }
+            exactMatch = !mergedUrls.isEmpty();
 
             if (mergedUrls.isEmpty()) {
                 String titleNorm = normalizeTitleKey(episodeTitleKey);
@@ -269,6 +271,7 @@ public class DanmuAppService {
                         }
                     }
                 }
+                exactMatch = !mergedUrls.isEmpty();
             }
 
             if (mergedUrls.isEmpty() && urlDict.size() == 1) {
@@ -282,7 +285,11 @@ public class DanmuAppService {
                     String v = sanitizeUrlValue(u);
                     if (v != null) cleaned.add(v);
                 }
-                if (guid != null && danmuUrlRepository != null && !cleaned.isEmpty()) {
+                // Persist only when the episode key matched exactly. Fallback
+                // selections must not be stored, otherwise a wrong URL becomes
+                // the permanent guid -> URL mapping and every later lookup of
+                // that episode returns it without re-resolving from platform.
+                if (exactMatch && guid != null && danmuUrlRepository != null && !cleaned.isEmpty()) {
                     danmuUrlRepository.saveUrls(guid, parentGuid, cleaned);
                 }
                 String outKey = epKey != null ? epKey : episodeTitleKey;
@@ -293,7 +300,11 @@ public class DanmuAppService {
             }
         }
 
-        return urlDict;
+        // No per-episode match. Returning the whole multi-episode map would make
+        // the client fall back to one arbitrary episode's danmaku for every
+        // episode, so only a single-entry map (which is that episode's only
+        // source) can be returned as-is.
+        return urlDict.size() == 1 ? urlDict : new HashMap<>();
     }
 
     private List<String> searchVideoData(String name, String tvNum, boolean season) {

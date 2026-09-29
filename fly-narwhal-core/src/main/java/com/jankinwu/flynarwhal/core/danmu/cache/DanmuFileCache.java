@@ -27,6 +27,17 @@ import java.util.stream.Stream;
 @Component
 public class DanmuFileCache {
 
+    /**
+     * Cache format generation. Bump this whenever the cached payload's meaning
+     * changes (for example, when the episode-to-URL resolution is fixed), so
+     * that every entry written by an older build stops being addressed. The
+     * first start on the new generation clears the directory, which also drops
+     * entries whose request keys are no longer produced.
+     */
+    private static final String CACHE_GENERATION = "2";
+
+    private static final String GENERATION_FILE = ".generation";
+
     private final ReentrantLock lock = new ReentrantLock();
     private final Map<String, Path> lru = new LinkedHashMap<>(16, 0.75f, true);
 
@@ -50,9 +61,14 @@ public class DanmuFileCache {
             return;
         }
 
+        if (purgeIfGenerationChanged()) {
+            return;
+        }
+
         lock.lock();
         try (Stream<Path> stream = Files.list(baseDir)) {
             stream.filter(Files::isRegularFile)
+                    .filter(p -> !GENERATION_FILE.equals(p.getFileName().toString()))
                     .sorted(Comparator.comparingLong(this::safeLastModifiedMillis))
                     .forEach(p -> lru.put(stripExtension(p.getFileName().toString()), p));
             evictIfNeeded();
@@ -61,6 +77,45 @@ public class DanmuFileCache {
         } finally {
             lock.unlock();
         }
+    }
+
+    /**
+     * Clears every cached payload left by an older generation and records the
+     * current one. Returns true when a purge ran, meaning the directory is empty
+     * and no index needs to be rebuilt.
+     */
+    private boolean purgeIfGenerationChanged() {
+        Path marker = baseDir.resolve(GENERATION_FILE);
+        try {
+            if (Files.exists(marker)
+                    && CACHE_GENERATION.equals(Files.readString(marker, StandardCharsets.UTF_8).trim())) {
+                return false;
+            }
+        } catch (IOException e) {
+            log.warn("Failed to read danmu cache generation marker {}", marker, e);
+        }
+
+        lock.lock();
+        try {
+            try (DirectoryStream<Path> ds = Files.newDirectoryStream(baseDir)) {
+                for (Path p : ds) {
+                    if (Files.isRegularFile(p) && !GENERATION_FILE.equals(p.getFileName().toString())) {
+                        try {
+                            Files.deleteIfExists(p);
+                        } catch (IOException ignored) {
+                        }
+                    }
+                }
+            }
+            lru.clear();
+            Files.writeString(marker, CACHE_GENERATION, StandardCharsets.UTF_8);
+            log.info("Danmu cache generation changed to {}; cleared dir={}", CACHE_GENERATION, baseDir);
+        } catch (IOException e) {
+            log.warn("Failed to purge danmu cache dir={}", baseDir, e);
+        } finally {
+            lock.unlock();
+        }
+        return true;
     }
 
     public Optional<String> read(String requestKey) {
@@ -134,7 +189,7 @@ public class DanmuFileCache {
         lock.lock();
         try (DirectoryStream<Path> ds = Files.newDirectoryStream(baseDir)) {
             for (Path p : ds) {
-                if (Files.isRegularFile(p)) {
+                if (Files.isRegularFile(p) && !GENERATION_FILE.equals(p.getFileName().toString())) {
                     try {
                         Files.deleteIfExists(p);
                     } catch (IOException ignored) {

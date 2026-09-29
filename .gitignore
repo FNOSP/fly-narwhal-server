@@ -49,6 +49,7 @@ out/
 /web/node_modules/
 /web/dist/
 /web/.vite/
+/web/.claude/
 
 ### Runtime & local state — never commit ###
 # The auth code is shown exactly once and lives beside the server binary.
