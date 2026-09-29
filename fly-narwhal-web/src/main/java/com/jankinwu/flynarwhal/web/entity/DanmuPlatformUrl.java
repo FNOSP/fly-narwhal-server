@@ -6,8 +6,8 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 @Data
-@TableName("VIDEO_CONFIG_URL")
-public class VideoConfigUrl {
+@TableName("DANMU_PLATFORM_URL")
+public class DanmuPlatformUrl {
     @TableId(type = IdType.AUTO)
     private Long id;
 
@@ -17,4 +17,3 @@ public class VideoConfigUrl {
 
     private String url;
 }
-
