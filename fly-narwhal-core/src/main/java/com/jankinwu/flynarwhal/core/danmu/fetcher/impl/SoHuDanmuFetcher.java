@@ -53,14 +53,24 @@ public class SoHuDanmuFetcher extends AbstractDanmuFetcher {
             JsonNode root = objectMapper.readTree(json);
             Map<String, String> map = new HashMap<>();
             JsonNode videos = root.path("videos");
+            String fallbackUrl = null;
             if (videos.isArray()) {
                 for (JsonNode item : videos) {
                     String order = item.path("order").asText();
                     String pageUrl = item.path("pageUrl").asText();
-                    if (!order.isEmpty() && !pageUrl.isEmpty()) {
-                        map.put(order, pageUrl);
+                    if (pageUrl.isEmpty()) continue;
+                    if (order.isEmpty()) {
+                        // Keep the only usable URL aside rather than inventing a key.
+                        // A blank order would otherwise land on an arbitrary key that
+                        // can never match the requested episode number.
+                        if (fallbackUrl == null) fallbackUrl = pageUrl;
+                        continue;
                     }
+                    map.put(order, pageUrl);
                 }
+            }
+            if (map.isEmpty() && fallbackUrl != null) {
+                map.put("1", fallbackUrl);
             }
             return map;
         } catch (Exception e) {

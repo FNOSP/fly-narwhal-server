@@ -50,7 +50,7 @@ public class YoukuDanmuFetcher extends AbstractDanmuFetcher {
             String vid;
             if (url.contains("vid=")) {
                 Matcher m = Pattern.compile("vid=([^&=]+)").matcher(url);
-                if (!m.find()) return Map.of("1", url);
+                if (!m.find()) return Map.of();
                 vid = m.group(1).replace("%3D", "=").replace("=", "");
             } else {
                 String[] parts = url.split("\\?")[0].split("/");
@@ -60,14 +60,14 @@ public class YoukuDanmuFetcher extends AbstractDanmuFetcher {
 
             String showUrl = "https://openapi.youku.com/v2/videos/show.json?client_id=53e6cc67237fc59a&video_id=" + vid + "&package=com.huawei.hwvplayer.youku&ext=show";
             String json = restTemplate.getForObject(showUrl, String.class);
-            if (json == null) return Map.of("1", url);
+            if (json == null) return Map.of();
             JsonNode root = objectMapper.readTree(json);
 
             String showId = root.path("show").path("id").asText();
             if (showId == null || showId.isEmpty()) {
                 showId = root.path("show_id").asText();
             }
-            if (showId == null || showId.isEmpty()) return Map.of("1", url);
+            if (showId == null || showId.isEmpty()) return Map.of();
 
             Map<String, String> map = new HashMap<>();
             int page = 1;
@@ -96,9 +96,9 @@ public class YoukuDanmuFetcher extends AbstractDanmuFetcher {
                 page++;
             }
 
-            return map.isEmpty() ? Map.of("1", url) : map;
+            return map;
         } catch (Exception e) {
-            return Map.of("1", url);
+            return Map.of();
         }
     }
 
