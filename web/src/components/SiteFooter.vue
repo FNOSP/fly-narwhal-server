@@ -28,30 +28,6 @@ const links = [
 <template>
     <footer class="footer">
         <div class="shell footer__inner">
-            <div class="footer__top">
-                <div class="footer__brand">
-                    <!-- Inlined (not <img>) so the SVG's ink paths can be
-                         currentColor and follow the theme, while the brand
-                         icon tiles keep their literal colors. -->
-                    <div
-                        class="footer__banner"
-                        role="img"
-                        aria-label="飞鲸影视 × XIAOBO NETWORK × 飞牛开发者开放平台 FNOSP"
-                        v-html="bannerSvg"
-                    ></div>
-                    <p class="footer__tagline">面向飞牛影视服务的第三方桌面客户端</p>
-                </div>
-
-                <nav class="footer__links" aria-label="相关链接">
-                    <a
-                        v-for="l in links"
-                        :key="l.label"
-                        :href="l.href"
-                        v-bind="l.external ? { target: '_blank', rel: 'noopener noreferrer' } : {}"
-                    >{{ l.label }}</a>
-                </nav>
-            </div>
-
             <section class="footer__contributors" aria-label="贡献者">
                 <h2 class="footer__contributors-title">贡献者</h2>
                 <div
@@ -92,6 +68,30 @@ const links = [
                 </div>
             </section>
 
+            <div class="footer__top">
+                <div class="footer__brand">
+                    <!-- Inlined (not <img>) so the SVG's ink paths can be
+                         currentColor and follow the theme, while the brand
+                         icon tiles keep their literal colors. -->
+                    <div
+                        class="footer__banner"
+                        role="img"
+                        aria-label="飞鲸影视 × XIAOBO NETWORK × 飞牛开发者开放平台 FNOSP"
+                        v-html="bannerSvg"
+                    ></div>
+                    <p class="footer__tagline">面向飞牛影视服务的第三方桌面客户端</p>
+                </div>
+
+                <nav class="footer__links" aria-label="相关链接">
+                    <a
+                        v-for="l in links"
+                        :key="l.label"
+                        :href="l.href"
+                        v-bind="l.external ? { target: '_blank', rel: 'noopener noreferrer' } : {}"
+                    >{{ l.label }}</a>
+                </nav>
+            </div>
+
             <div class="footer__bottom">
                 <p class="footer__disclaimer">本项目为飞牛 OS 爱好者开发的第三方影视客户端，与飞牛影视官方无关。使用前请确保遵守相关服务条款。</p>
                 <p class="footer__copy">© {{ year }} FNOSP · 基于 AGPL-3.0 开源协议发布</p>
@@ -123,6 +123,9 @@ const links = [
     align-items: flex-start;
     justify-content: space-between;
     gap: 24px 40px;
+    /* Divider between the contributors row above and the brand/links block. */
+    padding-top: 26px;
+    border-top: 1px solid var(--hairline);
 }
 
 .footer__brand {
@@ -172,8 +175,6 @@ const links = [
 .footer__contributors {
     display: grid;
     gap: 12px;
-    padding-top: 26px;
-    border-top: 1px solid var(--hairline);
 }
 
 .footer__contributors-title {
