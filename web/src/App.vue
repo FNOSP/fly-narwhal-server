@@ -15,6 +15,7 @@ import ChangelogSection from './components/ChangelogSection.vue'
 import FaqSection from './components/FaqSection.vue'
 import CtaSection from './components/CtaSection.vue'
 import TimelinePage from './components/TimelinePage.vue'
+import CreditsPage from './components/CreditsPage.vue'
 import SiteFooter from './components/SiteFooter.vue'
 import AuthCodeModal from './components/AuthCodeModal.vue'
 import { useRelease } from './composables/useRelease'
@@ -23,19 +24,27 @@ import { useAuthCode } from './composables/useAuthCode'
 const { loading, tag, releaseUrl, platformGroups, versionLabel, publishedLabel, osRules } = useRelease()
 const auth = useAuthCode()
 
-// The full changelog lives on its own page behind the `#/timeline` hash;
-// everything else renders the landing page. A tiny hash router — no
-// dependency — keeps section anchors like `#features` working as before.
-const isTimeline = ref(window.location.hash.startsWith('#/timeline'))
+// Standalone pages live behind `#/timeline` (full changelog) and `#/credits`
+// (open-source acknowledgements); everything else renders the landing page.
+// A tiny hash router — no dependency — keeps section anchors like `#features`
+// working as before.
+function routeFromHash() {
+    const hash = window.location.hash
+    if (hash.startsWith('#/timeline')) return 'timeline'
+    if (hash.startsWith('#/credits')) return 'credits'
+    return 'home'
+}
+
+const route = ref(routeFromHash())
 
 function onHashChange() {
-    const next = window.location.hash.startsWith('#/timeline')
-    if (next !== isTimeline.value) {
-        isTimeline.value = next
+    const next = routeFromHash()
+    if (next !== route.value) {
+        route.value = next
         nextTick(() => window.scrollTo(0, 0))
         return
     }
-    if (!next) {
+    if (next === 'home') {
         // Landing anchors: after a view swap the target may not have existed
         // when the browser tried to jump, so jump again once it is mounted.
         const id = window.location.hash.slice(1)
@@ -85,7 +94,8 @@ function scrollToDownload() {
 </script>
 
 <template>
-    <TimelinePage v-if="isTimeline" />
+    <TimelinePage v-if="route === 'timeline'" />
+    <CreditsPage v-else-if="route === 'credits'" />
 
     <template v-else>
         <SiteNav :solid="navSolid" :progress="docProgress" @download="scrollToDownload" @auth="auth.request" />
