@@ -37,6 +37,13 @@ import java.util.zip.GZIPInputStream;
 @RequiredArgsConstructor
 public class DanmuAppService {
 
+    /**
+     * Key under which the danmaku of a work requested as a whole (see the episodeNumber == 0
+     * handling below) is returned. It is deliberately not "1": a numeric key would be
+     * indistinguishable from the first episode's own entry.
+     */
+    public static final String WHOLE_WORK_KEY = "default";
+
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
             .followRedirects(HttpClient.Redirect.NORMAL)
@@ -243,6 +250,26 @@ public class DanmuAppService {
 
         urlDict = danmuService.getEpisodeUrl(platformUrlList);
 
+        // episodeNumber == 0 means the client is addressing the work as a whole (a
+        // movie has no episode ordinal), not a numbered episode. Matching the "0" key
+        // against real episode keys can never succeed, so pick one source instead of
+        // failing the lookup: the requested episode is not a distinguishing key here.
+        // The result is keyed by WHOLE_WORK_KEY rather than an episode number so the
+        // client can tell "the whole work" apart from episode 1.
+        boolean wholeWork = episodeNumber != null && episodeNumber == 0;
+        if (wholeWork && !urlDict.isEmpty()) {
+            List<String> cleaned = new ArrayList<>();
+            for (String u : pickPreferredUrls(urlDict)) {
+                String v = sanitizeUrlValue(u);
+                if (v != null) cleaned.add(v);
+            }
+            if (!cleaned.isEmpty()) {
+                Map<String, List<String>> filtered = new HashMap<>();
+                filtered.put(WHOLE_WORK_KEY, cleaned);
+                return filtered;
+            }
+        }
+
         if (epKey != null || (episodeTitleKey != null && !episodeTitleKey.isEmpty())) {
             List<String> mergedUrls = new ArrayList<>();
 
@@ -294,6 +321,55 @@ public class DanmuAppService {
         }
 
         return urlDict;
+    }
+
+    /**
+     * Chooses the source to use when the request addresses the work as a whole rather
+     * than one episode. A single available source is returned as-is. With several, the
+     * entries are ranked by whether the URL addresses one concrete video rather than a
+     * season/album page, and only then by platform preference — picking from several is
+     * only sound here because the caller has no episode ordinal to distinguish them by.
+     * A numbered episode must still match its own key so that one episode never answers
+     * for another.
+     */
+    private List<String> pickPreferredUrls(Map<String, List<String>> urlDict) {
+        if (urlDict.size() == 1) {
+            List<String> only = urlDict.values().iterator().next();
+            return only == null ? Collections.emptyList() : only;
+        }
+
+        List<String> best = Collections.emptyList();
+        int bestRank = Integer.MAX_VALUE;
+        for (List<String> urls : urlDict.values()) {
+            if (urls == null || urls.isEmpty()) continue;
+            int rank = Integer.MAX_VALUE;
+            for (String u : urls) {
+                rank = Math.min(rank, sourceRank(u));
+            }
+            if (rank < bestRank) {
+                bestRank = rank;
+                best = urls;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Ranks a candidate source URL. A season/album page is the weakest choice: it names a
+     * whole season, so fetching from it can only resolve back to some arbitrary episode —
+     * exactly the "one source answers for everything" failure this resolution exists to
+     * prevent. Concrete single-video URLs outrank it, and among those the usual platform
+     * preference applies.
+     */
+    private int sourceRank(String url) {
+        if (url == null) return 1000;
+        String u = url.toLowerCase();
+        boolean seasonPage = u.contains("/bangumi/play/ss")
+                || u.contains("/bangumi/media/")
+                || u.contains("/v_show/id_")
+                || u.contains("tvid=");
+        int penalty = seasonPage ? 100 : 0;
+        return penalty + platformPriority(url);
     }
 
     private List<String> searchVideoData(String name, String tvNum, boolean season) {
