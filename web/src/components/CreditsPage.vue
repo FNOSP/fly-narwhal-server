@@ -1,4 +1,5 @@
 <script setup>
+import ThemeToggle from './ThemeToggle.vue'
 import { creditGroups, creditCount } from '../assets/credits'
 
 const year = new Date().getFullYear()
@@ -13,7 +14,10 @@ const year = new Date().getFullYear()
                 </svg>
                 返回首页
             </a>
-            <span class="crpage__crumb">飞鲸影视 · 开源致谢</span>
+            <div class="crpage__actions">
+                <span class="crpage__crumb">飞鲸影视 · 开源致谢</span>
+                <ThemeToggle />
+            </div>
         </header>
 
         <main class="shell crpage__main">
@@ -88,10 +92,16 @@ const year = new Date().getFullYear()
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: rgba(245, 245, 247, 0.8);
+    background: var(--chrome-glass);
     backdrop-filter: saturate(180%) blur(20px);
     -webkit-backdrop-filter: saturate(180%) blur(20px);
     border-bottom: 1px solid var(--hairline);
+}
+
+.crpage__actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 .crpage__back {
@@ -167,7 +177,7 @@ const year = new Date().getFullYear()
     font-weight: 650;
     letter-spacing: 0.01em;
     border-bottom: 1px solid var(--hairline);
-    background: linear-gradient(180deg, rgba(0, 122, 255, 0.04), transparent);
+    background: linear-gradient(180deg, var(--brand-wash), transparent);
 }
 
 .crpage__group-count {
@@ -198,7 +208,7 @@ const year = new Date().getFullYear()
 }
 
 .crpage__item:hover {
-    background: rgba(0, 122, 255, 0.035);
+    background: var(--brand-wash);
 }
 
 .crpage__name {
@@ -239,7 +249,7 @@ const year = new Date().getFullYear()
     margin: 36px auto 0;
     padding: 20px 26px;
     border-radius: var(--radius-md);
-    border: 1px dashed rgba(0, 0, 0, 0.14);
+    border: 1px dashed var(--hairline-strong);
     font-size: 13.5px;
     line-height: 1.8;
     color: var(--ink-muted);

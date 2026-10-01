@@ -7,13 +7,13 @@ import { useChangelog } from '../composables/useChangelog'
 const { channel, setChannel, channelLabel, changelogUrl, loading, error, latest, history } = useChangelog()
 
 const CAT_META = {
-    Added: { label: '新增', color: '#248A3D', bg: 'rgba(52, 199, 89, 0.12)' },
-    Changed: { label: '改进', color: '#B25000', bg: 'rgba(255, 149, 0, 0.14)' },
-    Fixed: { label: '修复', color: '#0062CC', bg: 'rgba(0, 122, 255, 0.1)' },
+    Added: { label: '新增', color: 'var(--green)', bg: 'var(--green-tint)' },
+    Changed: { label: '改进', color: 'var(--orange-deep)', bg: 'rgba(255, 149, 0, 0.14)' },
+    Fixed: { label: '修复', color: 'var(--brand-deep)', bg: 'var(--brand-tint)' },
 }
 
 function catMeta(name) {
-    return CAT_META[name] || { label: name, color: 'var(--ink-soft)', bg: 'rgba(0, 0, 0, 0.05)' }
+    return CAT_META[name] || { label: name, color: 'var(--ink-soft)', bg: 'var(--field)' }
 }
 
 // 「从 X 到今天」的 X 跟随当前渠道：取该渠道历史里最旧的一个版本。
@@ -115,9 +115,9 @@ const oldest = computed(() =>
 <style scoped>
 .clg {
     padding: clamp(72px, 11vw, 140px) 0;
-    /* Continues from the white end of the download section and settles into
-       the grey FAQ section below. */
-    background: linear-gradient(180deg, #FFFFFF 0%, var(--bg) 55%);
+    /* Continues from the solid-surface end of the download section and
+       settles into the grey FAQ section below. */
+    background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 55%);
 }
 
 .clg__head {
@@ -155,7 +155,7 @@ const oldest = computed(() =>
 .skel__bar {
     height: 14px;
     border-radius: 7px;
-    background: linear-gradient(90deg, rgba(0, 0, 0, 0.05) 25%, rgba(0, 0, 0, 0.09) 45%, rgba(0, 0, 0, 0.05) 65%);
+    background: linear-gradient(90deg, var(--shimmer-a) 25%, var(--shimmer-b) 45%, var(--shimmer-a) 65%);
     background-size: 220% 100%;
     animation: shimmer 1.4s linear infinite;
 }
@@ -194,7 +194,7 @@ const oldest = computed(() =>
 }
 
 .clg__error svg {
-    color: #FF9500;
+    color: var(--orange);
 }
 
 .clg__error p {

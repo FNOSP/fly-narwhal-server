@@ -71,7 +71,7 @@ watch(
     align-items: center;
     justify-content: center;
     padding: 20px;
-    background: rgba(0, 0, 0, 0.42);
+    background: var(--overlay);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
 }
@@ -81,6 +81,9 @@ watch(
     max-width: 560px;
     background: var(--surface);
     border-radius: var(--radius-md);
+    /* Hairline helps separate the modal from the page in dark theme, where
+       shadows alone don't read on near-black. */
+    border: 1px solid var(--hairline);
     box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
     overflow: hidden;
 }
@@ -108,7 +111,7 @@ watch(
 }
 
 .modal__close:hover {
-    background: rgba(0, 0, 0, 0.05);
+    background: var(--field);
     color: var(--ink);
 }
 
@@ -135,7 +138,7 @@ watch(
     padding: 12px;
     border-radius: var(--radius-sm);
     border: 1px solid var(--hairline);
-    background: rgba(245, 245, 247, 0.8);
+    background: var(--input-bg);
     color: var(--ink);
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
     font-size: 13px;
@@ -151,7 +154,7 @@ watch(
     padding: 12px 18px;
     border-radius: var(--radius-sm);
     border: 1px solid var(--hairline);
-    background: #fff;
+    background: var(--surface-2);
     font-size: 13px;
     font-weight: 600;
     transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease);

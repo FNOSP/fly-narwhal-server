@@ -315,7 +315,7 @@ function toggleNote() {
 }
 
 .seg__btn.is-on {
-    background: #fff;
+    background: var(--surface-2);
     color: var(--ink);
     box-shadow: var(--shadow-sm);
 }
@@ -372,7 +372,7 @@ function toggleNote() {
     padding: 14px 16px;
     border: 1px solid var(--hairline);
     border-radius: var(--radius-md);
-    background: #fff;
+    background: var(--surface-2);
     color: inherit;
     transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease),
         border-color 0.25s var(--ease);
@@ -451,7 +451,7 @@ function toggleNote() {
     border-radius: 999px;
     font-size: 13.5px;
     font-weight: 600;
-    background: #fff;
+    background: var(--surface-2);
     color: var(--brand);
     border: 1px solid rgba(0, 122, 255, 0.3);
 }
@@ -539,7 +539,7 @@ function toggleNote() {
 
 .console__note code {
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-    background: rgba(0, 0, 0, 0.05);
+    background: var(--code-bg);
     padding: 1px 5px;
     border-radius: 5px;
 }

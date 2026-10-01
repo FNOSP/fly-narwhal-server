@@ -162,9 +162,9 @@ onBeforeUnmount(() => {
     grid-area: 1 / 1;
     border-radius: var(--radius-md);
     overflow: hidden;
-    background: #fff;
+    background: var(--surface);
     box-shadow: var(--shadow-lg);
-    border: 1px solid rgba(255, 255, 255, 0.7);
+    border: 1px solid var(--hairline);
     opacity: 0;
     transform: translateY(18px);
     transition: opacity 0.6s var(--ease), transform 0.6s var(--ease);
@@ -183,7 +183,7 @@ onBeforeUnmount(() => {
     align-items: center;
     gap: 7px;
     padding: 11px 14px;
-    background: #EDEDF0;
+    background: var(--chrome-bar);
     border-bottom: 1px solid var(--hairline);
 }
 
@@ -191,7 +191,7 @@ onBeforeUnmount(() => {
     width: 11px;
     height: 11px;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.14);
+    background: var(--dot);
 }
 
 .shot img {
@@ -234,7 +234,7 @@ onBeforeUnmount(() => {
     height: 8px;
     padding: 0;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.16);
+    background: var(--dot);
     transition: background-color 0.3s var(--ease), transform 0.3s var(--ease);
 }
 

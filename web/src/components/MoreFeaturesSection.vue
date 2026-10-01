@@ -291,7 +291,7 @@ const specs = [
     gap: 7px;
     padding: 14px 16px;
     border-radius: var(--radius-md);
-    background: rgba(0, 0, 0, 0.035);
+    background: var(--field);
     border: 1px solid var(--hairline);
 }
 

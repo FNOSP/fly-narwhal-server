@@ -113,7 +113,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .server {
     padding: clamp(72px, 11vw, 140px) 0;
-    background: #FFFFFF;
+    background: var(--surface);
 }
 
 .server__head {
@@ -181,7 +181,7 @@ onBeforeUnmount(() => {
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
     font-size: 12.5px;
     color: var(--ink-soft);
-    background: rgba(0, 0, 0, 0.045);
+    background: var(--code-bg);
     padding: 4px 9px;
     border-radius: 7px;
 }
@@ -196,7 +196,7 @@ onBeforeUnmount(() => {
 .diagram {
     padding: 30px 26px;
     border-radius: var(--radius-lg);
-    background: linear-gradient(165deg, #FFFFFF, #F0F3F8);
+    background: var(--grad-panel);
     border: 1px solid var(--hairline);
     box-shadow: var(--shadow-md);
 }
@@ -207,7 +207,7 @@ onBeforeUnmount(() => {
     gap: 4px;
     padding: 20px;
     border-radius: var(--radius-md);
-    background: #fff;
+    background: var(--surface-2);
     border: 1px solid var(--hairline);
 }
 

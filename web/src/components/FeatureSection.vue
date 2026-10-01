@@ -164,7 +164,7 @@ function untilt(e) {
 .features {
     position: relative;
     padding: clamp(72px, 11vw, 140px) 0;
-    background: linear-gradient(180deg, var(--bg) 0%, #FFFFFF 100%);
+    background: linear-gradient(180deg, var(--bg) 0%, var(--surface) 100%);
 }
 
 .features__head {

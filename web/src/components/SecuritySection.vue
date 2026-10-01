@@ -138,9 +138,9 @@ onBeforeUnmount(() => {
 .sec {
     position: relative;
     padding: clamp(72px, 11vw, 140px) 0;
-    /* Eases out of the grey bento section above and ends solid white so the
-       seam into the white ServerSection below disappears. */
-    background: linear-gradient(180deg, var(--bg) 0%, #FFFFFF 20%);
+    /* Eases out of the grey bento section above and ends on the solid section
+       surface so the seam into the ServerSection below disappears. */
+    background: linear-gradient(180deg, var(--bg) 0%, var(--surface) 20%);
     overflow: hidden;
 }
 
@@ -187,7 +187,7 @@ onBeforeUnmount(() => {
 .vault {
     padding: 24px 26px 22px;
     border-radius: var(--radius-lg);
-    background: rgba(255, 255, 255, 0.72);
+    background: var(--glass);
     border: 1px solid var(--hairline);
     box-shadow: var(--shadow-md);
     backdrop-filter: blur(20px) saturate(160%);
@@ -214,8 +214,8 @@ onBeforeUnmount(() => {
     gap: 5px;
     padding: 4px 11px;
     border-radius: 999px;
-    background: rgba(52, 199, 89, 0.12);
-    color: #248A3D;
+    background: var(--green-tint);
+    color: var(--green);
     font-size: 12px;
     font-weight: 650;
 }
@@ -248,7 +248,7 @@ onBeforeUnmount(() => {
 .vault__meta span {
     padding: 4px 10px;
     border-radius: 7px;
-    background: rgba(0, 0, 0, 0.045);
+    background: var(--field);
     font-size: 11.5px;
     font-weight: 600;
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
