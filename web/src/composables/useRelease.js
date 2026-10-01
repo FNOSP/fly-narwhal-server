@@ -127,9 +127,9 @@ const error = ref(false)
 const platformGroups = ref({})
 
 const versionLabel = computed(() => {
-    if (error.value) return '查看 GitHub 更新日志 →'
+    if (error.value) return '查看 GitHub 更新日志'
     if (!tag.value) return '正在获取最新版本…'
-    return `最新版本 ${tag.value} · 查看更新日志 →`
+    return `最新版本 ${tag.value} · 查看更新日志`
 })
 
 const publishedLabel = computed(() => {
