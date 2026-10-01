@@ -56,7 +56,7 @@ const formats = ['.exe', '.dmg', '.deb', '.rpm', '.pkg.tar.zst', '.AppImage', 'S
 <style scoped>
 .plats {
     padding: clamp(64px, 9vw, 110px) 0 0;
-    background: #FFFFFF;
+    background: var(--surface);
     overflow: hidden;
 }
 
@@ -100,14 +100,14 @@ const formats = ['.exe', '.dmg', '.deb', '.rpm', '.pkg.tar.zst', '.AppImage', 'S
 
 .plat.is-revealed:hover {
     transform: translateY(-5px);
-    background: #fff;
+    background: var(--surface-2);
     box-shadow: var(--shadow-md);
 }
 
 .plat__logo {
     width: 38px;
     height: 38px;
-    color: #55555A;
+    color: var(--logo-gray);
     transition: color 0.3s var(--ease);
 }
 

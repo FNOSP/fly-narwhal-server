@@ -1,13 +1,17 @@
 :root {
+    color-scheme: light;
     --brand: #007AFF;
     --brand-deep: #0062CC;
     --brand-tint: rgba(0, 122, 255, 0.1);
     --bg: #F5F5F7;
     --surface: #FFFFFF;
+    /* Raised one step above --surface: active pills, cards on grey, diagram nodes. */
+    --surface-2: #FFFFFF;
     --ink: #1D1D1F;
     --ink-soft: #424245;
     --ink-muted: #86868B;
     --hairline: rgba(0, 0, 0, 0.08);
+    --hairline-strong: rgba(0, 0, 0, 0.14);
     --radius-lg: 28px;
     --radius-md: 18px;
     --radius-sm: 12px;
@@ -18,6 +22,92 @@
     --nav-h: 62px;
     /* Driven by scroll from App.vue: 0 at the top, 1 once past the hero. */
     --scroll: 0;
+
+    /* ---- surfaces & washes ---- */
+    --glass: rgba(255, 255, 255, 0.72);
+    /* Frosted nav / sticky sub-page bars (matches --bg at ~80% alpha). */
+    --chrome-glass: rgba(245, 245, 247, 0.8);
+    --field: rgba(0, 0, 0, 0.045);
+    --code-bg: rgba(0, 0, 0, 0.055);
+    --input-bg: rgba(245, 245, 247, 0.8);
+    --bullet: rgba(0, 0, 0, 0.22);
+    --dot: rgba(0, 0, 0, 0.16);
+    --grid-line: rgba(0, 0, 0, 0.028);
+    --shimmer-a: rgba(0, 0, 0, 0.05);
+    --shimmer-b: rgba(0, 0, 0, 0.09);
+    --overlay: rgba(0, 0, 0, 0.42);
+    --tooltip-bg: #1D1D1F;
+    --tooltip-ink: #FFFFFF;
+    /* Fake window chrome above the screenshots. */
+    --chrome-bar: #EDEDF0;
+    --logo-gray: #55555A;
+    --rail-end: rgba(0, 0, 0, 0.09);
+    --brand-wash: rgba(0, 122, 255, 0.04);
+
+    /* ---- semantic ---- */
+    --green: #248A3D;
+    --green-tint: rgba(52, 199, 89, 0.12);
+    --orange: #FF9500;
+    --orange-deep: #B25000;
+
+    /* ---- large gradients ---- */
+    --grad-hero: linear-gradient(180deg, #FFFFFF 0%, #F5F5F7 55%, #EDF1F7 100%);
+    --grad-panel: linear-gradient(165deg, #FFFFFF, #F0F3F8);
+}
+
+/* Dark theme. The ink ramp and bg are promoted from the page's own dark
+   sections (Renew/Player/CTA) so the light bands blend into them seamlessly. */
+[data-theme="dark"] {
+    color-scheme: dark;
+
+    /* #007AFF fails AA on near-black; Apple's dark-mode blue passes.
+       --brand-deep intentionally goes LIGHTER so :hover states still read. */
+    --brand: #0A84FF;
+    --brand-deep: #409CFF;
+    --brand-tint: rgba(10, 132, 255, 0.16);
+
+    --bg: #0A0A0C;
+    --surface: #1C1C1E;
+    --surface-2: #2C2C2E;
+    --ink: #F5F5F7;
+    --ink-soft: #D6D6DB;
+    --ink-muted: #A1A1A6;
+    --hairline: rgba(255, 255, 255, 0.1);
+    --hairline-strong: rgba(255, 255, 255, 0.2);
+
+    /* Black shadows are invisible on a dark bg — deepen them and let the
+       hairline borders carry surface separation. */
+    --shadow-sm: 0 4px 6px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 28px 70px rgba(0, 0, 0, 0.6);
+
+    --glass: rgba(44, 44, 46, 0.72);
+    --chrome-glass: rgba(18, 18, 22, 0.8);
+    --field: rgba(255, 255, 255, 0.07);
+    --code-bg: rgba(255, 255, 255, 0.09);
+    --input-bg: rgba(255, 255, 255, 0.07);
+    --bullet: rgba(255, 255, 255, 0.3);
+    --dot: rgba(255, 255, 255, 0.24);
+    --grid-line: rgba(255, 255, 255, 0.035);
+    --shimmer-a: rgba(255, 255, 255, 0.06);
+    --shimmer-b: rgba(255, 255, 255, 0.12);
+    --overlay: rgba(0, 0, 0, 0.65);
+    /* Tooltips invert: a light chip with dark text floats above dark UI. */
+    --tooltip-bg: #F5F5F7;
+    --tooltip-ink: #1D1D1F;
+    /* The screenshots are dark app UI — dark chrome blends instead of fighting. */
+    --chrome-bar: #1C1C1E;
+    --logo-gray: #A1A1A6;
+    --rail-end: rgba(255, 255, 255, 0.12);
+    --brand-wash: rgba(10, 132, 255, 0.07);
+
+    --green: #30D158;
+    --green-tint: rgba(48, 209, 88, 0.16);
+    --orange: #FF9F0A;
+    --orange-deep: #FF9F0A;
+
+    --grad-hero: linear-gradient(180deg, #17171B 0%, #0A0A0C 55%, #0C1016 100%);
+    --grad-panel: linear-gradient(165deg, #1C1C1E, #141418);
 }
 
 * {
@@ -185,7 +275,7 @@ button {
 }
 
 .btn-ghost {
-    background: rgba(255, 255, 255, 0.72);
+    background: var(--glass);
     color: var(--ink);
     border: 1px solid var(--hairline);
     backdrop-filter: blur(12px);
@@ -195,7 +285,7 @@ button {
 .btn-ghost:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-md);
-    border-color: rgba(0, 0, 0, 0.14);
+    border-color: var(--hairline-strong);
 }
 
 .btn-lg {
@@ -241,7 +331,7 @@ button {
     width: 5px;
     height: 5px;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.22);
+    background: var(--bullet);
 }
 
 .clg-item__title {
@@ -257,7 +347,7 @@ button {
 .clg-code {
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
     font-size: 0.9em;
-    background: rgba(0, 0, 0, 0.055);
+    background: var(--code-bg);
     padding: 1px 6px;
     border-radius: 5px;
     color: var(--ink-soft);

@@ -1,4 +1,5 @@
 <script setup>
+import bannerSvg from '../assets/co-brand-banner.svg?raw'
 import { useContributors } from '../composables/useContributors'
 
 const year = new Date().getFullYear()
@@ -29,13 +30,15 @@ const links = [
         <div class="shell footer__inner">
             <div class="footer__top">
                 <div class="footer__brand">
-                    <img
+                    <!-- Inlined (not <img>) so the SVG's ink paths can be
+                         currentColor and follow the theme, while the brand
+                         icon tiles keep their literal colors. -->
+                    <div
                         class="footer__banner"
-                        src="/img/co-brand-banner.svg"
-                        alt="飞鲸影视 × XIAOBO NETWORK × 飞牛开发者开放平台 FNOSP"
-                        width="1370"
-                        height="100"
-                    />
+                        role="img"
+                        aria-label="飞鲸影视 × XIAOBO NETWORK × 飞牛开发者开放平台 FNOSP"
+                        v-html="bannerSvg"
+                    ></div>
                     <p class="footer__tagline">面向飞牛影视服务的第三方桌面客户端</p>
                 </div>
 
@@ -100,10 +103,9 @@ const links = [
 <style scoped>
 .footer {
     padding: clamp(44px, 5vw, 60px) 0 34px;
-    /* Light surface on purpose: the brand banner is authored with white plates and
-       dark ink for light backgrounds. Putting it on a dark footer is what made the
-       plates read as a solid white block. */
-    background: #F5F5F7;
+    /* Follows the page theme; the inlined banner below draws its ink with
+       currentColor so it adapts along with this background. */
+    background: var(--bg);
     border-top: 1px solid var(--hairline);
     color: var(--ink-muted);
 }
@@ -130,6 +132,15 @@ const links = [
 }
 
 .footer__banner {
+    /* The banner's ink paths are currentColor, so the wordmarks follow the
+       theme while the colored icon tiles stay untouched. */
+    color: var(--ink);
+}
+
+/* The svg is injected via v-html, so its nodes carry no scoped attribute —
+   :deep() is required for the sizing to reach them. */
+.footer__banner :deep(svg) {
+    display: block;
     width: min(430px, 80vw);
     height: auto;
 }
@@ -210,7 +221,7 @@ const links = [
     height: 36px;
     border-radius: 50%;
     /* The ring matches the footer surface so overlapping circles read as separate chips. */
-    box-shadow: 0 0 0 2.5px #F5F5F7;
+    box-shadow: 0 0 0 2.5px var(--bg);
     transition: transform 0.22s var(--ease), box-shadow 0.22s var(--ease);
 }
 
@@ -227,7 +238,7 @@ const links = [
 
 .footer__avatar:hover a {
     transform: translateY(-4px) scale(1.12);
-    box-shadow: 0 0 0 2.5px #F5F5F7, 0 10px 22px rgba(0, 0, 0, 0.16);
+    box-shadow: 0 0 0 2.5px var(--bg), 0 10px 22px rgba(0, 0, 0, 0.16);
 }
 
 .footer__avatar--more a {
@@ -250,8 +261,9 @@ const links = [
     translate: -50% 4px;
     padding: 5px 10px;
     border-radius: 8px;
-    background: var(--ink);
-    color: #fff;
+    /* Token pair flips in dark theme: light chip with dark text. */
+    background: var(--tooltip-bg);
+    color: var(--tooltip-ink);
     font-size: 12px;
     font-weight: 500;
     line-height: 1.35;

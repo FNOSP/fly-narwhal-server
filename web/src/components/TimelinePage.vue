@@ -2,18 +2,19 @@
 import { ref, watch } from 'vue'
 import ChangelogText from './ChangelogText.vue'
 import ChannelSwitch from './ChannelSwitch.vue'
+import ThemeToggle from './ThemeToggle.vue'
 import { useChangelog } from '../composables/useChangelog'
 
 const { channel, setChannel, channelLabel, changelogUrl, loading, error, latest, history } = useChangelog()
 
 const CAT_META = {
-    Added: { label: '新增', color: '#248A3D', bg: 'rgba(52, 199, 89, 0.12)' },
-    Changed: { label: '改进', color: '#B25000', bg: 'rgba(255, 149, 0, 0.14)' },
-    Fixed: { label: '修复', color: '#0062CC', bg: 'rgba(0, 122, 255, 0.1)' },
+    Added: { label: '新增', color: 'var(--green)', bg: 'var(--green-tint)' },
+    Changed: { label: '改进', color: 'var(--orange-deep)', bg: 'rgba(255, 149, 0, 0.14)' },
+    Fixed: { label: '修复', color: 'var(--brand-deep)', bg: 'var(--brand-tint)' },
 }
 
 function catMeta(name) {
-    return CAT_META[name] || { label: name, color: 'var(--ink-soft)', bg: 'rgba(0, 0, 0, 0.05)' }
+    return CAT_META[name] || { label: name, color: 'var(--ink-soft)', bg: 'var(--field)' }
 }
 
 // Cards stay collapsed (version + date + counts) until hovered; on touch
@@ -39,7 +40,10 @@ watch(channel, () => {
                 </svg>
                 返回首页
             </a>
-            <span class="tlpage__crumb">飞鲸影视 · {{ channelLabel }}更新日志</span>
+            <div class="tlpage__actions">
+                <span class="tlpage__crumb">飞鲸影视 · {{ channelLabel }}更新日志</span>
+                <ThemeToggle />
+            </div>
         </header>
 
         <main class="shell tlpage__main">
@@ -157,10 +161,16 @@ watch(channel, () => {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: rgba(245, 245, 247, 0.8);
+    background: var(--chrome-glass);
     backdrop-filter: saturate(180%) blur(20px);
     -webkit-backdrop-filter: saturate(180%) blur(20px);
     border-bottom: 1px solid var(--hairline);
+}
+
+.tlpage__actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 .tlpage__back {
@@ -237,7 +247,7 @@ watch(channel, () => {
 .skel__bar {
     height: 14px;
     border-radius: 7px;
-    background: linear-gradient(90deg, rgba(0, 0, 0, 0.05) 25%, rgba(0, 0, 0, 0.09) 45%, rgba(0, 0, 0, 0.05) 65%);
+    background: linear-gradient(90deg, var(--shimmer-a) 25%, var(--shimmer-b) 45%, var(--shimmer-a) 65%);
     background-size: 220% 100%;
     animation: shimmer 1.4s linear infinite;
 }
@@ -266,7 +276,7 @@ watch(channel, () => {
 }
 
 .tlpage__error svg {
-    color: #FF9500;
+    color: var(--orange);
 }
 
 .tlpage__error-actions {
@@ -308,7 +318,7 @@ watch(channel, () => {
     left: 50%;
     translate: -50% 0;
     width: 2px;
-    background: linear-gradient(180deg, rgba(0, 122, 255, 0.35), rgba(0, 0, 0, 0.09));
+    background: linear-gradient(180deg, rgba(0, 122, 255, 0.35), var(--rail-end));
 }
 
 .tl__item:last-child .tl__rail::before {
@@ -323,7 +333,7 @@ watch(channel, () => {
     width: 13px;
     height: 13px;
     border-radius: 50%;
-    background: #fff;
+    background: var(--surface-2);
     border: 3px solid var(--brand);
     box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
 }

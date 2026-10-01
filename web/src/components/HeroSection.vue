@@ -89,13 +89,13 @@ const glowScale = computed(() => 1 + progress.value * 0.35)
     will-change: transform;
 }
 
-/* Light base that the scroll-linked gradient fades over, matching the light
-   theme of the app screenshots shown further down the page. */
+/* Theme-flipping base (--grad-hero) that the scroll-linked gradient fades
+   over, matching the app screenshots shown further down the page. */
 .hero__backdrop::before {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(180deg, #FFFFFF 0%, #F5F5F7 55%, #EDF1F7 100%);
+    background: var(--grad-hero);
 }
 
 .hero__glow {
@@ -118,8 +118,8 @@ const glowScale = computed(() => 1 + progress.value * 0.35)
 .hero__grid {
     position: absolute;
     inset: 0;
-    background-image: linear-gradient(rgba(0, 0, 0, 0.028) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 0, 0, 0.028) 1px, transparent 1px);
+    background-image: linear-gradient(var(--grid-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
     background-size: 64px 64px;
     mask-image: radial-gradient(circle at 50% 34%, #000 0%, transparent 72%);
     -webkit-mask-image: radial-gradient(circle at 50% 34%, #000 0%, transparent 72%);
@@ -167,7 +167,7 @@ const glowScale = computed(() => 1 + progress.value * 0.35)
 }
 
 .hero__title-grad {
-    background: linear-gradient(94deg, #007AFF 8%, #5E5CE6 55%, #BF5AF2 98%);
+    background: linear-gradient(94deg, var(--brand) 8%, #5E5CE6 55%, #BF5AF2 98%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;

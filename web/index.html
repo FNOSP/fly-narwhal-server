@@ -7,6 +7,24 @@
     <meta name="theme-color" content="#F5F5F7">
     <link rel="icon" type="image/png" href="/img/app-icon.png">
     <title>飞鲸影视 2.0 · 焕新出发 | 第三方飞牛影视桌面客户端</title>
+    <!-- Applies the stored theme before first paint so a dark-preference reload
+         never flashes light. Absence of a stored value = follow the system.
+         Mirrored by src/composables/useTheme.js (same key and fallbacks). -->
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('fwn:ui:theme')
+                if (t !== 'light' && t !== 'dark') {
+                    t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+                }
+                document.documentElement.setAttribute('data-theme', t)
+                var m = document.querySelector('meta[name="theme-color"]')
+                if (m) m.setAttribute('content', t === 'dark' ? '#0A0A0C' : '#F5F5F7')
+            } catch (e) {
+                // localStorage blocked (private mode etc.) — stay light.
+            }
+        })()
+    </script>
 </head>
 <body>
     <div id="app"></div>

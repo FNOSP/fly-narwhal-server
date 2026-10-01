@@ -1,4 +1,7 @@
 <script setup>
+import ThemeToggle from './ThemeToggle.vue'
+import logoSvg from '../assets/FNarwhal_login.svg?raw'
+
 defineProps({
     solid: { type: Boolean, default: false },
     // Whole-page reading progress, 0..1, drawn as a hairline under the nav.
@@ -22,7 +25,9 @@ const links = [
     <header class="nav" :class="{ 'nav--solid': solid }">
         <div class="nav__inner shell">
             <a class="nav__brand" href="#top" aria-label="飞鲸影视首页">
-                <img src="/img/FNarwhal_login.svg" alt="飞鲸影视" class="nav__logo" />
+                <!-- Inlined so the wordmark paths can follow --logo-ink while
+                     the whale icon keeps its original colors in both themes. -->
+                <div class="nav__logo" role="img" aria-label="飞鲸影视" v-html="logoSvg"></div>
             </a>
 
             <nav class="nav__links" aria-label="页面导航">
@@ -32,6 +37,7 @@ const links = [
             </nav>
 
             <div class="nav__actions">
+                <ThemeToggle />
                 <button class="btn btn-ghost nav__auth" type="button" @click="emit('auth')">获取授权码</button>
                 <button class="btn btn-primary" type="button" @click="emit('download')">下载客户端</button>
             </div>
@@ -52,14 +58,14 @@ const links = [
     display: flex;
     align-items: center;
     /* Fades in as the hero scrolls away; the buttons themselves never hide. */
-    background: rgba(245, 245, 247, 0);
+    background: transparent;
     border-bottom: 1px solid transparent;
     transition: background-color 0.35s var(--ease), border-color 0.35s var(--ease),
         backdrop-filter 0.35s var(--ease);
 }
 
 .nav--solid {
-    background: rgba(245, 245, 247, 0.78);
+    background: var(--chrome-glass);
     border-bottom-color: var(--hairline);
     backdrop-filter: saturate(180%) blur(20px);
     -webkit-backdrop-filter: saturate(180%) blur(20px);
@@ -78,7 +84,20 @@ const links = [
     flex-shrink: 0;
 }
 
+/* Only the wordmark flips (--logo-ink via currentColor-style var on the
+   inlined SVG's paths); the whale icon stays colored in dark mode. The svg
+   comes through v-html, so :deep() is needed for sizing. */
 .nav__logo {
+    --logo-ink: #4A5568;
+    display: block;
+}
+
+html[data-theme='dark'] .nav__logo {
+    --logo-ink: #F5F5F7;
+}
+
+.nav__logo :deep(svg) {
+    display: block;
     height: 30px;
     width: auto;
 }
@@ -142,7 +161,7 @@ const links = [
 }
 
 @media (max-width: 520px) {
-    .nav__logo {
+    .nav__logo :deep(svg) {
         height: 24px;
     }
 
