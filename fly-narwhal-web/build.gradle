@@ -504,4 +504,12 @@ tasks.named('bootJar') {
 
 tasks.matching { it.name == "bootRun" }.configureEach {
     dependsOn(tasks.named('buildUpdaterBinaries'))
+
+    // AOT exists here to feed native-image, but bootRun inherits the processed classes and their
+    // application-context initializer, which flips Spring into AOT mode. The generated bean
+    // registrations come from the reachable bean graph, which does not include package-private
+    // collaborators such as ExternalAuthxVerifier — in AOT mode that class is never loaded, and
+    // FnAuthService's @PostConstruct dies with NoClassDefFoundError. Drop the AOT output from the
+    // run classpath so bootRun stays a plain classpath scan; native-image still gets AOT.
+    classpath = classpath.filter { !it.path.contains('generated/aotClasses') }
 }

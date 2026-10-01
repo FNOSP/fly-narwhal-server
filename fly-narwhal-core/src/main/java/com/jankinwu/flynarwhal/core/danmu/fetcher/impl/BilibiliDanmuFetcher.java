@@ -7,6 +7,9 @@ import com.jankinwu.flynarwhal.core.danmu.model.DanmuModel;
 import com.jankinwu.flynarwhal.core.danmu.proto.DanmakuElem;
 import com.jankinwu.flynarwhal.core.danmu.proto.DmSegMobileReply;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
@@ -146,10 +149,18 @@ public class BilibiliDanmuFetcher extends AbstractDanmuFetcher {
                 return new ArrayList<>();
             }
 
-            long segments = (duration / 360) + 1;
+            // The season API reports duration in milliseconds; the danmaku endpoint
+            // serves 360-second segments, so the count must be derived in seconds.
+            // Dividing the raw millisecond value inflated a feature-length movie to
+            // ~19k segment requests, which Bilibili answered with 412 "request was
+            // banned" — every segment failed and the caller got an empty list.
+            long segments = (duration / 1000 / 360) + 1;
             List<String> links = new ArrayList<>();
             for (int i = 1; i <= segments; i++) {
-                String link = "https://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid=" + cid + "&segment_index=" + i;
+                // The unprefixed /x/v2/dm/web/seg.so path is gated and answers every
+                // request with 412 "request was banned"; the wbi-scoped path serves
+                // the same protobuf payload normally.
+                String link = "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=" + cid + "&segment_index=" + i;
                 links.add(link);
             }
             return links;
@@ -164,7 +175,11 @@ public class BilibiliDanmuFetcher extends AbstractDanmuFetcher {
     protected List<DanmuModel> parse(String link) {
         List<DanmuModel> list = new ArrayList<>();
         try {
-            byte[] data = restTemplate.getForObject(link, byte[].class);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+            headers.set(HttpHeaders.REFERER, "https://www.bilibili.com/");
+            byte[] data = restTemplate.exchange(link, HttpMethod.GET,
+                    new HttpEntity<>(headers), byte[].class).getBody();
             if (data == null) return list;
 
             DmSegMobileReply reply = DmSegMobileReply.parseFrom(data);
