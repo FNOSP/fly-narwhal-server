@@ -16,17 +16,27 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.ByteArrayInputStream;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Slf4j
 @Component
 public class IqiyiDanmuFetcher extends AbstractDanmuFetcher {
+    private static final long LINK_ID_XOR_KEY = 0x75706971676cL;
+    private static final String SECRET_KEY = "howcuteitis";
+    private static final String KEY_NAME = "secret_key";
+    private static final String BASE_INFO_URL = "https://www.iqiyi.com/prelw/tvg/v2/lw/base_info";
+
     private final ObjectMapper objectMapper;
 
     public IqiyiDanmuFetcher(RestTemplate restTemplate, ObjectMapper objectMapper) {
@@ -94,32 +104,114 @@ public class IqiyiDanmuFetcher extends AbstractDanmuFetcher {
     @Override
     public Map<String, String> getEpisodeUrl(String url) {
         try {
-            String html = restTemplate.getForObject(url, String.class);
-            if (html == null) return Map.of();
-
-            String albumId = firstMatch(html, "\"albumId\"\\s*:\\s*\"?(\\d+)\"?");
-            if (albumId == null) {
-                albumId = firstMatch(html, "albumId\\s*[:=]\\s*\"?(\\d+)\"?");
-            }
+            String albumId = resolveAlbumId(url);
             if (albumId == null) return Map.of();
 
-            Map<String, String> map = new HashMap<>();
+            Map<String, String> map = new LinkedHashMap<>();
             int page = 1;
             while (page <= 50) {
-                String api = "https://pcw-api.iqiyi.com/albums/album/avlist?albumId=" + albumId + "&page=" + page + "&size=50";
+                String api = "https://pcw-api.iqiyi.com/albums/album/avlistinfo?aid="
+                        + albumId + "&page=" + page + "&size=50";
                 String json = restTemplate.getForObject(api, String.class);
                 if (json == null || json.isEmpty()) break;
-                JsonNode root = objectMapper.readTree(json);
-                int before = map.size();
-                extractIqiyiEpisodeUrls(root, map);
-                if (map.size() == before) {
-                    break;
+                JsonNode data = objectMapper.readTree(json).path("data");
+                JsonNode epsodelist = data.path("epsodelist");
+                if (epsodelist.isArray()) {
+                    for (JsonNode ep : epsodelist) {
+                        // contentType 1 = real episodes; other values are trailers/recaps.
+                        if (ep.path("contentType").asInt() != 1) continue;
+                        String order = ep.path("order").asText();
+                        String pageUrl = ep.path("playUrl").asText();
+                        if (order.isEmpty() || pageUrl.isEmpty()) continue;
+                        map.putIfAbsent(order, absoluteIqiyiUrl(pageUrl));
+                    }
                 }
+                if (!data.path("hasMore").asBoolean(false)) break;
                 page++;
             }
             return map;
         } catch (Exception e) {
+            log.warn("Failed to get Iqiyi episode urls: {}", url, e);
             return Map.of();
+        }
+    }
+
+    private String resolveAlbumId(String url) throws Exception {
+        // v_<linkId>.html pages carry only a link id; decode it to a tvId, then look the album up.
+        Matcher linkMatcher = Pattern.compile("v_([0-9a-z]+)\\.html").matcher(url);
+        if (linkMatcher.find()) {
+            String albumId = fetchAlbumIdByTvId(linkIdToTvId(linkMatcher.group(1)));
+            if (albumId != null) return albumId;
+        }
+        // Fall back to scraping the album id straight out of the page.
+        String html = restTemplate.getForObject(url, String.class);
+        if (html == null) return null;
+        String albumId = firstMatch(html, "\"albumId\"\\s*:\\s*\"?(\\d+)\"?");
+        if (albumId == null) {
+            albumId = firstMatch(html, "albumId\\s*[:=]\\s*\"?(\\d+)\"?");
+        }
+        return albumId;
+    }
+
+    private String linkIdToTvId(String linkId) {
+        long value = Long.parseLong(linkId, 36) ^ LINK_ID_XOR_KEY;
+        return String.valueOf(value < 900000 ? 100 * (value + 900000) : value);
+    }
+
+    private String fetchAlbumIdByTvId(String tvId) throws Exception {
+        TreeMap<String, String> params = new TreeMap<>();
+        params.put("entity_id", tvId);
+        params.put("device_id", "qd5fwuaj4hunxxdgzwkcqmefeb3ww5hx");
+        params.put("auth_cookie", "");
+        params.put("user_id", "0");
+        params.put("vip_type", "-1");
+        params.put("vip_status", "0");
+        params.put("conduit_id", "");
+        params.put("pcv", "13.082.22866");
+        params.put("app_version", "13.082.22866");
+        params.put("ext", "");
+        params.put("app_mode", "standard");
+        params.put("scale", "100");
+        params.put("timestamp", String.valueOf(System.currentTimeMillis()));
+        params.put("src", "pca_tvg");
+        params.put("os", "");
+        params.put("ad_ext", "{\"r\":\"2.2.0-ares6-pure\"}");
+        params.put("sign", signBaseInfo(params));
+        StringBuilder sb = new StringBuilder(BASE_INFO_URL);
+        for (Map.Entry<String, String> e : params.entrySet()) {
+            sb.append(sb.indexOf("?") < 0 ? '?' : '&')
+                    .append(e.getKey()).append('=').append(urlEncode(e.getValue()));
+        }
+
+        // Hand RestTemplate a pre-encoded URI: it would otherwise re-encode the query and break the sign.
+        String json = restTemplate.getForObject(URI.create(sb.toString()), String.class);
+        if (json == null) return null;
+        JsonNode root = objectMapper.readTree(json);
+        if (root.path("status_code").asInt(-1) != 0) return null;
+        String albumId = root.path("data").path("base_data").path("_id").asText();
+        return albumId.isEmpty() ? null : albumId;
+    }
+
+    private String signBaseInfo(TreeMap<String, String> params) {
+        StringBuilder canonical = new StringBuilder();
+        for (Map.Entry<String, String> e : params.entrySet()) {
+            canonical.append(e.getKey()).append('=').append(e.getValue()).append('&');
+        }
+        canonical.append(KEY_NAME).append('=').append(SECRET_KEY);
+        return md5(canonical.toString()).toUpperCase();
+    }
+
+    private String absoluteIqiyiUrl(String pageUrl) {
+        if (pageUrl.startsWith("//")) return "https:" + pageUrl;
+        if (pageUrl.startsWith("/")) return "https://www.iqiyi.com" + pageUrl;
+        return pageUrl;
+    }
+
+    private String urlEncode(String value) {
+        try {
+            return URLEncoder.encode(value, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return value;
         }
     }
 
@@ -198,10 +290,11 @@ public class IqiyiDanmuFetcher extends AbstractDanmuFetcher {
             BrotliInputStream brotliInputStream = new BrotliInputStream(new ByteArrayInputStream(compressed));
             IqiyiDanmu danmu = IqiyiDanmu.parseFrom(brotliInputStream);
             
+            double segmentSecond = parseSeconds(danmu.getEntry(0).getSegmentSecond());
             for (IqiyiEntry entry : danmu.getEntryList()) {
                 for (IqiyiBulletInfo item : entry.getBulletInfoList()) {
                     DanmuModel model = new DanmuModel();
-                    model.setTime(item.getShowTime());
+                    model.setTime(segmentSecond + parseSeconds(item.getShowTime()));
                     model.setText(item.getContent());
                     try {
                          String a8 = item.getA8();
@@ -211,45 +304,27 @@ public class IqiyiDanmuFetcher extends AbstractDanmuFetcher {
                          }
                     } catch (Exception e) {
                     }
-                    
+
                     list.add(model);
                 }
             }
         } catch (Exception e) {
+            log.warn("Failed to parse Iqiyi danmu segment: {}", link, e);
         }
         return list;
+    }
+
+    private double parseSeconds(String raw) {
+        if (raw == null || raw.isEmpty()) return 0;
+        try {
+            return Double.parseDouble(raw);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     private String firstMatch(String text, String regex) {
         Matcher m = Pattern.compile(regex).matcher(text);
         return m.find() ? m.group(1) : null;
-    }
-
-    private void extractIqiyiEpisodeUrls(JsonNode node, Map<String, String> out) {
-        if (node == null) return;
-        if (node.isObject()) {
-            String url = null;
-            if (node.hasNonNull("pageUrl")) url = node.get("pageUrl").asText();
-            if ((url == null || url.isEmpty()) && node.hasNonNull("playUrl")) url = node.get("playUrl").asText();
-            if ((url == null || url.isEmpty()) && node.hasNonNull("link")) url = node.get("link").asText();
-            if (url != null && !url.isEmpty()) {
-                if (url.startsWith("//")) url = "https:" + url;
-                if (url.startsWith("/")) url = "https://www.iqiyi.com" + url;
-                String key = null;
-                if (node.hasNonNull("order")) key = node.get("order").asText();
-                if ((key == null || key.isEmpty()) && node.hasNonNull("episodeNumber")) key = node.get("episodeNumber").asText();
-                if ((key == null || key.isEmpty()) && node.hasNonNull("title")) key = node.get("title").asText();
-                if (key != null && !key.isEmpty() && !out.containsKey(key)) {
-                    out.put(key, url);
-                }
-            }
-            node.fields().forEachRemaining(e -> extractIqiyiEpisodeUrls(e.getValue(), out));
-            return;
-        }
-        if (node.isArray()) {
-            for (JsonNode child : node) {
-                extractIqiyiEpisodeUrls(child, out);
-            }
-        }
     }
 }
