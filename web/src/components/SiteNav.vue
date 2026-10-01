@@ -33,7 +33,7 @@ const links = [
 
             <div class="nav__actions">
                 <button class="btn btn-ghost nav__auth" type="button" @click="emit('auth')">获取授权码</button>
-                <button class="btn btn-primary" type="button" @click="emit('download')">下载</button>
+                <button class="btn btn-primary" type="button" @click="emit('download')">下载客户端</button>
             </div>
         </div>
 
