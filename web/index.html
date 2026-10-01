@@ -7,8 +7,10 @@
     <meta name="theme-color" content="#F5F5F7">
     <link rel="icon" type="image/png" href="/img/app-icon.png">
     <title>飞鲸影视 2.0 · 焕新出发 | 第三方飞牛影视桌面客户端</title>
-    <!-- Applies the stored theme before first paint so a dark-preference reload
-         never flashes light. Absence of a stored value = follow the system.
+    <!-- Applies the initial theme before first paint so a dark-preference
+         reload never flashes light. The stored value is 'light', 'dark' or
+         'system'; 'system' (and no stored value at all) resolves to the OS
+         setting here, and useTheme.js keeps following it live.
          Mirrored by src/composables/useTheme.js (same key and fallbacks). -->
     <script>
         (function () {
