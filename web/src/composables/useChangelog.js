@@ -1,24 +1,70 @@
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRelease } from './useRelease'
 
 /**
- * Client changelog, fetched live so the page never ships a stale copy.
+ * Changelog channels: the client app (FlyNarwhal) and this server each keep a
+ * CHANGELOG.md in their own public GitHub repo. The landing page and the
+ * timeline page fetch them live so the page never ships a stale copy, and let
+ * the visitor switch between the two.
  *
- * raw.githubusercontent comes first: it is the authoritative copy and only
- * carries a 5-minute HTTP cache. jsDelivr used to be first but is not a
- * separate content cache at all — it 301-redirects to raw — so leading with
- * it bought nothing and cost an extra hop. It stays as the fallback because
- * raw is often unreachable from mainland China.
+ * Per user decision both channels try jsDelivr first with raw.githubusercontent
+ * as the fallback. (Earlier testing found jsDelivr merely 301-redirects to raw
+ * rather than serving an independent content cache, so the order mostly costs
+ * one extra hop — kept anyway for consistency with mainland-China reachability
+ * where raw is often blocked outright.)
  *
- * Order matters: the loop stops at the first source that answers, so a
- * cached-but-old copy in front would hide new releases indefinitely.
+ * Order matters within a channel: the loop stops at the first source that
+ * answers, so a cached-but-old copy in front would hide new releases
+ * indefinitely.
  */
-const SOURCES = [
-    'https://raw.githubusercontent.com/FNOSP/FlyNarwhal/master/CHANGELOG.md',
-    'https://cdn.jsdelivr.net/gh/FNOSP/FlyNarwhal@master/CHANGELOG.md',
-]
+const CHANNELS = {
+    client: {
+        label: '客户端',
+        sources: [
+            'https://cdn.jsdelivr.net/gh/FNOSP/FlyNarwhal@master/CHANGELOG.md',
+            'https://raw.githubusercontent.com/FNOSP/FlyNarwhal/master/CHANGELOG.md',
+        ],
+        url: 'https://github.com/FNOSP/FlyNarwhal/blob/master/CHANGELOG.md',
+    },
+    server: {
+        label: '服务端',
+        sources: [
+            'https://cdn.jsdelivr.net/gh/FNOSP/fly-narwhal-server@master/CHANGELOG.md',
+            'https://raw.githubusercontent.com/FNOSP/fly-narwhal-server/master/CHANGELOG.md',
+        ],
+        url: 'https://github.com/FNOSP/fly-narwhal-server/blob/master/CHANGELOG.md',
+    },
+}
 
-export const CHANGELOG_URL = 'https://github.com/FNOSP/FlyNarwhal/blob/master/CHANGELOG.md'
+const CHANNEL_STORAGE_KEY = 'fwn:changelog:channel'
+
+function readStoredChannel() {
+    try {
+        const v = localStorage.getItem(CHANNEL_STORAGE_KEY)
+        if (v && CHANNELS[v]) return v
+    } catch {
+        // localStorage unavailable (private mode etc.) — fall back to default.
+    }
+    return 'client'
+}
+
+/**
+ * Module-level shared state: ChangelogSection (landing page) and TimelinePage
+ * (#/timeline) are never mounted at the same time, so a single ref carries the
+ * visitor's choice across the hash route — pick 服务端 on the landing page and
+ * the timeline opens on the server log too. Persisted so a refresh keeps it.
+ */
+const channel = ref(readStoredChannel())
+
+export function setChannel(next) {
+    if (!CHANNELS[next] || next === channel.value) return
+    channel.value = next
+    try {
+        localStorage.setItem(CHANNEL_STORAGE_KEY, next)
+    } catch {
+        // Non-fatal: the switch still works for this page session.
+    }
+}
 
 /**
  * Parses inline markdown into renderable nodes (text / bold / code / link)
@@ -86,10 +132,12 @@ function parseChangelog(text) {
     return versions
 }
 
-// 上次取回的正文摘要与解析结果，用于避免重复解析同一份内容。
-// 只在本页面会话内有效——刷新即重新校验。
-let cachedDigest = null
-let cachedResult = null
+// 每个渠道各自保留上次取回的正文摘要与解析结果，切换回来时内容没变就
+// 跳过重复解析。只在本页面会话内有效——刷新即重新校验。
+const cache = {
+    client: { digest: null, result: null },
+    server: { digest: null, result: null },
+}
 
 /**
  * 逐个源尝试，返回正文文本；全部失败返回 null。
@@ -103,8 +151,8 @@ let cachedResult = null
  * 正文约 22KB，代价可以接受。注意 jsDelivr 的 ?query 缓存穿透同样无效
  * （它只是个 301 跳转到 raw）。
  */
-async function fetchChangelogText() {
-    for (const url of SOURCES) {
+async function fetchChangelogText(sources) {
+    for (const url of sources) {
         try {
             const res = await fetch(url, { cache: 'no-store' })
             if (res.ok) return await res.text()
@@ -141,23 +189,24 @@ function buildResult(text) {
 }
 
 /**
- * 取回并解析更新日志。每次调用都会向服务端校验一次（不是本地 TTL 缓存），
- * 这样刷新页面总能同步到 GitHub 上的最新版本。内容没变时跳过重复解析。
+ * 取回并解析指定渠道的更新日志。每次调用都会向源站校验一次（不是本地 TTL
+ * 缓存），这样刷新页面总能同步到 GitHub 上的最新版本。内容没变时跳过重复解析。
  */
-async function fetchAll() {
-    const text = await fetchChangelogText()
+async function fetchAll(ch) {
+    const entry = cache[ch]
+    const text = await fetchChangelogText(CHANNELS[ch].sources)
     if (text === null) {
         // 网络全挂时优先给上次的内容，旧日志好过「无法加载」。
-        return cachedResult || { error: true, latest: null, history: [] }
+        return entry.result || { error: true, latest: null, history: [] }
     }
 
     const digest = await digestOf(text)
     // 摘要不可用（无 crypto.subtle）时退化为每次都重新解析。
-    if (digest !== null && digest === cachedDigest && cachedResult) return cachedResult
+    if (digest !== null && digest === entry.digest && entry.result) return entry.result
 
     const result = buildResult(text)
-    cachedDigest = digest
-    cachedResult = result
+    entry.digest = digest
+    entry.result = result
     return result
 }
 
@@ -185,27 +234,37 @@ export function useChangelog() {
     const latest = ref(null)
     const history = ref([])
 
+    const channelLabel = computed(() => CHANNELS[channel.value].label)
+    const changelogUrl = computed(() => CHANNELS[channel.value].url)
+
     // 下载区用的是 20 分钟 localStorage 缓存，更新日志则是每次刷新都取回。
     // 刚发版时下载区会暂时停在上一版，两个区域当场对不上；发现更新日志的
     // 版本更高就让下载区立刻重新拉一次，而不是干等缓存过期。
+    // 只对客户端渠道有意义——下载区跟的是客户端 Release，服务端版本号无关。
     const release = useRelease()
     let refreshed = false
 
-    onMounted(async () => {
-        const result = await fetchAll()
+    async function load(ch) {
+        loading.value = true
+        const result = await fetchAll(ch)
+        // 请求期间用户又切走了：丢弃过期结果，让新渠道的请求接管。
+        if (ch !== channel.value) return
         error.value = result.error
         latest.value = result.latest
         history.value = result.history
         loading.value = false
 
-        if (result.latest?.version && release.tag.value) {
+        if (ch === 'client' && result.latest?.version && release.tag.value) {
             // 更新日志的版本更高 = 下载区还停在缓存里的上一版，立刻重取。
             if (!refreshed && compareVersions(result.latest.version, release.tag.value) > 0) {
                 refreshed = true
                 release.refresh()
             }
         }
-    })
+    }
 
-    return { loading, error, latest, history }
+    onMounted(() => load(channel.value))
+    watch(channel, (ch) => load(ch))
+
+    return { channel, setChannel, channelLabel, changelogUrl, loading, error, latest, history }
 }

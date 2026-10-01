@@ -1,9 +1,10 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import ChangelogText from './ChangelogText.vue'
-import { useChangelog, CHANGELOG_URL } from '../composables/useChangelog'
+import ChannelSwitch from './ChannelSwitch.vue'
+import { useChangelog } from '../composables/useChangelog'
 
-const { loading, error, latest, history } = useChangelog()
+const { channel, setChannel, channelLabel, changelogUrl, loading, error, latest, history } = useChangelog()
 
 const CAT_META = {
     Added: { label: '新增', color: '#248A3D', bg: 'rgba(52, 199, 89, 0.12)' },
@@ -22,6 +23,11 @@ const open = ref(null)
 function toggle(version) {
     open.value = open.value === version ? null : version
 }
+
+// 切换渠道时收起已固定的卡片——两个渠道的版本号可能撞 key。
+watch(channel, () => {
+    open.value = null
+})
 </script>
 
 <template>
@@ -33,7 +39,7 @@ function toggle(version) {
                 </svg>
                 返回首页
             </a>
-            <span class="tlpage__crumb">飞鲸影视 · 更新日志</span>
+            <span class="tlpage__crumb">飞鲸影视 · {{ channelLabel }}更新日志</span>
         </header>
 
         <main class="shell tlpage__main">
@@ -43,6 +49,9 @@ function toggle(version) {
                 <p class="tlpage__lede">
                     共 {{ history.length || '…' }} 个版本，每一次新增、改进与修复，都完整记录在这里。
                 </p>
+                <div class="tlpage__switch">
+                    <ChannelSwitch :model-value="channel" @update:model-value="setChannel" />
+                </div>
             </div>
 
             <!-- loading skeleton -->
@@ -61,7 +70,7 @@ function toggle(version) {
                 </svg>
                 <p>更新日志暂时无法加载，可能是网络原因。</p>
                 <div class="tlpage__error-actions">
-                    <a :href="CHANGELOG_URL" target="_blank" rel="noopener noreferrer">前往 GitHub 查看 →</a>
+                    <a :href="changelogUrl" target="_blank" rel="noopener noreferrer">前往 GitHub 查看 →</a>
                     <a href="#top">返回首页</a>
                 </div>
             </div>
@@ -198,6 +207,12 @@ function toggle(version) {
     font-size: clamp(15px, 1.6vw, 18px);
     line-height: 1.7;
     color: var(--ink-muted);
+}
+
+.tlpage__switch {
+    display: flex;
+    justify-content: center;
+    margin-top: 28px;
 }
 
 /* ---------- skeleton / error ---------- */
