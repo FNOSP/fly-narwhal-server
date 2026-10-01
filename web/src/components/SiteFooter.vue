@@ -1,17 +1,12 @@
 <script setup>
-import { computed } from 'vue'
 import { useContributors } from '../composables/useContributors'
 
 const year = new Date().getFullYear()
 
-const CONTRIBUTORS_PAGE = 'https://github.com/FNOSP/FlyNarwhal/graphs/contributors'
 // Avatars beyond this cap collapse into a "+N" chip linking to the full graph.
 const AVATAR_CAP = 14
 
-const { contributors } = useContributors()
-
-const visibleContributors = computed(() => contributors.value.slice(0, AVATAR_CAP))
-const hiddenCount = computed(() => Math.max(0, contributors.value.length - AVATAR_CAP))
+const { groups } = useContributors()
 
 // GitHub 头像 API 支持 s= 参数取指定尺寸；列表接口返回的 URL 已带 ?v=4，
 // 这里追加尺寸参数拿到 2x 图，避免在高分屏上发糊。
@@ -54,37 +49,44 @@ const links = [
                 </nav>
             </div>
 
-            <section v-if="contributors.length" class="footer__contributors" aria-label="贡献者">
-                <h2 class="footer__contributors-label">贡献者</h2>
-                <ul class="footer__avatars">
-                    <li
-                        v-for="c in visibleContributors"
-                        :key="c.login"
-                        class="footer__avatar"
-                        :data-tip="`${c.login} · ${c.commits} 次提交`"
-                    >
-                        <a :href="c.profile" target="_blank" rel="noopener noreferrer" :aria-label="c.login">
-                            <img :src="avatarSrc(c)" :alt="c.login" width="40" height="40" loading="lazy" />
-                        </a>
-                    </li>
-                    <li
-                        v-if="hiddenCount > 0"
-                        class="footer__avatar footer__avatar--more"
-                        :data-tip="`还有 ${hiddenCount} 位贡献者`"
-                    >
-                        <a :href="CONTRIBUTORS_PAGE" target="_blank" rel="noopener noreferrer" aria-label="查看全部贡献者">
-                            +{{ hiddenCount }}
-                        </a>
-                    </li>
-                </ul>
-                <a
-                    class="footer__more"
-                    :href="CONTRIBUTORS_PAGE"
-                    target="_blank"
-                    rel="noopener noreferrer"
+            <section class="footer__contributors" aria-label="贡献者">
+                <h2 class="footer__contributors-title">贡献者</h2>
+                <div
+                    v-for="g in groups.filter((x) => x.contributors.length)"
+                    :key="g.key"
+                    class="footer__contrib-row"
                 >
-                    共 {{ contributors.length }} 位 · 贡献图谱 →
-                </a>
+                    <span class="footer__contrib-label">{{ g.label }}</span>
+                    <ul class="footer__avatars">
+                        <li
+                            v-for="c in g.contributors.slice(0, AVATAR_CAP)"
+                            :key="c.login"
+                            class="footer__avatar"
+                            :data-tip="`${c.login} · ${c.commits} 次提交`"
+                        >
+                            <a :href="c.profile" target="_blank" rel="noopener noreferrer" :aria-label="c.login">
+                                <img :src="avatarSrc(c)" :alt="c.login" width="40" height="40" loading="lazy" />
+                            </a>
+                        </li>
+                        <li
+                            v-if="g.contributors.length > AVATAR_CAP"
+                            class="footer__avatar footer__avatar--more"
+                            :data-tip="`还有 ${g.contributors.length - AVATAR_CAP} 位贡献者`"
+                        >
+                            <a :href="g.graphUrl" target="_blank" rel="noopener noreferrer" aria-label="查看全部贡献者">
+                                +{{ g.contributors.length - AVATAR_CAP }}
+                            </a>
+                        </li>
+                    </ul>
+                    <a
+                        class="footer__more"
+                        :href="g.graphUrl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        共 {{ g.contributors.length }} 位 · 贡献图谱 →
+                    </a>
+                </div>
             </section>
 
             <div class="footer__bottom">
@@ -154,22 +156,35 @@ const links = [
     color: var(--brand);
 }
 
-/* ---------- contributors (single-line strip) ---------- */
+/* ---------- contributors (one row per repo) ---------- */
 
 .footer__contributors {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px 20px;
+    display: grid;
+    gap: 12px;
     padding-top: 26px;
     border-top: 1px solid var(--hairline);
 }
 
-.footer__contributors-label {
+.footer__contributors-title {
     font-size: 13px;
     font-weight: 650;
     letter-spacing: 0.04em;
     color: var(--ink);
+}
+
+.footer__contrib-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 20px;
+}
+
+.footer__contrib-label {
+    width: 3.2em;
+    flex: none;
+    font-size: 13px;
+    font-weight: 550;
+    color: var(--ink-muted);
 }
 
 .footer__avatars {
