@@ -1,8 +1,10 @@
 <script setup>
+import { computed } from 'vue'
 import ChangelogText from './ChangelogText.vue'
-import { useChangelog, CHANGELOG_URL } from '../composables/useChangelog'
+import ChannelSwitch from './ChannelSwitch.vue'
+import { useChangelog } from '../composables/useChangelog'
 
-const { loading, error, latest, history } = useChangelog()
+const { channel, setChannel, channelLabel, changelogUrl, loading, error, latest, history } = useChangelog()
 
 const CAT_META = {
     Added: { label: '新增', color: '#248A3D', bg: 'rgba(52, 199, 89, 0.12)' },
@@ -13,6 +15,11 @@ const CAT_META = {
 function catMeta(name) {
     return CAT_META[name] || { label: name, color: 'var(--ink-soft)', bg: 'rgba(0, 0, 0, 0.05)' }
 }
+
+// 「从 X 到今天」的 X 跟随当前渠道：取该渠道历史里最旧的一个版本。
+const oldest = computed(() =>
+    history.value.length ? history.value[history.value.length - 1].version : null,
+)
 </script>
 
 <template>
@@ -27,6 +34,9 @@ function catMeta(name) {
                 <p v-reveal="180" class="lede">
                     最新版本的完整变化，以及发布以来的全部更新记录。
                 </p>
+                <div v-reveal="240" class="clg__switch">
+                    <ChannelSwitch :model-value="channel" @update:model-value="setChannel" />
+                </div>
             </div>
 
             <!-- loading skeleton -->
@@ -50,7 +60,7 @@ function catMeta(name) {
                     <circle cx="12" cy="12" r="9" /><path d="M12 8v5M12 16.5h.01" />
                 </svg>
                 <p>更新日志暂时无法加载，可能是网络原因。</p>
-                <a :href="CHANGELOG_URL" target="_blank" rel="noopener noreferrer">前往 GitHub 查看完整更新日志 →</a>
+                <a :href="changelogUrl" target="_blank" rel="noopener noreferrer">前往 GitHub 查看完整更新日志 →</a>
             </div>
 
             <template v-else>
@@ -86,9 +96,10 @@ function catMeta(name) {
                             <span v-for="n in 3" :key="n" class="clg-more__dot" :class="{ 'clg-more__dot--end': n === 3 }"></span>
                         </div>
                         <div class="clg-more__body">
-                            <h3 class="clg-more__title">全部版本更新日志</h3>
+                            <h3 class="clg-more__title">{{ channelLabel }}全部版本更新日志</h3>
                             <p class="clg-more__desc">
-                                从 2.0.0-alpha 到今天共 {{ history.length }} 个版本，每一次发版的完整记录都在这里。
+                                <template v-if="oldest">从 {{ oldest }} 到今天共 {{ history.length }} 个版本，每一次发版的完整记录都在这里。</template>
+                                <template v-else>共 {{ history.length }} 个版本，每一次发版的完整记录都在这里。</template>
                             </p>
                         </div>
                         <svg class="clg-more__arrow" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -115,6 +126,12 @@ function catMeta(name) {
 
 .clg__head .lede {
     margin: 16px auto 0;
+}
+
+.clg__switch {
+    display: flex;
+    justify-content: center;
+    margin-top: 26px;
 }
 
 /* ---------- skeleton ---------- */
