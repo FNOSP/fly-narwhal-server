@@ -1,0 +1,96 @@
+#!/bin/bash
+# Example control script for the released native binary.
+#
+# Copy this next to fly-narwhal-server (and its lib*.so siblings) and rename
+# it to run.sh:
+#
+#   cp run.sh.example run.sh && chmod +x run.sh
+#   ./run.sh start
+#
+# The binary resolves ./data and ./logs relative to the working directory and
+# dlopen()s the lib*.so files from its own directory, so always start it with
+# this directory as the CWD -- the script does that for itself.
+set -euo pipefail
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$DIR"
+
+# The binary reads its config and writes its data in UTF-8; without these a
+# NAS whose locale is POSIX will mangle Chinese titles and file paths.
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export LC_CTYPE=C.UTF-8
+
+PORT="${SERVER_PORT:-5365}"
+
+# Pick the newest versioned binary, skipping .bak copies; override with
+# BIN=/path/to/binary for a one-off run.
+if [ -z "${BIN:-}" ]; then
+  BIN="$(ls "$DIR"/fly-narwhal-server-* 2>/dev/null | grep -v '\.bak' | sort -V | tail -1 || true)"
+  [ -n "$BIN" ] || BIN="$DIR/fly-narwhal-server"
+fi
+[ -x "$BIN" ] || { echo "no executable fly-narwhal-server binary in $DIR" >&2; exit 1; }
+
+# Memory caps for the native image (Serial GC). Overriding these is optional;
+# the defaults are what the project ships and tests with:
+#
+#   MaxHeapSize=64MB  Heap ceiling. Without it the heap is allowed to grow to
+#                     80% of physical RAM and RSS climbs toward it even when
+#                     the workload never needs that much.
+#   MaxHeapFree=8MB   How much free heap GC keeps after a collection. Keeping
+#                     this small is what lets Serial GC return pages to the OS
+#                     instead of holding a large idle heap.
+#   StackSize=512KB   Per-thread stack, halved from the 1MB default. The
+#                     server runs a few dozen threads, so this adds up.
+#
+# If you see OutOfMemoryError under heavy use (large libraries, many episodes
+# analysed at once), raise MaxHeapSize -- e.g. 134217728 for 128MB -- and leave
+# the other two alone.
+HEAP_BYTES="${FLY_NARWHAL_MAX_HEAP:-67108864}"
+HEAP_FREE_BYTES="${FLY_NARWHAL_MAX_HEAP_FREE:-8388608}"
+STACK_BYTES="${FLY_NARWHAL_STACK_SIZE:-524288}"
+MEM_OPTS=(
+  -XX:MaxHeapSize="$HEAP_BYTES"
+  -XX:MaxHeapFree="$HEAP_FREE_BYTES"
+  -XX:StackSize="$STACK_BYTES"
+)
+
+PID_FILE="$DIR/app.pid"
+LOG_FILE="$DIR/server.log"
+
+running() {
+  [ -r "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null
+}
+
+case "${1:-start}" in
+  start)
+    if running; then
+      echo "already running (pid $(cat "$PID_FILE"))"
+      exit 0
+    fi
+    setsid nohup "$BIN" "${MEM_OPTS[@]}" --server.port="$PORT" >> "$LOG_FILE" 2>&1 < /dev/null &
+    echo $! > "$PID_FILE"
+    echo "started pid $! on port $PORT ($BIN)"
+    ;;
+  stop)
+    if running; then
+      kill -TERM "$(cat "$PID_FILE")"
+      rm -f "$PID_FILE"
+      echo "stopped"
+    else
+      echo "not running"
+    fi
+    ;;
+  restart)
+    "$0" stop || true
+    sleep 2
+    "$0" start
+    ;;
+  status)
+    if running; then echo "running (pid $(cat "$PID_FILE"))"; else echo "not running"; fi
+    ;;
+  *)
+    echo "usage: $0 {start|stop|restart|status}" >&2
+    exit 2
+    ;;
+esac

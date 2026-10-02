@@ -130,9 +130,12 @@ jobs:
 
           # Only the archive is published: the binary needs its sibling lib*.so next to it,
           # so a lone executable would not run. tar also preserves the executable bit.
+          # run.sh.example rides along so downloaders get the memory flags and the
+          # start/stop wrapper without having to fetch it from the repo separately.
           cp "$AUTHX_SRC" "$NATIVE_DIR/flynarwhal-authx"
+          cp "$GITHUB_WORKSPACE/run.sh.example" "$NATIVE_DIR/run.sh.example"
           ( cd "$NATIVE_DIR" && tar -czf "$GITHUB_WORKSPACE/dist/native/${NAME}.tar.gz" \
-              fly-narwhal-server flynarwhal-authx lib*.so )
+              fly-narwhal-server flynarwhal-authx run.sh.example lib*.so )
 
           echo "NAME=${NAME}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
