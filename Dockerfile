@@ -28,4 +28,8 @@ ENV TZ=Asia/Shanghai
 VOLUME /app/data
 
 # 启动命令
-ENTRYPOINT ["/app/fly-narwhal-server"]
+# 内存参数（native image Serial GC，已在 0.9.0 二进制上验证）：
+#   MaxHeapSize=64MB 堆上限（默认是物理内存的 80%，RSS 会一路涨上去）
+#   MaxHeapFree=8MB  限制 GC 后保留的空闲堆，让 Serial GC 把多余页还给 OS
+#   StackSize=512KB  每线程栈减半（默认 1MB）
+ENTRYPOINT ["/app/fly-narwhal-server", "-XX:MaxHeapSize=67108864", "-XX:MaxHeapFree=8388608", "-XX:StackSize=524288"]
