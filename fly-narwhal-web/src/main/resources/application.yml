@@ -3,8 +3,14 @@ spring:
     active: release
   application:
     name: fly-narwhal-server
+  main:
+    # Instantiate beans on first use instead of at startup; keeps the native
+    # image's heap small on a low-concurrency NAS deployment.
+    lazy-initialization: true
   datasource:
-    url: jdbc:h2:file:/var/apps/App.Native.flyNarwhalServer/shares/data/fly-narwhal;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    # CACHE_SIZE caps H2's in-memory page cache (KB). The embedded default of
+    # 64MB is far more than this workload needs.
+    url: jdbc:h2:file:/var/apps/App.Native.flyNarwhalServer/shares/data/fly-narwhal;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CACHE_SIZE=8192
     driver-class-name: org.h2.Driver
     username: sa
     password: 123456
@@ -16,11 +22,19 @@ server:
   port: 5365
   tomcat:
     uri-encoding: UTF-8
+    threads:
+      # SSE uses async emitters and holds no container thread, so the default
+      # 200 worker threads are pure overhead here.
+      max: 24
+      min-spare: 4
 
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+    # Drop the session-scoped first-level cache: every mapper call is a
+    # one-shot query here, holding results per session only wastes heap.
+    local-cache-scope: STATEMENT
   global-config:
     db-config:
       id-type: auto
@@ -30,8 +44,8 @@ logging:
   config: classpath:logback-spring.xml
   level:
     root: INFO
-    com.baomidou: DEBUG
-    com.jankinwu.flynarwhal.web.mapper: DEBUG
+    com.baomidou: INFO
+    com.jankinwu.flynarwhal.web.mapper: INFO
 
 fly-narwhal:
   api-secret: ${FLY_NARWHAL_API_SECRET:16CCEB3D-AB42-077D-36A1-F355324E4237}

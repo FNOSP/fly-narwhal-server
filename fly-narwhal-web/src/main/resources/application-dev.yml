@@ -1,9 +1,16 @@
 spring:
   datasource:
-    url: jdbc:h2:file:/var/apps/App.Native.flyNarwhalServer/shares/data/fly-narwhal;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    url: jdbc:h2:file:/var/apps/App.Native.flyNarwhalServer/shares/data/fly-narwhal;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CACHE_SIZE=8192
     driver-class-name: org.h2.Driver
     username: sa
     password: 123456
   sql:
     init:
       mode: never
+
+logging:
+  level:
+    # Dev-only: full SQL logging (logback-spring.xml keeps production at INFO).
+    com.baomidou.mybatisplus: DEBUG
+    org.apache.ibatis: DEBUG
+    com.jankinwu.flynarwhal.web.mapper: DEBUG

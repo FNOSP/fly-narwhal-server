@@ -93,13 +93,16 @@
         </rollingPolicy>
     </appender>
 
-    <logger name="com.baomidou.mybatisplus" level="DEBUG" additivity="false">
+    <!-- INFO by default: DEBUG SQL logging in production drives allocation
+         churn (and RSS) up. The dev profile re-enables DEBUG via
+         logging.level.* in application-dev.yml. -->
+    <logger name="com.baomidou.mybatisplus" level="INFO" additivity="false">
         <appender-ref ref="info_log" />
     </logger>
-    <logger name="org.apache.ibatis" level="DEBUG" additivity="false">
+    <logger name="org.apache.ibatis" level="INFO" additivity="false">
         <appender-ref ref="info_log" />
     </logger>
-    <logger name="com.jankinwu.flynarwhal.web.mapper" level="DEBUG" additivity="false">
+    <logger name="com.jankinwu.flynarwhal.web.mapper" level="INFO" additivity="false">
         <appender-ref ref="info_log" />
     </logger>
 
