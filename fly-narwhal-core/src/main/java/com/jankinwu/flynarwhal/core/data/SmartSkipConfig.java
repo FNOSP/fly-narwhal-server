@@ -88,14 +88,23 @@ public class SmartSkipConfig {
     // ---- Content hints ----
     private boolean animeDetection;
 
+    // ---- FFmpeg execution ----
+    /**
+     * Timeout in seconds for ffmpeg analysis scans (fingerprint, black frames,
+     * black intervals). 0 disables the limit. Upstream ScanTimeoutSeconds (#973):
+     * the old hard-coded 60s starved high-bitrate seasons on slow disks, which
+     * then skipped every run.
+     */
+    private int scanTimeoutSeconds;
+
     /** Chromaprint fingerprint sample duration in seconds (4096 / 11025 / 3). */
     public static final double SAMPLE_DURATION = 0.1238;
 
     /** Upper bound of the intro fingerprint window, in seconds. */
     public static final int MAX_INTRO_DURATION = 600;
 
-    /** Default ffmpeg timeout for analysis commands, in seconds. */
-    public static final int DEFAULT_TIMEOUT_SECONDS = 60;
+    /** Default ffmpeg timeout for analysis scans, in seconds (upstream default since #973). */
+    public static final int DEFAULT_SCAN_TIMEOUT_SECONDS = 300;
 
     /** Timeout for short probe commands (duration / chapters), in seconds. */
     public static final int PROBE_TIMEOUT_SECONDS = 30;
@@ -150,6 +159,7 @@ public class SmartSkipConfig {
                 .adjustWindowInward(5.0)
                 .adjustWindowOutward(2.0)
                 .animeDetection(false)
+                .scanTimeoutSeconds(DEFAULT_SCAN_TIMEOUT_SECONDS)
                 .build();
     }
 

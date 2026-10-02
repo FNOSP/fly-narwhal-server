@@ -20,7 +20,7 @@ public class AnalyzerFactory {
                                                    AnalyzerAction action, SmartSkipConfig config) {
         List<MediaFileAnalyzer> analyzers = new ArrayList<>();
 
-        FFmpegWrapper ffmpegWrapper = new FFmpegWrapper();
+        FFmpegWrapper ffmpegWrapper = new FFmpegWrapper(config.getScanTimeoutSeconds());
         SegmentHelper segmentHelper = new SegmentHelper(ffmpegWrapper);
 
         boolean ffmpegValid = FFmpegWrapper.isFfmpegAvailable();

@@ -78,6 +78,9 @@ public class UserSmartSkipConfig {
 
     private Boolean animeDetection;
 
+    /** ffmpeg analysis scan timeout in seconds; 0 disables the limit, null uses the default. */
+    private Integer scanTimeoutSeconds;
+
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -132,7 +135,8 @@ public class UserSmartSkipConfig {
                 .endSnapThreshold(endSnapThreshold != null ? endSnapThreshold : defaults.getEndSnapThreshold())
                 .adjustWindowInward(adjustWindowInward != null ? adjustWindowInward : defaults.getAdjustWindowInward())
                 .adjustWindowOutward(adjustWindowOutward != null ? adjustWindowOutward : defaults.getAdjustWindowOutward())
-                .animeDetection(animeDetection != null ? animeDetection : defaults.isAnimeDetection());
+                .animeDetection(animeDetection != null ? animeDetection : defaults.isAnimeDetection())
+                .scanTimeoutSeconds(scanTimeoutSeconds != null ? scanTimeoutSeconds : defaults.getScanTimeoutSeconds());
         return builder.build();
     }
 
@@ -188,6 +192,7 @@ public class UserSmartSkipConfig {
         entity.setAdjustWindowInward(config.getAdjustWindowInward());
         entity.setAdjustWindowOutward(config.getAdjustWindowOutward());
         entity.setAnimeDetection(config.isAnimeDetection());
+        entity.setScanTimeoutSeconds(config.getScanTimeoutSeconds());
         return entity;
     }
 }

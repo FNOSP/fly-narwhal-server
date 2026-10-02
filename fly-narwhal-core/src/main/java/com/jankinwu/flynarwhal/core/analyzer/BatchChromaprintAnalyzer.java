@@ -83,11 +83,13 @@ public class BatchChromaprintAnalyzer implements MediaFileAnalyzer {
                     }
 
                     // Upstream rejects matches longer than the mode maximum: perfect
-                    // whole-window matches are duplicates, not intros/credits.
+                    // whole-window matches are duplicates, not intros/credits. A real
+                    // region a few seconds over the limit must stay distinguishable in
+                    // the logs from "no shared sequence at all" (upstream #1048).
                     double maxDuration = chromaprintAnalyzer.getMaximumSegmentDuration(current, mode);
                     if (seg.getDuration() > maxDuration) {
-                        log.debug("Rejecting {} match for {}: duration {} exceeds maximum {}",
-                                mode, current.getPath(), seg.getDuration(), maxDuration);
+                        log.debug("Discarding well-correlated {} region between {} and {}: measured {}s exceeds configured maximum {}s",
+                                mode, current.getPath(), other.getPath(), seg.getDuration(), maxDuration);
                         continue;
                     }
 

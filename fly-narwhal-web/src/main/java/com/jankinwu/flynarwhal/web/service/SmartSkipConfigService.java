@@ -76,6 +76,8 @@ public class SmartSkipConfigService {
                 .maximumTimeSkip(clampDouble(c.getMaximumTimeSkip(), 0.5, 10.0))
                 .blackFrameMinimumPercentage(clampInt(c.getBlackFrameMinimumPercentage(), 0, 100))
                 .blackFrameThreshold(clampInt(c.getBlackFrameThreshold(), 0, 255))
+                // 0 means "no limit" (upstream semantics), so the range starts at 0.
+                .scanTimeoutSeconds(clampInt(c.getScanTimeoutSeconds(), 0, 3600))
                 .build();
     }
 

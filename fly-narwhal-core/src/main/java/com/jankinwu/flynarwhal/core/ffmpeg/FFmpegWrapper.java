@@ -52,6 +52,20 @@ public class FFmpegWrapper {
     /** ffmpeg binary path. Configurable via FLY_NARWHAL_FFMPEG_PATH; defaults to "ffmpeg" on PATH. */
     private static final String FFMPEG_PATH = System.getenv().getOrDefault("FLY_NARWHAL_FFMPEG_PATH", "ffmpeg");
 
+    /**
+     * Timeout budget for analysis scans (fingerprint, black frames, black intervals).
+     * 0 or negative disables the limit. Probe commands keep their own short budget.
+     */
+    private final int scanTimeoutSeconds;
+
+    public FFmpegWrapper() {
+        this(SmartSkipConfig.DEFAULT_SCAN_TIMEOUT_SECONDS);
+    }
+
+    public FFmpegWrapper(int scanTimeoutSeconds) {
+        this.scanTimeoutSeconds = scanTimeoutSeconds;
+    }
+
     public static boolean isFfmpegAvailable() {
         Boolean cached = FFMPEG_AVAILABLE;
         if (cached != null) {
@@ -242,7 +256,7 @@ public class FFmpegWrapper {
             }
         }
 
-        boolean finished = awaitProcess(process, SmartSkipConfig.DEFAULT_TIMEOUT_SECONDS, "getFingerprint", path);
+        boolean finished = awaitProcess(process, scanTimeoutSeconds, "getFingerprint", path);
         stderrThread.join(2000);
 
         if (!finished || process.exitValue() != 0) {
@@ -340,7 +354,7 @@ public class FFmpegWrapper {
             }
         }
 
-        awaitProcess(process, SmartSkipConfig.DEFAULT_TIMEOUT_SECONDS, "detectBlackFrames", path);
+        awaitProcess(process, scanTimeoutSeconds, "detectBlackFrames", path);
         return blackFrames;
     }
 
@@ -411,7 +425,7 @@ public class FFmpegWrapper {
             }
         }
 
-        awaitProcess(process, SmartSkipConfig.DEFAULT_TIMEOUT_SECONDS, "detectBlackIntervals", path);
+        awaitProcess(process, scanTimeoutSeconds, "detectBlackIntervals", path);
         return intervals;
     }
 
@@ -574,12 +588,14 @@ public class FFmpegWrapper {
 
     /**
      * Wait for the process to finish within the timeout; on timeout kill it and
-     * return false so callers can take their existing failure path.
+     * return false so callers can take their existing failure path. A timeout of
+     * 0 or less waits indefinitely (upstream ScanTimeoutSeconds semantics).
      */
     private boolean awaitProcess(Process process, int timeoutSeconds, String operation, String path) throws InterruptedException {
-        boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+        boolean finished = timeoutSeconds <= 0 || process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
         if (!finished) {
-            log.error("FFmpeg {} timed out after {}s for {}, killing process", operation, timeoutSeconds, path);
+            log.error("FFmpeg {} timed out after {}s for {}, killing process; consider raising the scan timeout setting (scanTimeoutSeconds)",
+                    operation, timeoutSeconds, path);
             process.destroyForcibly();
         }
         return finished;
