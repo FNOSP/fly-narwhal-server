@@ -57,6 +57,15 @@ public class QueuedEpisode {
     private byte[] recapFingerprint;
 
     /**
+     * Fingerprint window hashes (upstream #971): the window version the cached
+     * fingerprint BLOBs were generated for. A hash that differs from the current
+     * window's means the fingerprint is stale and must be regenerated. The intro
+     * hash covers the intro and recap fingerprints (they share one window).
+     */
+    private String introFpWindowHash;
+    private String creditsFpWindowHash;
+
+    /**
      * Last-modified time (epoch millis) of the media file observed at analysis time.
      * A stored value that differs from the file on disk means the file was replaced
      * under the same path, so cached fingerprints and segments must not be reused

@@ -48,6 +48,12 @@ public class EpisodeSegment {
 
     private byte[] recapFingerprint;
 
+    /** Window hash the intro/recap fingerprint BLOBs were generated for (upstream #971). */
+    private String introFpWindowHash;
+
+    /** Window hash the credits fingerprint BLOB was generated for (upstream #971). */
+    private String creditsFpWindowHash;
+
     private String action;
 
     private AnalysisStatus status;

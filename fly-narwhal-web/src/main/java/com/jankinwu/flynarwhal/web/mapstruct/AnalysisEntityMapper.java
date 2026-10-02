@@ -28,6 +28,8 @@ public interface AnalysisEntityMapper {
     @Mapping(target = "introFingerprint", ignore = true)
     @Mapping(target = "creditsFingerprint", ignore = true)
     @Mapping(target = "recapFingerprint", ignore = true)
+    @Mapping(target = "introFpWindowHash", ignore = true)
+    @Mapping(target = "creditsFpWindowHash", ignore = true)
     @Mapping(target = "recapStart", ignore = true)
     @Mapping(target = "recapEnd", ignore = true)
     @Mapping(target = "previewStart", ignore = true)
