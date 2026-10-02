@@ -44,11 +44,42 @@ tar -xzf fly-narwhal-server-linux-amd64-{version}.tar.gz
    nohup ./fly-narwhal-server --server.port=8080 > /dev/null 2>&1 &
    ```
 
+   > **建议加上内存参数**，否则进程占用会明显偏高。原生镜像使用的 Serial GC
+   > 默认允许堆增长到物理内存的 80%，并且回收后不把空闲页还给系统，实测评测中
+   > 常驻内存会因此停在 200MB 上下；加上下面三个参数后可以降到 120MB 左右：
+   >
+   > ```bash
+   > nohup ./fly-narwhal-server \
+   >   -XX:MaxHeapSize=67108864 \
+   >   -XX:MaxHeapFree=8388608 \
+   >   -XX:StackSize=524288 \
+   >   > /dev/null 2>&1 &
+   > ```
+   >
+   > 含义依次是：堆上限 64MB、回收后只保留 8MB 空闲堆（这样 GC 会主动把多余
+   > 的页交还系统）、每线程栈减半到 512KB。如果日志里出现 `OutOfMemoryError`
+   > （剧集特别多、并发分析时可能出现），把 `MaxHeapSize` 提高即可，
+   > 例如 `134217728` 是 128MB，另外两个不用动。
+
 3. **停止服务**：
 
    ```bash
    kill $(lsof -t -i:5365)
    ```
+
+#### 用脚本管理（可选）
+
+仓库根目录提供了 [`run.sh.example`](run.sh.example)，包含上面的内存参数以及
+`start` / `stop` / `restart` / `status` 四个命令，省去每次手写启动参数：
+
+```bash
+cp run.sh.example run.sh && chmod +x run.sh
+./run.sh start      # 默认 5365 端口，可用 SERVER_PORT=8080 ./run.sh start 覆盖
+./run.sh status
+./run.sh stop
+```
+
+内存参数可用环境变量覆盖，例如 `FLY_NARWHAL_MAX_HEAP=134217728 ./run.sh start`。
 
 ### 从源码构建
 
