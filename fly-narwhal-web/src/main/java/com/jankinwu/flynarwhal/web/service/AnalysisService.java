@@ -649,9 +649,20 @@ public class AnalysisService {
         );
     }
 
+    /**
+     * Both callers ({@link #getEpisodeAnalysisStatus} and
+     * {@link #getSegmentsByEpisodeGuid}) only read the status and the segment
+     * time points. The three *_FINGERPRINT columns are ~50KB of BLOB each and
+     * were previously fetched on every request and then discarded, so select
+     * the used columns explicitly and leave the fingerprints null.
+     */
     private EpisodeSegment findEpisodeSegmentByGuid(String episodeGuid) {
         return episodeSegmentMapper.selectOne(
             new QueryWrapper<EpisodeSegment>()
+                .select("id", "guid", "season_guid", "episode_number", "duration",
+                        "intro_start", "intro_end", "credits_start", "credits_end",
+                        "recap_start", "recap_end", "preview_start", "preview_end",
+                        "action", "status", "create_time", "update_time")
                 .eq("guid", episodeGuid)
                 .last("LIMIT 1")
         );
