@@ -33,6 +33,11 @@ export const creditGroups = [
         { name: 'intro-skipper', url: 'https://github.com/intro-skipper/intro-skipper', note: '自动检测并跳过片头片尾的 Jellyfin 插件' },
         { name: 'fnos-tv', url: 'https://github.com/thshu/fnos-tv', note: '基于飞牛影视接口开发的网页端，弹幕功能参考' },
     ]},
+    { group: '服务端 · 网页前端', items: [
+        { name: 'Vue', url: 'https://vuejs.org', note: '网页端 UI 框架' },
+        { name: 'Vite', url: 'https://vite.dev', note: '前端构建工具与开发服务器' },
+        { name: '@vitejs/plugin-vue', url: 'https://github.com/vitejs/vite-plugin-vue', note: 'Vite 的 Vue 单文件组件支持' },
+    ]},
 ]
 
 export const creditCount = creditGroups.reduce((n, g) => n + g.items.length, 0)
