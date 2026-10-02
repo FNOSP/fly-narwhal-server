@@ -33,6 +33,7 @@ public interface AnalysisEntityMapper {
     @Mapping(target = "previewStart", ignore = true)
     @Mapping(target = "previewEnd", ignore = true)
     @Mapping(target = "action", ignore = true)
+    @Mapping(target = "fileMtime", ignore = true)
     @Mapping(target = "createTime", ignore = true)
     @Mapping(target = "updateTime", ignore = true)
     void updateEpisodeFromRequest(@MappingTarget EpisodeSegment target, EpisodeDetailRequest source);

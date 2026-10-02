@@ -26,6 +26,8 @@ class SmartSkipConfigTest {
         assertEquals(28, config.getBlackFrameThreshold());
         assertEquals(25, config.getAnalysisPercent());
         assertEquals(10, config.getAnalysisLengthLimit());
+        // Upstream #973: configurable scan timeout, default raised from 60s to 300s.
+        assertEquals(300, config.getScanTimeoutSeconds());
         assertFalse(config.isPreferChromaprint());
         assertFalse(config.isUseAlternativeBlackFrameAnalyzer());
     }
@@ -59,6 +61,7 @@ class SmartSkipConfigTest {
                 .scanCredits(false)
                 .maximumIntroDuration(90)
                 .maximumTimeSkip(4.5)
+                .scanTimeoutSeconds(120)
                 .build();
         com.jankinwu.flynarwhal.web.entity.UserSmartSkipConfig entity =
                 com.jankinwu.flynarwhal.web.entity.UserSmartSkipConfig.fromConfig("user-1", config);
@@ -67,6 +70,7 @@ class SmartSkipConfigTest {
         assertFalse(roundTripped.isScanCredits());
         assertEquals(90, roundTripped.getMaximumIntroDuration());
         assertEquals(4.5, roundTripped.getMaximumTimeSkip(), 1e-9);
+        assertEquals(120, roundTripped.getScanTimeoutSeconds());
         // untouched fields fall back to defaults
         assertEquals(15, roundTripped.getMinimumIntroDuration());
         assertEquals(450, roundTripped.getMaximumCreditsDuration());

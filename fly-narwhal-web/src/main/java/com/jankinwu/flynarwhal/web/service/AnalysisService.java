@@ -514,36 +514,110 @@ public class AnalysisService {
 
         for (QueuedEpisode ep : queue) {
             EpisodeSegment existing = segmentMap.get(ep.getEpisodeNumber());
+            // Upstream #977: record the file version with every analysis. A file replaced
+            // under the same path keeps its episode number, so without this its stale
+            // fingerprints and segments would stay settled forever.
+            Long currentMtime = readFileMtime(ep.getPath());
+            ep.setFileMtime(currentMtime);
+
             if (existing != null) {
-                ep.setIntroFingerprint(existing.getIntroFingerprint());
-                ep.setCreditsFingerprint(existing.getCreditsFingerprint());
-                ep.setRecapFingerprint(existing.getRecapFingerprint());
-                if (existing.getDuration() != null) {
-                    ep.setDuration(existing.getDuration());
+                if (isReplacedFile(existing, currentMtime)) {
+                    log.info("Media file for episode {} was replaced (analyzed mtime {}, current {}); clearing cached analysis and re-analyzing",
+                            ep.getEpisodeNumber(), existing.getFileMtime(), currentMtime);
+                    clearReplacedEpisodeRow(existing);
+                } else {
+                    ep.setIntroFingerprint(existing.getIntroFingerprint());
+                    ep.setCreditsFingerprint(existing.getCreditsFingerprint());
+                    ep.setRecapFingerprint(existing.getRecapFingerprint());
+                    if (existing.getDuration() != null) {
+                        ep.setDuration(existing.getDuration());
+                    }
+
+                    Segment intro = toSegment(existing.getIntroStart(), existing.getIntroEnd());
+                    if (intro != null) ep.setIntroSegment(intro);
+                    Segment credits = toSegment(existing.getCreditsStart(), existing.getCreditsEnd());
+                    if (credits != null) ep.setCreditsSegment(credits);
+                    Segment recap = toSegment(existing.getRecapStart(), existing.getRecapEnd());
+                    if (recap != null) ep.setRecapSegment(recap);
+                    Segment preview = toSegment(existing.getPreviewStart(), existing.getPreviewEnd());
+                    if (preview != null) ep.setPreviewSegment(preview);
+
+                    List<CommercialSegment> commercials = commercialSegmentMapper.selectList(
+                            new QueryWrapper<CommercialSegment>()
+                                    .eq("episode_segment_id", existing.getId())
+                                    .orderByAsc("ordinal"));
+                    for (CommercialSegment row : commercials) {
+                        ep.addCommercialSegment(new Segment(
+                                row.getStartTime().doubleValue(), row.getEndTime().doubleValue(), true));
+                    }
+
+                    parseActions(existing.getAction(), ep);
                 }
-
-                Segment intro = toSegment(existing.getIntroStart(), existing.getIntroEnd());
-                if (intro != null) ep.setIntroSegment(intro);
-                Segment credits = toSegment(existing.getCreditsStart(), existing.getCreditsEnd());
-                if (credits != null) ep.setCreditsSegment(credits);
-                Segment recap = toSegment(existing.getRecapStart(), existing.getRecapEnd());
-                if (recap != null) ep.setRecapSegment(recap);
-                Segment preview = toSegment(existing.getPreviewStart(), existing.getPreviewEnd());
-                if (preview != null) ep.setPreviewSegment(preview);
-
-                List<CommercialSegment> commercials = commercialSegmentMapper.selectList(
-                        new QueryWrapper<CommercialSegment>()
-                                .eq("episode_segment_id", existing.getId())
-                                .orderByAsc("ordinal"));
-                for (CommercialSegment row : commercials) {
-                    ep.addCommercialSegment(new Segment(
-                            row.getStartTime().doubleValue(), row.getEndTime().doubleValue(), true));
-                }
-
-                parseActions(existing.getAction(), ep);
             }
 
             ensureDuration(ep);
+        }
+    }
+
+    /**
+     * A stored mtime that differs from the file's current one means the file was
+     * replaced. Rows written before mtime tracking (null) are trusted and get
+     * stamped on the next persist instead of being re-analyzed. An unreachable
+     * file (null current mtime) is also trusted, so a transient mount failure
+     * never wipes results.
+     */
+    private boolean isReplacedFile(EpisodeSegment existing, Long currentMtime) {
+        return existing.getFileMtime() != null && currentMtime != null
+                && !existing.getFileMtime().equals(currentMtime);
+    }
+
+    /**
+     * Wipe the automatic analysis data of a replaced file. Explicit sets are required
+     * because updateById skips null fields; the row identity (season, episode number,
+     * guid, path) is kept so the fresh analysis updates it in place.
+     */
+    private void clearReplacedEpisodeRow(EpisodeSegment existing) {
+        UpdateWrapper<EpisodeSegment> clear = new UpdateWrapper<>();
+        clear.eq("id", existing.getId())
+                .set("intro_start", null).set("intro_end", null)
+                .set("credits_start", null).set("credits_end", null)
+                .set("recap_start", null).set("recap_end", null)
+                .set("preview_start", null).set("preview_end", null)
+                .set("intro_fingerprint", null).set("credits_fingerprint", null).set("recap_fingerprint", null)
+                .set("duration", null)
+                .set("action", null)
+                .set("file_mtime", null);
+        episodeSegmentMapper.update(null, clear);
+        commercialSegmentMapper.delete(
+                new QueryWrapper<CommercialSegment>().eq("episode_segment_id", existing.getId()));
+    }
+
+    /** Last-modified time (epoch millis) of a media file, or null when it cannot be stat'ed. */
+    private Long readFileMtime(String path) {
+        try {
+            java.nio.file.Path resolved = resolveMediaPath(path);
+            if (resolved == null) {
+                return null;
+            }
+            return java.nio.file.Files.getLastModifiedTime(resolved).toMillis();
+        } catch (Exception e) {
+            log.debug("Could not read modification time for {}: {}", path, e.getMessage());
+            return null;
+        }
+    }
+
+    /** Media paths arrive as plain paths or file: URIs (same conversion ffmpeg input uses). */
+    private java.nio.file.Path resolveMediaPath(String path) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        try {
+            if (path.startsWith("file:")) {
+                return java.nio.file.Path.of(java.net.URI.create(path));
+            }
+            return java.nio.file.Path.of(path);
+        } catch (Exception e) {
+            return null;
         }
     }
 

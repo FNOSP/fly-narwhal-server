@@ -52,6 +52,9 @@ public class EpisodeSegment {
 
     private AnalysisStatus status;
 
+    /** Media file last-modified time (epoch millis) recorded with the analysis; a mismatch means the file was replaced. */
+    private Long fileMtime;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

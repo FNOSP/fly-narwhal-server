@@ -56,6 +56,14 @@ public class QueuedEpisode {
     private byte[] creditsFingerprint;
     private byte[] recapFingerprint;
 
+    /**
+     * Last-modified time (epoch millis) of the media file observed at analysis time.
+     * A stored value that differs from the file on disk means the file was replaced
+     * under the same path, so cached fingerprints and segments must not be reused
+     * (upstream #977). Null when the file could not be stat'ed.
+     */
+    private Long fileMtime;
+
     // ---- Per-mode accessors used by generic analyzers ----
 
     public boolean isAnalyzed(AnalysisMode mode) {
