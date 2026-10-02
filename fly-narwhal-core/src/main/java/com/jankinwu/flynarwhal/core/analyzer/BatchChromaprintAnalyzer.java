@@ -36,13 +36,27 @@ public class BatchChromaprintAnalyzer implements MediaFileAnalyzer {
         }
         log.info("Starting Chromaprint Analysis for {} episodes (Mode: {})", episodes.size(), mode);
 
-        // 1. Generate fingerprints for all episodes that do not have one yet
+        // 1. Generate fingerprints for all episodes whose cache is missing or stale.
+        // A cached BLOB is only reusable when its window hash matches the current
+        // window (upstream #971): unrelated config edits keep the cache, while a
+        // changed fingerprint window regenerates it instead of silently comparing
+        // audio from the wrong range.
         for (QueuedEpisode ep : episodes) {
-            if (getFingerprint(ep, mode) != null) continue;
+            String expectedHash = FingerprintWindowHasher.expectedHash(ep, mode);
+            byte[] cached = getFingerprint(ep, mode);
+            if (cached != null && cached.length > 0) {
+                if (expectedHash.equals(getFingerprintHash(ep, mode))) {
+                    continue;
+                }
+                log.info("Fingerprint window changed for {} (mode {}); discarding cached fingerprint", ep.getPath(), mode);
+                setFingerprint(ep, mode, null);
+                setFingerprintHash(ep, mode, null);
+            }
             try {
                 int[] fp = chromaprintAnalyzer.getFingerprint(ep, mode);
                 if (fp != null && fp.length > 0) {
                     setFingerprint(ep, mode, intsToBytes(fp));
+                    setFingerprintHash(ep, mode, expectedHash);
                 }
             } catch (Exception e) {
                 ep.setAnalysisFailed(true);
@@ -131,6 +145,19 @@ public class BatchChromaprintAnalyzer implements MediaFileAnalyzer {
             case INTRODUCTION: episode.setIntroFingerprint(fingerprint); break;
             case CREDITS: episode.setCreditsFingerprint(fingerprint); break;
             case RECAP: episode.setRecapFingerprint(fingerprint); break;
+        }
+    }
+
+    /** INTRODUCTION and RECAP share the intro window, so they share its hash. */
+    private String getFingerprintHash(QueuedEpisode episode, AnalysisMode mode) {
+        return mode == AnalysisMode.CREDITS ? episode.getCreditsFpWindowHash() : episode.getIntroFpWindowHash();
+    }
+
+    private void setFingerprintHash(QueuedEpisode episode, AnalysisMode mode, String hash) {
+        if (mode == AnalysisMode.CREDITS) {
+            episode.setCreditsFpWindowHash(hash);
+        } else {
+            episode.setIntroFpWindowHash(hash);
         }
     }
 

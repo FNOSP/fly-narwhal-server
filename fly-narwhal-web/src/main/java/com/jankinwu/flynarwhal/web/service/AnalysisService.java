@@ -321,13 +321,27 @@ public class AnalysisService {
         boolean isMovie = !queue.isEmpty() && queue.stream().allMatch(QueuedEpisode::isMovie);
         AnalyzerAction action = AnalyzerAction.DEFAULT;
 
+        // Upstream #1028: an episode without a usable runtime must not enter analysis.
+        // Chromaprint cannot fingerprint it, and a chapter-only result recorded against
+        // a zero-duration episode would settle it as analyzed with nothing found.
+        // persistResults still marks these FAILED (retryable) rather than COMPLETED.
+        List<QueuedEpisode> analyzable = queue.stream()
+                .filter(ep -> ep.getDuration() > 0)
+                .collect(Collectors.toList());
+        for (QueuedEpisode ep : queue) {
+            if (ep.getDuration() <= 0) {
+                log.warn("Skipping episode {} ({}): no duration available (file not readable yet?); it will retry on the next analysis",
+                        ep.getEpisodeNumber(), ep.getPath());
+            }
+        }
+
         for (AnalysisMode mode : AnalysisMode.values()) {
             if (!isModeEnabled(mode, config)) {
                 log.info("Skipping disabled analysis mode {}", mode);
                 continue;
             }
             List<MediaFileAnalyzer> analyzers = analyzerFactory.createAnalyzers(mode, isAnime, isMovie, action, config);
-            runAnalyzers(analyzers, queue, mode);
+            runAnalyzers(analyzers, analyzable, mode);
         }
     }
 
@@ -529,6 +543,8 @@ public class AnalysisService {
                     ep.setIntroFingerprint(existing.getIntroFingerprint());
                     ep.setCreditsFingerprint(existing.getCreditsFingerprint());
                     ep.setRecapFingerprint(existing.getRecapFingerprint());
+                    ep.setIntroFpWindowHash(existing.getIntroFpWindowHash());
+                    ep.setCreditsFpWindowHash(existing.getCreditsFpWindowHash());
                     if (existing.getDuration() != null) {
                         ep.setDuration(existing.getDuration());
                     }
@@ -584,6 +600,7 @@ public class AnalysisService {
                 .set("recap_start", null).set("recap_end", null)
                 .set("preview_start", null).set("preview_end", null)
                 .set("intro_fingerprint", null).set("credits_fingerprint", null).set("recap_fingerprint", null)
+                .set("intro_fp_window_hash", null).set("credits_fp_window_hash", null)
                 .set("duration", null)
                 .set("action", null)
                 .set("file_mtime", null);
