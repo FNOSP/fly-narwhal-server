@@ -20,6 +20,8 @@ import java.net.URI;
 import java.util.HexFormat;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
@@ -57,6 +59,15 @@ public class FFmpegWrapper {
      * 0 or negative disables the limit. Probe commands keep their own short budget.
      */
     private final int scanTimeoutSeconds;
+
+    /** Codec probe budget; the probe decodes zero frames, so it is fast (upstream #1049). */
+    private static final int VP9_PROBE_TIMEOUT_SECONDS = 10;
+
+    /**
+     * Per-instance VP9 probe memo, so repeated keyframe scans of one file probe once
+     * (the spirit of upstream #1051: a scan that does not run starts no probe).
+     */
+    private final Map<String, Boolean> vp9ProbeCache = new ConcurrentHashMap<>();
 
     public FFmpegWrapper() {
         this(SmartSkipConfig.DEFAULT_SCAN_TIMEOUT_SECONDS);
@@ -320,8 +331,16 @@ public class FFmpegWrapper {
         command.add("-an");
         command.add("-dn");
         command.add("-sn");
+        String videoFilter = "blackframe=amount=" + amount + ":threshold=" + threshold;
+        if (keyframesOnly && isVp9Video(path)) {
+            // VP9 ignores -skip_frame nokey and decodes every frame (upstream #1049),
+            // which both slows the wide credits scan and breaks the frame-number
+            // spacing the scene-gap heuristics expect. Prepend a packet-keyframe
+            // select so only keyframes reach blackframe.
+            videoFilter = "select=eq(key\\,1)," + videoFilter;
+        }
         command.add("-vf");
-        command.add("blackframe=amount=" + amount + ":threshold=" + threshold);
+        command.add(videoFilter);
         command.add("-f");
         command.add("null");
         command.add("-");
@@ -499,14 +518,52 @@ public class FFmpegWrapper {
         return silences;
     }
 
+    /**
+     * Whether the video stream ffmpeg would decode by default is VP9 (upstream #1049).
+     * Probes without decoding by mapping zero frames and reading the stream-mapping
+     * line, so it reflects the same stream selection the scans get. Results memoize
+     * per wrapper instance; probe failures answer false (the scans then run as before).
+     */
+    boolean isVp9Video(String path) {
+        return vp9ProbeCache.computeIfAbsent(path, this::probeVp9);
+    }
+
+    private boolean probeVp9(String path) {
+        String inputPath = toFfmpegInputPath(path);
+        List<String> command = List.of(FFMPEG_PATH, "-hide_banner", "-i", inputPath,
+                "-an", "-dn", "-sn", "-frames:v", "0", "-f", "null", "-");
+        try {
+            ProcessBuilder pb = new ProcessBuilder("bash", "-c", buildShellCommand(command));
+            applyUtf8Environment(pb);
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            StringBuilder output = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append('\n');
+                }
+            }
+            if (!awaitProcess(process, VP9_PROBE_TIMEOUT_SECONDS, "probeVp9", path)) {
+                return false;
+            }
+            // Default video stream mapping line, e.g. "Stream #0:0 -> #0:0 (vp9 (native), ...)".
+            return output.toString().contains(" -> #0:0 (vp9 (");
+        } catch (Exception e) {
+            log.debug("VP9 probe failed for {}: {}", path, e.getMessage());
+            return false;
+        }
+    }
+
     public List<Double> detectKeyframes(String path, TimeRange range) throws IOException, InterruptedException {
         logPathEncoding("ffmpeg.detectKeyframes.input", path);
         String inputPath = toFfmpegInputPath(path);
         List<String> command = new ArrayList<>();
         command.add(FFMPEG_PATH);
         command.add("-hide_banner");
-        command.add("-loglevel");
-        command.add("error");
+        // No -loglevel error here: showinfo logs pts_time at info level, and an
+        // error-level command silently returned an empty keyframe list.
         command.add("-ss");
         command.add(String.valueOf(range.getStart()));
         command.add("-i");
@@ -532,8 +589,13 @@ public class FFmpegWrapper {
                 // Lines contain "pts_time:123.456" for each keyframe.
                 java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("pts_time:([\\d.]+)").matcher(line);
                 if (matcher.find()) {
-                    double time = Double.parseDouble(matcher.group(1));
-                    keyframes.add(range.getStart() + time);
+                    double time = range.getStart() + Double.parseDouble(matcher.group(1));
+                    // -t is an output option: the filter graph logs the next keyframe or
+                    // two past the trim point before ffmpeg stops (upstream #1044), which
+                    // could drag a keyframe snap outside its search window. Clip to it.
+                    if (time >= range.getStart() && time <= range.getEnd()) {
+                        keyframes.add(time);
+                    }
                 }
             }
         }
