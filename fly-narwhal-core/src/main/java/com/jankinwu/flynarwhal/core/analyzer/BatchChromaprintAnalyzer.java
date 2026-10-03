@@ -150,12 +150,12 @@ public class BatchChromaprintAnalyzer implements MediaFileAnalyzer {
 
     /** INTRODUCTION and RECAP share the intro window, so they share its hash. */
     private String getFingerprintHash(QueuedEpisode episode, AnalysisMode mode) {
-        return mode == AnalysisMode.CREDITS ? episode.getCreditsFpWindowHash() : episode.getIntroFpWindowHash();
+        return mode == AnalysisMode.CREDITS ? episode.getCreditFpWindowHash() : episode.getIntroFpWindowHash();
     }
 
     private void setFingerprintHash(QueuedEpisode episode, AnalysisMode mode, String hash) {
         if (mode == AnalysisMode.CREDITS) {
-            episode.setCreditsFpWindowHash(hash);
+            episode.setCreditFpWindowHash(hash);
         } else {
             episode.setIntroFpWindowHash(hash);
         }

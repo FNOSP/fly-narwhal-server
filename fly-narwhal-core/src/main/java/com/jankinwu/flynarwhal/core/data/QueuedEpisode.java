@@ -63,7 +63,7 @@ public class QueuedEpisode {
      * hash covers the intro and recap fingerprints (they share one window).
      */
     private String introFpWindowHash;
-    private String creditsFpWindowHash;
+    private String creditFpWindowHash;
 
     /**
      * Last-modified time (epoch millis) of the media file observed at analysis time.

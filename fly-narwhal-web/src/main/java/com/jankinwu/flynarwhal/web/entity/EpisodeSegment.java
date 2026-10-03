@@ -52,7 +52,7 @@ public class EpisodeSegment {
     private String introFpWindowHash;
 
     /** Window hash the credits fingerprint BLOB was generated for (upstream #971). */
-    private String creditsFpWindowHash;
+    private String creditFpWindowHash;
 
     private String action;
 

@@ -18,6 +18,6 @@ COMMENT ON COLUMN EPISODE_SEGMENTS.file_mtime IS '分析时记录的媒体文件
 -- while unrelated processing settings keep them. NULL (rows written before this
 -- change) invalidates once on the next analysis.
 ALTER TABLE EPISODE_SEGMENTS ADD COLUMN IF NOT EXISTS intro_fp_window_hash VARCHAR(16);
-ALTER TABLE EPISODE_SEGMENTS ADD COLUMN IF NOT EXISTS credits_fp_window_hash VARCHAR(16);
+ALTER TABLE EPISODE_SEGMENTS ADD COLUMN IF NOT EXISTS credit_fp_window_hash VARCHAR(16);
 COMMENT ON COLUMN EPISODE_SEGMENTS.intro_fp_window_hash IS '片头/前情指纹生成时的窗口哈希，窗口配置变化后指纹失效';
 COMMENT ON COLUMN EPISODE_SEGMENTS.credit_fp_window_hash IS '片尾指纹生成时的窗口哈希，窗口配置变化后指纹失效';
