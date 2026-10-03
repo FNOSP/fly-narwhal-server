@@ -544,7 +544,7 @@ public class AnalysisService {
                     ep.setCreditsFingerprint(existing.getCreditsFingerprint());
                     ep.setRecapFingerprint(existing.getRecapFingerprint());
                     ep.setIntroFpWindowHash(existing.getIntroFpWindowHash());
-                    ep.setCreditsFpWindowHash(existing.getCreditsFpWindowHash());
+                    ep.setCreditFpWindowHash(existing.getCreditFpWindowHash());
                     if (existing.getDuration() != null) {
                         ep.setDuration(existing.getDuration());
                     }
@@ -600,7 +600,7 @@ public class AnalysisService {
                 .set("recap_start", null).set("recap_end", null)
                 .set("preview_start", null).set("preview_end", null)
                 .set("intro_fingerprint", null).set("credits_fingerprint", null).set("recap_fingerprint", null)
-                .set("intro_fp_window_hash", null).set("credits_fp_window_hash", null)
+                .set("intro_fp_window_hash", null).set("credit_fp_window_hash", null)
                 .set("duration", null)
                 .set("action", null)
                 .set("file_mtime", null);
