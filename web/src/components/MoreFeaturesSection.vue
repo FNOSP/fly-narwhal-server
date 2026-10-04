@@ -1,60 +1,30 @@
 <script setup>
+import { computed } from 'vue'
+import { useI18n } from '../composables/useI18n'
+
+const { t } = useI18n()
+
 // Bento grid of the "功能更完整" items from the client README. Two cards carry
 // small built-in visuals; the rest stay typographic so the grid breathes.
-const items = [
-    {
-        key: 'folder',
-        span: 'span3',
-        title: '文件夹视图',
-        desc: '直接按目录浏览 NAS 上的媒体文件，不经刮削也能找到想看的片源。',
-        visual: 'tree',
-    },
-    {
-        key: 'livetv',
-        span: 'span3 dark',
-        title: 'Live TV',
-        desc: '直播频道即点即播，换台与音量都在同一个播放界面内完成。',
-        visual: 'live',
-    },
-    {
-        key: 'pan',
-        span: 'span2',
-        title: '网盘视频播放',
-        desc: '网盘里的视频无需转存，在线直接起播。',
-    },
-    {
-        key: 'mediainfo',
-        span: 'span2',
-        title: '媒体信息面板',
-        desc: '视频流、音频流与字幕轨的编码、码率、语言一目了然。',
-        visual: 'spec',
-    },
-    {
-        key: 'strm',
-        span: 'span2',
-        title: 'STRM 直连播放',
-        desc: '对齐飞牛影视 Web 端流程，解析 STRM 文件后直连云端地址播放。',
-    },
-    {
-        key: 'detail',
-        span: 'span2',
-        title: '播放详细信息',
-        desc: '解码方式、丢帧与缓冲状态实时可见。',
-    },
-    {
-        key: 'advanced',
-        span: 'span2',
-        title: '进阶播放选项',
-        desc: '强制 H.264、SDR 色调映射，为老设备与特殊片源兜底。',
-    },
-    {
-        key: 'motion',
-        span: 'span2',
-        title: '流畅过渡动画',
-        desc: '动画链路重构精简，页面切换与播放交互更顺滑。',
-    },
+// `key`/`span`/`visual` are structural; title/desc come from the catalog by
+// position (the arrays are 1:1 and never reordered at runtime).
+const layout = [
+    { key: 'folder', span: 'span3', visual: 'tree' },
+    { key: 'livetv', span: 'span3 dark', visual: 'live' },
+    { key: 'pan', span: 'span2' },
+    { key: 'mediainfo', span: 'span2', visual: 'spec' },
+    { key: 'strm', span: 'span2' },
+    { key: 'detail', span: 'span2' },
+    { key: 'advanced', span: 'span2' },
+    { key: 'motion', span: 'span2' },
 ]
 
+const items = computed(() =>
+    t.value.more.items.map((it, i) => ({ ...layout[i], ...it })),
+)
+
+// Decorative mock data inside aria-hidden visuals — real-world titles,
+// filenames and media specs, deliberately not localized.
 const tree = [
     { name: '电影', depth: 0, dir: true },
     { name: '星际穿越.2014.4K.HDR.mkv', depth: 1, dir: false },
@@ -74,9 +44,9 @@ const specs = [
     <section id="more" class="more">
         <div class="shell">
             <div class="section-head more__head">
-                <p v-reveal class="eyebrow">更多能力</p>
+                <p v-reveal class="eyebrow">{{ t.more.eyebrow }}</p>
                 <h2 v-reveal="80" class="h2">
-                    细节之处，<br />处处都是为观影设计的
+                    {{ t.more.h2Line1 }}<br />{{ t.more.h2Line2 }}
                 </h2>
             </div>
 
@@ -103,7 +73,7 @@ const specs = [
                     <div v-else-if="it.visual === 'live'" class="bento__visual bento__visual--live" aria-hidden="true">
                         <span class="live__dot"></span>
                         <span class="live__label">LIVE</span>
-                        <span class="live__channel">CCTV-8 电视剧 · 1080i</span>
+                        <span class="live__channel">{{ t.more.liveChannel }}</span>
                         <span class="live__bars">
                             <i v-for="n in 5" :key="n" :style="{ '--i': n }"></i>
                         </span>

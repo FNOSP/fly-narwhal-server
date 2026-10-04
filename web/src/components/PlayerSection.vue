@@ -1,6 +1,9 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useScrollProgress } from '../composables/useParallax'
+import { useI18n } from '../composables/useI18n'
+
+const { t } = useI18n()
 
 const root = ref(null)
 // 0 while the section is below the fold, 1 once it has scrolled fully past.
@@ -15,32 +18,9 @@ const stageScale = computed(() => 0.93 + glow.value * 0.07)
 const stageY = computed(() => `${(1 - progress.value) * 36}px`)
 const glowOpacity = computed(() => 0.25 + glow.value * 0.75)
 
-const chips = [
-    'GPU 硬解',
-    'HDR',
-    'HLG',
-    'Dolby Vision',
-    'PGS / SUP 字幕',
-    '8K 高码率',
-    '直链播放',
-    'HLS 回退',
-    '音轨切换',
-]
-
-const compare = [
-    {
-        gen: '1.x',
-        title: 'RGBA 回读渲染',
-        desc: '受限于 Compose Desktop 渲染机制，硬解画面需回读 CPU 再渲染。CPU 占用高，HDR 片源被迫由服务端转成 SDR。',
-        bad: true,
-    },
-    {
-        gen: '2.0',
-        title: 'GPU 硬解直出',
-        desc: 'libmpv 硬解输出直达屏幕，CPU 占用显著降低，原片动态范围原样保留，HDR 不再失真。',
-        bad: false,
-    },
-]
+// Version badges are language-neutral; titles/descs come from the catalog.
+const compareGens = ['1.x', '2.0']
+const compareBad = [true, false]
 </script>
 
 <template>
@@ -49,14 +29,13 @@ const compare = [
 
         <div class="shell">
             <div class="player__head">
-                <p v-reveal class="eyebrow player__eyebrow">播放内核</p>
+                <p v-reveal class="eyebrow player__eyebrow">{{ t.player.eyebrow }}</p>
                 <h2 v-reveal:mask class="h2 player__title">
-                    <span class="line-mask"><span style="--line-delay: 0ms">影院级播放内核，</span></span>
-                    <span class="line-mask"><span style="--line-delay: 110ms">装进你的桌面。</span></span>
+                    <span class="line-mask"><span style="--line-delay: 0ms">{{ t.player.titleLine1 }}</span></span>
+                    <span class="line-mask"><span style="--line-delay: 110ms">{{ t.player.titleLine2 }}</span></span>
                 </h2>
                 <p v-reveal="160" class="lede player__lede">
-                    基于 mpv 同款播放内核，8K、HDR 等大片直接在你的电脑上流畅播放，
-                    不占服务器计算资源，不卡顿。
+                    {{ t.player.lede }}
                 </p>
             </div>
 
@@ -69,7 +48,7 @@ const compare = [
                         <span class="player__dot"></span>
                         <span class="player__dot"></span>
                         <span class="player__dot"></span>
-                        <span class="player__tag">8K · 60fps · HDR · 硬解直出</span>
+                        <span class="player__tag">{{ t.player.tag }}</span>
                     </div>
                     <video
                         class="player__video"
@@ -79,28 +58,28 @@ const compare = [
                         muted
                         playsinline
                         preload="metadata"
-                        aria-label="飞鲸影视播放 8K 60fps HDR 高码率片源"
+                        :aria-label="t.player.videoAria"
                     ></video>
                     <div class="player__scanline" aria-hidden="true"></div>
                 </div>
                 <p v-reveal="200" class="player__note">
-                    硬解播放 8K HDR 视频的能力将在未来版本推出，敬请期待
+                    {{ t.player.note }}
                 </p>
             </div>
 
-            <ul class="player__chips" aria-label="播放能力">
-                <li v-for="(c, i) in chips" :key="c" v-reveal="i * 60" class="chip">{{ c }}</li>
+            <ul class="player__chips" :aria-label="t.player.chipsAria">
+                <li v-for="(c, i) in t.player.chips" :key="c" v-reveal="i * 60" class="chip">{{ c }}</li>
             </ul>
 
             <div class="player__compare">
                 <article
-                    v-for="(c, i) in compare"
-                    :key="c.gen"
+                    v-for="(c, i) in t.player.compare"
+                    :key="compareGens[i]"
                     v-reveal="i * 120"
                     class="gen"
-                    :class="{ 'gen--good': !c.bad }"
+                    :class="{ 'gen--good': !compareBad[i] }"
                 >
-                    <span class="gen__badge">{{ c.gen }}</span>
+                    <span class="gen__badge">{{ compareGens[i] }}</span>
                     <h3 class="gen__title">{{ c.title }}</h3>
                     <p class="gen__desc">{{ c.desc }}</p>
                 </article>

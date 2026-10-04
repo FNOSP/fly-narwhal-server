@@ -1,24 +1,40 @@
 <script setup>
+import { computed } from 'vue'
 import { PLATFORM_LOGOS } from '../assets/platforms'
+import { useI18n } from '../composables/useI18n'
 
-const platforms = [
-    { os: 'windows', name: 'Windows', arch: ['x64', 'ARM64'], note: '两种版本均支持应用内更新，便携版解压即用' },
-    { os: 'macos', name: 'macOS', arch: ['Intel x64', 'Apple Silicon'], note: '通用 .dmg，覆盖两代芯片' },
-    { os: 'linux', name: 'Linux', arch: ['x64', 'arm64'], note: 'deb / rpm / Arch / AppImage 全覆盖' },
+const { t } = useI18n()
+
+// Platform names and architecture labels are language-neutral tokens; only the
+// note under each card is copy.
+const platformDefs = [
+    { os: 'windows', name: 'Windows', arch: ['x64', 'ARM64'] },
+    { os: 'macos', name: 'macOS', arch: ['Intel x64', 'Apple Silicon'] },
+    { os: 'linux', name: 'Linux', arch: ['x64', 'arm64'] },
 ]
 
+const platforms = computed(() =>
+    platformDefs.map((p) => ({ ...p, note: t.value.platforms.notes[p.os] })),
+)
+
 // The marquee track is rendered twice; the animation shifts it exactly one
-// copy's width so the loop is seamless.
-const formats = ['.exe', '.dmg', '.deb', '.rpm', '.pkg.tar.zst', '.AppImage', 'SHA256SUMS', '镜像加速', '自动更新', '便携版']
+// copy's width so the loop is seamless. Extensions stay literal; the three
+// badge words follow the UI language.
+const formats = computed(() => [
+    '.exe', '.dmg', '.deb', '.rpm', '.pkg.tar.zst', '.AppImage', 'SHA256SUMS',
+    t.value.platforms.badges.mirror,
+    t.value.platforms.badges.autoUpdate,
+    t.value.platforms.badges.portable,
+])
 </script>
 
 <template>
     <section id="platforms" class="plats">
         <div class="shell">
             <div class="plats__head">
-                <h2 v-reveal class="plats__title">三端 · 双架构 · 七格式</h2>
+                <h2 v-reveal class="plats__title">{{ t.platforms.title }}</h2>
                 <p v-reveal="100" class="plats__lede">
-                    无论你的桌面是什么组合，都有一个开箱即用的安装包在等着。
+                    {{ t.platforms.lede }}
                 </p>
             </div>
 

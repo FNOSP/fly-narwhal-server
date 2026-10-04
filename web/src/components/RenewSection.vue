@@ -1,6 +1,9 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useScrollProgress } from '../composables/useParallax'
+import { useI18n } from '../composables/useI18n'
+
+const { t } = useI18n()
 
 const root = ref(null)
 const { progress } = useScrollProgress(root, { start: 1, end: -1 })
@@ -9,28 +12,8 @@ const { progress } = useScrollProgress(root, { start: 1, end: -1 })
 const watermarkY = computed(() => `${(progress.value - 0.5) * -90}px`)
 const watermarkOpacity = computed(() => 0.05 + Math.sin(Math.min(1, Math.max(0, progress.value)) * Math.PI) * 0.06)
 
-const pillars = [
-    {
-        no: '01',
-        title: 'Flutter 原生重写',
-        desc: '告别 JVM 运行时，渲染与窗口调度更贴近系统原生，安装包更轻、运行更高效。',
-    },
-    {
-        no: '02',
-        title: 'mpv 播放内核',
-        desc: 'GPU 硬解直出屏幕，HDR 动态范围原样保留，CPU 占用大幅下降。',
-    },
-    {
-        no: '03',
-        title: 'Liquid Glass 视觉',
-        desc: '全新设计语言，Acrylic 毛玻璃质感配合现代布局，整体更通透。',
-    },
-    {
-        no: '04',
-        title: '全平台覆盖',
-        desc: '新增 Linux 支持，三端七格式，开箱即用。',
-    },
-]
+// Numbers are positional and language-neutral; only the text comes from `t`.
+const pillarNos = ['01', '02', '03', '04']
 </script>
 
 <template>
@@ -44,20 +27,20 @@ const pillars = [
         </div>
 
         <div class="shell renew__inner">
-            <p v-reveal class="eyebrow renew__eyebrow">2.0 · 焕新出发</p>
+            <p v-reveal class="eyebrow renew__eyebrow">{{ t.renew.eyebrow }}</p>
 
             <h2 v-reveal:mask class="renew__title">
-                <span class="line-mask"><span style="--line-delay: 0ms">不是小修小补，</span></span>
-                <span class="line-mask"><span style="--line-delay: 120ms">是一次彻底的重做。</span></span>
+                <span class="line-mask"><span style="--line-delay: 0ms">{{ t.renew.titleLine1 }}</span></span>
+                <span class="line-mask"><span style="--line-delay: 120ms">{{ t.renew.titleLine2 }}</span></span>
             </h2>
 
             <p v-reveal="220" class="renew__lede">
-                从播放内核到视觉语言，飞鲸影视 2.0 把桌面观影体验从头再做了一遍。
+                {{ t.renew.lede }}
             </p>
 
             <div class="renew__pillars">
-                <article v-for="(p, i) in pillars" :key="p.no" v-reveal="i * 110" class="pillar">
-                    <span class="pillar__no">{{ p.no }}</span>
+                <article v-for="(p, i) in t.renew.pillars" :key="pillarNos[i]" v-reveal="i * 110" class="pillar">
+                    <span class="pillar__no">{{ pillarNos[i] }}</span>
                     <h3 class="pillar__title">{{ p.title }}</h3>
                     <p class="pillar__desc">{{ p.desc }}</p>
                 </article>

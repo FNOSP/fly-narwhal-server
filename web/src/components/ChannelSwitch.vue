@@ -1,6 +1,9 @@
 <script setup>
+import { computed } from 'vue'
+import { useI18n } from '../composables/useI18n'
+
 /**
- * Segmented 客户端 / 服务端 switch used by both the landing-page changelog
+ * Segmented client / server switch used by both the landing-page changelog
  * section and the timeline page. The parent owns the value (it comes from
  * useChangelog's shared, persisted channel state).
  */
@@ -9,14 +12,16 @@ defineProps({
 })
 const emit = defineEmits(['update:modelValue'])
 
-const OPTIONS = [
-    { value: 'client', label: '客户端' },
-    { value: 'server', label: '服务端' },
-]
+const { t } = useI18n()
+
+const OPTIONS = computed(() => [
+    { value: 'client', label: t.value.changelog.channels.client },
+    { value: 'server', label: t.value.changelog.channels.server },
+])
 </script>
 
 <template>
-    <div class="chsw" role="tablist" aria-label="更新日志来源">
+    <div class="chsw" role="tablist" :aria-label="t.changelog.sourceAria">
         <span
             class="chsw__thumb"
             :class="{ 'chsw__thumb--right': modelValue === 'server' }"

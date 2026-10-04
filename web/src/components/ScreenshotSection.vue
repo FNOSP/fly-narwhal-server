@@ -1,35 +1,21 @@
 <script setup>
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useScrollProgress } from '../composables/useParallax'
+import { useI18n } from '../composables/useI18n'
+
+const { t } = useI18n()
 
 // Sourced from the client repo's README on master (img/*.png), resized to 1800px
 // wide and re-encoded as JPEG — the originals are 3600×2250 and ~7MB each.
-const shots = [
-    {
-        src: '/img/screenshot-login.jpg',
-        alt: '飞鲸影视登录页，Liquid Glass 毛玻璃质感',
-        title: '登录',
-        desc: '支持飞牛 ID 与 NAS 登录，连接地址、端口与 HTTPS 安全访问都可直接配置。',
-    },
-    {
-        src: '/img/screenshot-home.jpg',
-        alt: '飞鲸影视媒体库首页',
-        title: '媒体库',
-        desc: '首页聚合继续观看与媒体库分类，电影、剧集、动漫按分类与标签浏览。',
-    },
-    {
-        src: '/img/screenshot-player.jpg',
-        alt: '飞鲸影视播放器，含中英双语字幕与播放控制条',
-        title: '播放器',
-        desc: '内置 mpv 播放内核，支持 GPU 硬解、PGS/SUP 字幕与 HDR 动态范围。',
-    },
-    {
-        src: '/img/screenshot-player-8k.jpg',
-        alt: '飞鲸影视播放 8K 高码率片源',
-        title: '8K 与高码率',
-        desc: '原生解码高码率片源，配合显卡硬解在桌面端直接播放，无需服务端转码。',
-    },
+// Paths are fixed; alt/title/desc come from the catalog by position.
+const shotSrcs = [
+    '/img/screenshot-login.jpg',
+    '/img/screenshot-home.jpg',
+    '/img/screenshot-player.jpg',
+    '/img/screenshot-player-8k.jpg',
 ]
+
+const shots = computed(() => t.value.screenshots.shots.map((s, i) => ({ ...s, src: shotSrcs[i] })))
 
 const stage = ref(null)
 const { progress } = useScrollProgress(stage, { start: 1, end: 0 })
@@ -53,8 +39,9 @@ function onScroll() {
         const vh = window.innerHeight || 1
         const fromCenter = Math.abs(center - vh / 2)
         // Pick the shot whose center is nearest the viewport center.
-        const step = rect.height / shots.length
-        const idx = Math.min(shots.length - 1, Math.max(0, Math.floor((vh / 2 - rect.top) / step)))
+        const count = shots.value.length
+        const step = rect.height / count
+        const idx = Math.min(count - 1, Math.max(0, Math.floor((vh / 2 - rect.top) / step)))
         active.value = fromCenter < rect.height ? idx : active.value
     })
 }
@@ -75,10 +62,10 @@ onBeforeUnmount(() => {
         <div class="shots__aurora" :style="{ opacity: backdrop }"></div>
 
         <div class="shell shots__head">
-            <p v-reveal class="eyebrow">界面预览</p>
-            <h2 v-reveal="80" class="h2">看起来，就是原生应用</h2>
+            <p v-reveal class="eyebrow">{{ t.screenshots.eyebrow }}</p>
+            <h2 v-reveal="80" class="h2">{{ t.screenshots.h2 }}</h2>
             <p v-reveal="160" class="lede">
-                2.0 焕新出发：用 Flutter 重新构建桌面端，不再依赖 JVM 运行时，窗口交互与渲染都更贴近系统本身。
+                {{ t.screenshots.lede }}
             </p>
         </div>
 
@@ -107,7 +94,7 @@ onBeforeUnmount(() => {
                     <p class="shots__caption-desc">{{ shots[active].desc }}</p>
                 </div>
 
-                <div class="shots__dots" role="tablist" aria-label="预览图切换">
+                <div class="shots__dots" role="tablist" :aria-label="t.screenshots.switchAria">
                     <button
                         v-for="(shot, i) in shots"
                         :key="shot.title"

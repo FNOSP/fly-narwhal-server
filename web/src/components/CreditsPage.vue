@@ -1,8 +1,14 @@
 <script setup>
+import { computed } from 'vue'
 import ThemeToggle from './ThemeToggle.vue'
+import LocaleToggle from './LocaleToggle.vue'
 import { creditGroups, creditCount } from '../assets/credits'
+import { useI18n, format } from '../composables/useI18n'
 
-const year = new Date().getFullYear()
+const { t } = useI18n()
+
+const lede = computed(() => format(t.value.credits.lede, { count: creditCount }))
+const noteOf = (key) => t.value.credits.notes[key]
 </script>
 
 <template>
@@ -12,33 +18,33 @@ const year = new Date().getFullYear()
                 <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M19 12H5M11 18l-6-6 6-6" />
                 </svg>
-                返回首页
+                {{ t.credits.backHome }}
             </a>
             <div class="crpage__actions">
-                <span class="crpage__crumb">飞鲸影视 · 开源致谢</span>
+                <span class="crpage__crumb">{{ t.credits.crumb }}</span>
+                <LocaleToggle />
                 <ThemeToggle />
             </div>
         </header>
 
         <main class="shell crpage__main">
             <div class="crpage__head">
-                <p class="eyebrow">开源致谢</p>
-                <h1 class="crpage__title">站在开源的肩膀上。</h1>
+                <p class="eyebrow">{{ t.credits.eyebrow }}</p>
+                <h1 class="crpage__title">{{ t.credits.title }}</h1>
                 <p class="crpage__lede">
-                    飞鲸影视由 {{ creditCount }} 个开源项目托举而成——从解码内核到窗口透明效果。
-                    这份名单记录每一个被参考或使用的库，以及它在产品中承担的角色。
+                    {{ lede }}
                 </p>
             </div>
 
             <div class="crpage__groups">
                 <section
                     v-for="(g, i) in creditGroups"
-                    :key="g.group"
+                    :key="g.groupKey"
                     v-reveal="i * 80"
                     class="crpage__group"
                 >
                     <h2 class="crpage__group-title">
-                        {{ g.group }}
+                        {{ t.credits.groups[g.groupKey] }}
                         <span class="crpage__group-count">{{ g.items.length }}</span>
                     </h2>
                     <ul class="crpage__list">
@@ -49,7 +55,7 @@ const year = new Date().getFullYear()
                                     <path d="M7 17L17 7M9 7h8v8" />
                                 </svg>
                             </a>
-                            <span class="crpage__note">{{ c.note }}</span>
+                            <span class="crpage__note">{{ noteOf(c.noteKey) }}</span>
                         </li>
                     </ul>
                 </section>
@@ -57,10 +63,10 @@ const year = new Date().getFullYear()
 
             <aside class="crpage__license">
                 <p>
-                    飞鲸影视自身基于
-                    <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer">AGPL-3.0</a>
-                    协议开源。上述项目各自遵循其原始许可证；如有遗漏或错误，欢迎在
-                    <a href="https://github.com/FNOSP/fly-narwhal-server/issues" target="_blank" rel="noopener noreferrer">GitHub 提交指正</a>。
+                    {{ t.credits.licenseBefore }}
+                    <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer">{{ t.credits.licenseLink }}</a>
+                    {{ t.credits.licenseMiddle }}
+                    <a href="https://github.com/FNOSP/fly-narwhal-server/issues" target="_blank" rel="noopener noreferrer">{{ t.credits.licenseLinkTail }}</a>{{ t.credits.licenseAfter }}
                 </p>
             </aside>
 
@@ -69,7 +75,7 @@ const year = new Date().getFullYear()
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M19 12H5M11 18l-6-6 6-6" />
                     </svg>
-                    返回飞鲸影视首页
+                    {{ t.credits.backToHome }}
                 </a>
             </footer>
         </main>

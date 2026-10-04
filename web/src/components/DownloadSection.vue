@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { PLATFORM_LOGOS as LOGOS } from '../assets/platforms'
+import { useI18n, format } from '../composables/useI18n'
 
 const props = defineProps({
     platformGroups: { type: Object, default: () => ({}) },
@@ -11,11 +12,13 @@ const props = defineProps({
     osRules: { type: Array, required: true },
 })
 
-const OS_NOTE = {
-    windows: '安装包与便携版均支持应用内自动更新；便携版解压即用，无需安装。',
-    macos: '发布版为临时签名，首次打开若提示无法验证开发者，可移除隔离标记后启动。',
-    linux: '按发行版选择 deb / rpm / pkg.tar.zst，或使用通用的 AppImage。',
-}
+const { t } = useI18n()
+
+// Per-OS note shown under the console; resolved from the catalog live.
+const osNote = computed(() => t.value.download.notes[displayOs.value])
+const headTitle = computed(() =>
+    props.tag ? format(t.value.download.h2WithTag, { tag: props.tag }) : t.value.download.h2,
+)
 
 // Best-effort guess of the visitor's platform + architecture so the console
 // opens on their own download. Detection is only a default — the tabs and
@@ -112,19 +115,19 @@ function toggleNote() {
     <section id="download" class="dl">
         <div class="shell">
             <div class="section-head dl__head">
-                <p v-reveal class="eyebrow">下载</p>
+                <p v-reveal class="eyebrow">{{ t.download.eyebrow }}</p>
                 <h2 v-reveal="80" class="h2">
-                    {{ tag ? `下载客户端 ${tag}` : '下载客户端' }}
+                    {{ headTitle }}
                 </h2>
                 <p v-reveal="160" class="lede">
-                    选择与你系统匹配的安装包。下载经由镜像加速，页面上的链接始终指向最新稳定版。
+                    {{ t.download.lede }}
                 </p>
             </div>
 
             <div v-reveal="120" class="console">
                 <!-- platform tabs -->
                 <div class="console__tabs">
-                    <div class="seg seg--platform" role="tablist" aria-label="选择平台">
+                    <div class="seg seg--platform" role="tablist" :aria-label="t.download.tabsAria">
                         <button
                             v-for="rule in osRules"
                             :key="rule.os"
@@ -155,8 +158,8 @@ function toggleNote() {
                 <div class="console__body">
                     <!-- architecture toggle -->
                     <div v-if="!loading && archList.length > 1" class="arch">
-                        <span class="arch__label">架构</span>
-                        <div class="seg seg--arch" role="tablist" aria-label="选择架构">
+                        <span class="arch__label">{{ t.download.archLabel }}</span>
+                        <div class="seg seg--arch" role="tablist" :aria-label="t.download.archAria">
                             <button
                                 v-for="arch in archList"
                                 :key="arch.key"
@@ -200,7 +203,7 @@ function toggleNote() {
                             <span class="row__meta">
                                 <span class="row__name">
                                     {{ row.name }}
-                                    <em v-if="row.primary && isOwnPlatform" class="row__tag">推荐</em>
+                                    <em v-if="row.primary && isOwnPlatform" class="row__tag">{{ t.download.recommended }}</em>
                                 </span>
                                 <span class="row__desc">{{ row.desc }}</span>
                             </span>
@@ -209,15 +212,15 @@ function toggleNote() {
                                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                     <path d="M12 3v12" /><path d="M8 11l4 4 4-4" /><path d="M5 21h14" />
                                 </svg>
-                                下载
+                                {{ t.download.download }}
                             </span>
                         </a>
                     </div>
 
                     <div v-else class="rows-empty">
-                        该组合暂无可用安装包，可前往
+                        {{ t.download.empty }}
                         <a :href="releaseUrl" target="_blank" rel="noopener noreferrer">GitHub Releases</a>
-                        查看。
+                        {{ t.download.emptyTail }}
                     </div>
                 </div>
 
@@ -229,24 +232,24 @@ function toggleNote() {
                         :aria-expanded="noteOpen"
                         @click="toggleNote"
                     >
-                        首次打开被系统阻止？
+                        {{ t.download.macNoteToggle }}
                         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
                         </svg>
                     </button>
                     <div v-if="displayOs === 'macos' && noteOpen" class="console__note">
-                        发布版本会对应用做临时签名，多数情况下只会提示“无法验证开发者”。若提示“已损坏”，把应用放入
-                        <code>/Applications</code> 后在终端执行：
+                        {{ t.download.macNoteBody1 }}
+                        <code>/Applications</code> {{ t.download.macNoteBody2 }}
                         <code class="console__cmd">xattr -dr com.apple.quarantine /Applications/FlyNarwhal.app</code>
-                        通过应用内自动更新安装的版本不带隔离标记，通常无需执行。
+                        {{ t.download.macNoteTail }}
                     </div>
-                    <p v-else class="console__tip">{{ OS_NOTE[displayOs] }}</p>
+                    <p v-else class="console__tip">{{ osNote }}</p>
                 </footer>
             </div>
 
             <p v-if="publishedLabel" class="dl__note">
-                {{ publishedLabel }}全部安装包及 SHA256SUMS 校验文件见
-                <a :href="releaseUrl" target="_blank" rel="noopener noreferrer">GitHub Releases 页面</a>。
+                {{ format(t.download.publishedNote, { published: publishedLabel }) }}
+                <a :href="releaseUrl" target="_blank" rel="noopener noreferrer">{{ t.download.releasesPage }}</a>{{ t.download.publishedNoteTail }}
             </p>
         </div>
     </section>

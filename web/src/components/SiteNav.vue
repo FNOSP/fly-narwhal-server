@@ -1,6 +1,8 @@
 <script setup>
 import ThemeToggle from './ThemeToggle.vue'
+import LocaleToggle from './LocaleToggle.vue'
 import logoSvg from '../assets/FNarwhal_login.svg?raw'
+import { useI18n } from '../composables/useI18n'
 
 defineProps({
     solid: { type: Boolean, default: false },
@@ -10,36 +12,40 @@ defineProps({
 
 const emit = defineEmits(['download', 'auth'])
 
+const { t } = useI18n()
+
+// hrefs stay literal; labels come from the catalog.
 const links = [
-    { href: '#renew', label: '2.0 焕新' },
-    { href: '#screenshots', label: '界面预览' },
-    { href: '#features', label: '核心特性' },
-    { href: '#player', label: '播放内核' },
-    { href: '#server', label: '服务端' },
-    { href: '#changelog', label: '更新日志' },
-    { href: '#faq', label: '常见问题' },
+    { href: '#renew', key: 'renew' },
+    { href: '#screenshots', key: 'screenshots' },
+    { href: '#features', key: 'features' },
+    { href: '#player', key: 'player' },
+    { href: '#server', key: 'server' },
+    { href: '#changelog', key: 'changelog' },
+    { href: '#faq', key: 'faq' },
 ]
 </script>
 
 <template>
     <header class="nav" :class="{ 'nav--solid': solid }">
         <div class="nav__inner shell">
-            <a class="nav__brand" href="#top" aria-label="飞鲸影视首页">
+            <a class="nav__brand" href="#top" :aria-label="t.nav.homeAria">
                 <!-- Inlined so the wordmark paths can follow --logo-ink while
                      the whale icon keeps its original colors in both themes. -->
-                <div class="nav__logo" role="img" aria-label="飞鲸影视" v-html="logoSvg"></div>
+                <div class="nav__logo" role="img" :aria-label="t.nav.logoAria" v-html="logoSvg"></div>
             </a>
 
-            <nav class="nav__links" aria-label="页面导航">
+            <nav class="nav__links" :aria-label="t.nav.linksAria">
                 <a v-for="link in links" :key="link.href" :href="link.href" class="nav__link">
-                    {{ link.label }}
+                    {{ t.nav.links[link.key] }}
                 </a>
             </nav>
 
             <div class="nav__actions">
+                <LocaleToggle />
                 <ThemeToggle />
-                <button class="btn btn-ghost nav__auth" type="button" @click="emit('auth')">获取授权码</button>
-                <button class="btn btn-primary" type="button" @click="emit('download')">下载客户端</button>
+                <button class="btn btn-ghost nav__auth" type="button" @click="emit('auth')">{{ t.nav.getAuthCode }}</button>
+                <button class="btn btn-primary" type="button" @click="emit('download')">{{ t.nav.download }}</button>
             </div>
         </div>
 

@@ -1,26 +1,30 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useTheme } from '../composables/useTheme'
+import { useI18n, format } from '../composables/useI18n'
 
 const { preference, isDark, setThemeMode } = useTheme()
+const { t } = useI18n()
 
 const open = ref(false)
 const root = ref(null)
 
 // 'system' shows its resolved theme in the trigger icon; the menu still marks
 // the actual preference so the visitor can see they're on "follow system".
-const options = [
-    { mode: 'system', label: '跟随系统' },
-    { mode: 'light', label: '浅色' },
-    { mode: 'dark', label: '深色' },
-]
+const options = computed(() => [
+    { mode: 'system', label: t.value.theme.system },
+    { mode: 'light', label: t.value.theme.light },
+    { mode: 'dark', label: t.value.theme.dark },
+])
 
 // The trigger is a status indicator, not a one-click flip: the icon names the
 // theme currently painted, and the menu below is where a choice gets made. So
 // the moon means "you are in dark mode", not "click for dark".
-const currentLabel = computed(() => (isDark.value ? '深色' : '浅色'))
+const currentLabel = computed(() => (isDark.value ? t.value.theme.dark : t.value.theme.light))
 const label = computed(() =>
-    preference.value === 'system' ? `主题：跟随系统（当前${currentLabel.value}）` : `主题：${currentLabel.value}`
+    preference.value === 'system'
+        ? format(t.value.theme.labelSystem, { current: currentLabel.value })
+        : format(t.value.theme.label, { current: currentLabel.value }),
 )
 
 function pick(mode) {
@@ -74,7 +78,7 @@ onBeforeUnmount(() => {
             </svg>
         </button>
 
-        <div v-if="open" class="theme-menu" role="menu" aria-label="主题">
+        <div v-if="open" class="theme-menu" role="menu" :aria-label="t.theme.aria">
             <button
                 v-for="option in options"
                 :key="option.mode"
