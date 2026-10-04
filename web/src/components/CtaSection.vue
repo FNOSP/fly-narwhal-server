@@ -1,8 +1,11 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useScrollProgress } from '../composables/useParallax'
+import { useI18n } from '../composables/useI18n'
 
 const emit = defineEmits(['download', 'auth'])
+
+const { t } = useI18n()
 
 const root = ref(null)
 const { progress } = useScrollProgress(root, { start: 1, end: -0.4 })
@@ -19,30 +22,30 @@ const orbBY = computed(() => `${(1 - progress.value) * 70}px`)
         <div class="cta__orb cta__orb--b" :style="{ transform: `translate3d(0, ${orbBY}, 0)` }" aria-hidden="true"></div>
 
         <div class="shell cta__inner">
-            <p v-reveal class="cta__kicker">飞鲸影视 2.0 · 焕新出发</p>
+            <p v-reveal class="cta__kicker">{{ t.cta.kicker }}</p>
 
             <h2 v-reveal:mask class="cta__title">
-                <span class="line-mask"><span style="--line-delay: 0ms">把飞牛影视，</span></span>
-                <span class="line-mask"><span style="--line-delay: 110ms">装进你的每一块屏幕。</span></span>
+                <span class="line-mask"><span style="--line-delay: 0ms">{{ t.cta.titleLine1 }}</span></span>
+                <span class="line-mask"><span style="--line-delay: 110ms">{{ t.cta.titleLine2 }}</span></span>
             </h2>
 
             <p v-reveal="200" class="cta__lede">
-                开源、免费、持续进化。现在下载，今晚的剧就用它看。
+                {{ t.cta.lede }}
             </p>
 
             <div v-reveal="280" class="cta__actions">
                 <button class="btn btn-primary btn-lg" type="button" @click="emit('download')">
-                    下载客户端
+                    {{ t.cta.download }}
                 </button>
-                <button class="btn btn-lg cta__ghost" type="button" @click="emit('auth')">获取授权码</button>
+                <button class="btn btn-lg cta__ghost" type="button" @click="emit('auth')">{{ t.cta.getAuthCode }}</button>
             </div>
 
-            <nav v-reveal="360" class="cta__links" aria-label="项目链接">
-                <a href="https://github.com/FNOSP/FlyNarwhal" target="_blank" rel="noopener noreferrer">客户端仓库</a>
+            <nav v-reveal="360" class="cta__links" :aria-label="t.cta.linksAria">
+                <a href="https://github.com/FNOSP/FlyNarwhal" target="_blank" rel="noopener noreferrer">{{ t.cta.repoClient }}</a>
                 <span class="cta__sep" aria-hidden="true">·</span>
-                <a href="https://github.com/FNOSP/fly-narwhal-server" target="_blank" rel="noopener noreferrer">服务端仓库</a>
+                <a href="https://github.com/FNOSP/fly-narwhal-server" target="_blank" rel="noopener noreferrer">{{ t.cta.repoServer }}</a>
                 <span class="cta__sep" aria-hidden="true">·</span>
-                <a href="https://github.com/FNOSP/FlyNarwhal/releases" target="_blank" rel="noopener noreferrer">全部版本</a>
+                <a href="https://github.com/FNOSP/FlyNarwhal/releases" target="_blank" rel="noopener noreferrer">{{ t.cta.allReleases }}</a>
             </nav>
         </div>
     </section>

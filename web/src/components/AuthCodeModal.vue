@@ -1,15 +1,21 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useI18n } from '../composables/useI18n'
 
 const props = defineProps({
     open: { type: Boolean, default: false },
-    title: { type: String, default: '授权码' },
+    title: { type: String, default: '' },
     desc: { type: String, default: '' },
     code: { type: String, default: '' },
     copied: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close', 'copy'])
+
+const { t } = useI18n()
+
+// Fall back to the catalog title when the parent supplies none.
+const shownTitle = computed(() => props.title || t.value.authCode.title)
 
 const input = ref(null)
 
@@ -38,8 +44,8 @@ watch(
             <div v-if="open" class="overlay" @click.self="emit('close')">
                 <div class="modal" role="dialog" aria-modal="true" aria-labelledby="auth-title">
                     <header class="modal__head">
-                        <h2 id="auth-title" class="modal__title">{{ title }}</h2>
-                        <button class="modal__close" type="button" aria-label="关闭" @click="emit('close')">
+                        <h2 id="auth-title" class="modal__title">{{ shownTitle }}</h2>
+                        <button class="modal__close" type="button" :aria-label="t.authCode.close" @click="emit('close')">
                             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
                             </svg>
@@ -52,7 +58,7 @@ watch(
                         <div v-if="code" class="code-row">
                             <input id="auth-code-input" ref="input" class="code-row__input" type="text" readonly :value="code" @focus="$event.target.select()" />
                             <button class="code-row__copy" type="button" @click="emit('copy')">
-                                {{ copied ? '已复制' : '复制' }}
+                                {{ copied ? t.authCode.copied : t.authCode.copy }}
                             </button>
                         </div>
                     </div>

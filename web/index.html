@@ -27,6 +27,35 @@
             }
         })()
     </script>
+    <!-- Applies the initial UI language before first paint, same idea as the
+         theme script above: a stored pick wins, otherwise detect from the
+         browser (zh-TW/HK/Hant → Traditional, other zh → Simplified, anything
+         else → English). Only `lang` is set here; the title and description
+         stay Simplified until useI18n.js applies them on load, since a SPA
+         paints no server-rendered copy for them to lead.
+         Mirrored by src/composables/useI18n.js (same key, same detection
+         order), which reads documentElement.lang back as its initial value. -->
+    <script>
+        (function () {
+            try {
+                var l = localStorage.getItem('fwn:ui:locale')
+                if (l !== 'zh-CN' && l !== 'zh-TW' && l !== 'en') {
+                    l = 'en'
+                    var tags = navigator.languages || [navigator.language || '']
+                    for (var i = 0; i < tags.length; i++) {
+                        var s = String(tags[i]).toLowerCase()
+                        if (/^zh-(tw|hk|mo|hant)/.test(s)) { l = 'zh-TW'; break }
+                        if (s.indexOf('zh') === 0) { l = 'zh-CN'; break }
+                        if (s.indexOf('en') === 0) { l = 'en'; break }
+                    }
+                }
+                document.documentElement.setAttribute('lang', l)
+            } catch (e) {
+                // localStorage blocked (private mode etc.) — stay on the
+                // static <html lang> default.
+            }
+        })()
+    </script>
 </head>
 <body>
     <div id="app"></div>

@@ -1,47 +1,57 @@
 <script setup>
+import { computed } from 'vue'
 import bannerSvg from '../assets/co-brand-banner.svg?raw'
 import { useContributors } from '../composables/useContributors'
+import { useI18n, format } from '../composables/useI18n'
+
+const { t } = useI18n()
 
 const year = new Date().getFullYear()
 
 // Avatars beyond this cap collapse into a "+N" chip linking to the full graph.
 const AVATAR_CAP = 14
 
-const { groups } = useContributors()
+const { groups, labels } = useContributors()
 
 // GitHub 头像 API 支持 s= 参数取指定尺寸；列表接口返回的 URL 已带 ?v=4，
 // 这里追加尺寸参数拿到 2x 图，避免在高分屏上发糊。
 const avatarSrc = (c) => c.avatar + '&s=80'
 
 // External repo links and the two internal hash-route pages, kept in one list
-// so the nav grid renders in a stable order.
+// so the nav grid renders in a stable order. hrefs stay literal; labels come
+// from the catalog.
 const links = [
-    { label: '客户端仓库', href: 'https://github.com/FNOSP/FlyNarwhal', external: true },
-    { label: '服务端仓库', href: 'https://github.com/FNOSP/fly-narwhal-server', external: true },
-    { label: '全部版本', href: 'https://github.com/FNOSP/FlyNarwhal/releases', external: true },
-    { label: '更新日志', href: '#/timeline' },
-    { label: '问题反馈', href: 'https://github.com/FNOSP/FlyNarwhal/issues', external: true },
-    { label: '开源致谢', href: '#/credits' },
+    { key: 'clientRepo', href: 'https://github.com/FNOSP/FlyNarwhal', external: true },
+    { key: 'serverRepo', href: 'https://github.com/FNOSP/fly-narwhal-server', external: true },
+    { key: 'allReleases', href: 'https://github.com/FNOSP/FlyNarwhal/releases', external: true },
+    { key: 'changelog', href: '#/timeline' },
+    { key: 'issues', href: 'https://github.com/FNOSP/FlyNarwhal/issues', external: true },
+    { key: 'credits', href: '#/credits' },
 ]
+
+const commitsTip = (c) => format(t.value.footer.commitsTip, { login: c.login, commits: c.commits })
+const moreTip = (n) => format(t.value.footer.moreContributors, { count: n })
+const countLabel = (n) => format(t.value.footer.contributorsCount, { count: n })
+const copyright = computed(() => format(t.value.footer.copyright, { year }))
 </script>
 
 <template>
     <footer class="footer">
         <div class="shell footer__inner">
-            <section class="footer__contributors" aria-label="贡献者">
-                <h2 class="footer__contributors-title">贡献者</h2>
+            <section class="footer__contributors" :aria-label="t.footer.contributorsAria">
+                <h2 class="footer__contributors-title">{{ t.footer.contributors }}</h2>
                 <div
                     v-for="g in groups.filter((x) => x.contributors.length)"
                     :key="g.key"
                     class="footer__contrib-row"
                 >
-                    <span class="footer__contrib-label">{{ g.label }}</span>
+                    <span class="footer__contrib-label">{{ labels[g.key] }}</span>
                     <ul class="footer__avatars">
                         <li
                             v-for="c in g.contributors.slice(0, AVATAR_CAP)"
                             :key="c.login"
                             class="footer__avatar"
-                            :data-tip="`${c.login} · ${c.commits} 次提交`"
+                            :data-tip="commitsTip(c)"
                         >
                             <a :href="c.profile" target="_blank" rel="noopener noreferrer" :aria-label="c.login">
                                 <img :src="avatarSrc(c)" :alt="c.login" width="40" height="40" loading="lazy" />
@@ -50,9 +60,9 @@ const links = [
                         <li
                             v-if="g.contributors.length > AVATAR_CAP"
                             class="footer__avatar footer__avatar--more"
-                            :data-tip="`还有 ${g.contributors.length - AVATAR_CAP} 位贡献者`"
+                            :data-tip="moreTip(g.contributors.length - AVATAR_CAP)"
                         >
-                            <a :href="g.graphUrl" target="_blank" rel="noopener noreferrer" aria-label="查看全部贡献者">
+                            <a :href="g.graphUrl" target="_blank" rel="noopener noreferrer" :aria-label="t.footer.viewAllContributors">
                                 +{{ g.contributors.length - AVATAR_CAP }}
                             </a>
                         </li>
@@ -63,7 +73,7 @@ const links = [
                         target="_blank"
                         rel="noopener noreferrer"
                     >
-                        共 {{ g.contributors.length }} 位 · 贡献图谱 →
+                        {{ countLabel(g.contributors.length) }}
                     </a>
                 </div>
             </section>
@@ -76,25 +86,25 @@ const links = [
                     <div
                         class="footer__banner"
                         role="img"
-                        aria-label="飞鲸影视 × XIAOBO NETWORK × 飞牛开发者开放平台 FNOSP"
+                        :aria-label="t.footer.bannerAria"
                         v-html="bannerSvg"
                     ></div>
-                    <p class="footer__tagline">面向飞牛影视服务的第三方桌面客户端</p>
+                    <p class="footer__tagline">{{ t.footer.tagline }}</p>
                 </div>
 
-                <nav class="footer__links" aria-label="相关链接">
+                <nav class="footer__links" :aria-label="t.footer.linksAria">
                     <a
                         v-for="l in links"
-                        :key="l.label"
+                        :key="l.key"
                         :href="l.href"
                         v-bind="l.external ? { target: '_blank', rel: 'noopener noreferrer' } : {}"
-                    >{{ l.label }}</a>
+                    >{{ t.footer.links[l.key] }}</a>
                 </nav>
             </div>
 
             <div class="footer__bottom">
-                <p class="footer__disclaimer">本项目为飞牛 OS 爱好者开发的第三方影视客户端，与飞牛影视官方无关。使用前请确保遵守相关服务条款。</p>
-                <p class="footer__copy">© {{ year }} FNOSP · 基于 AGPL-3.0 开源协议发布</p>
+                <p class="footer__disclaimer">{{ t.footer.disclaimer }}</p>
+                <p class="footer__copy">{{ copyright }}</p>
             </div>
         </div>
     </footer>

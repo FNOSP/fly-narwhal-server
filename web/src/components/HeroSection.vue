@@ -1,12 +1,15 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useScrollProgress } from '../composables/useParallax'
+import { useI18n } from '../composables/useI18n'
 
 defineProps({
     versionLabel: { type: String, default: '' },
 })
 
 const emit = defineEmits(['download', 'auth'])
+
+const { t } = useI18n()
 
 const root = ref(null)
 // Progress 0 while the hero sits at the top of the page, reaching 1 as its
@@ -31,25 +34,24 @@ const glowScale = computed(() => 1 + progress.value * 0.35)
             class="hero__content shell"
             :style="{ transform: `translate3d(0, ${contentY}, 0)`, opacity: contentOpacity }"
         >
-            <img class="hero__mark" src="/img/app-icon.png" alt="飞鲸影视应用图标" width="512" height="512" />
+            <img class="hero__mark" src="/img/app-icon.png" :alt="t.hero.iconAlt" width="512" height="512" />
 
-            <p class="hero__brand">飞鲸影视 2.0 · 焕新出发</p>
+            <p class="hero__brand">{{ t.hero.brand }}</p>
 
             <h1 class="hero__title">
-                <span class="line-mask"><span style="--hero-delay: 0.12s">把飞牛影视</span></span>
-                <span class="line-mask"><span style="--hero-delay: 0.24s" class="hero__title-grad">装进你的桌面</span></span>
+                <span class="line-mask"><span style="--hero-delay: 0.12s">{{ t.hero.titleLine1 }}</span></span>
+                <span class="line-mask"><span style="--hero-delay: 0.24s" class="hero__title-grad">{{ t.hero.titleLine2 }}</span></span>
             </h1>
 
             <p class="hero__lede">
-                面向飞牛影视服务的第三方桌面客户端。2.0 焕新出发：Flutter 原生重写，
-                内置 mpv 播放内核，覆盖 Windows、macOS 与 Linux，支持智能跳过片头片尾与弹幕。
+                {{ t.hero.lede }}
             </p>
 
             <div class="hero__cta">
                 <button class="btn btn-primary btn-lg" type="button" @click="emit('download')">
-                    下载客户端
+                    {{ t.hero.download }}
                 </button>
-                <button class="btn btn-ghost btn-lg" type="button" @click="emit('auth')">获取授权码</button>
+                <button class="btn btn-ghost btn-lg" type="button" @click="emit('auth')">{{ t.hero.getAuthCode }}</button>
             </div>
 
             <a class="hero__badge" href="#changelog">
@@ -67,7 +69,7 @@ const glowScale = computed(() => 1 + progress.value * 0.35)
         </div>
 
         <div class="hero__scroll-hint" :style="{ opacity: contentOpacity }" aria-hidden="true">
-            <span>向下滚动</span>
+            <span>{{ t.hero.scrollHint }}</span>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
             </svg>

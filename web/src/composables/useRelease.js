@@ -1,5 +1,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { cachedFetch, write } from '../lib/cachedJsonStore'
+import { useI18n, format } from './useI18n'
 
 const REPO = 'FNOSP/FlyNarwhal'
 const MIRROR_PREFIX = 'https://ghfast.top/'
@@ -40,18 +41,18 @@ const OS_RULES = [
 
 const FORMAT_ORDER = { exe: 0, dmg: 1, deb: 2, rpm: 3, zst: 4, appimage: 5, zip: 9 }
 
-// Per-format presentation for the download rows. `ext` is the badge text,
-// `name`/`desc` are the human labels, `primary` marks the recommended pick for
-// its platform (exe / dmg / deb). AppImage stays untagged so Linux never shows
-// two “推荐” rows next to each other.
+// Per-format presentation for the download rows. `ext` is the badge text and
+// `primary` marks the recommended pick for its platform (exe / dmg / deb);
+// `name`/`desc` come from the catalog so the rows follow the UI language.
+// AppImage stays untagged so Linux never shows two “推荐” rows side by side.
 const FORMATS = {
-    exe: { ext: '.exe', name: 'Windows 安装包', desc: '一键安装到本机', primary: true },
-    zip: { ext: '.zip', name: '便携压缩包', desc: '解压即用，无需安装' },
-    dmg: { ext: '.dmg', name: '磁盘映像', desc: '拖入「应用程序」即可使用', primary: true },
-    deb: { ext: '.deb', name: 'Debian / Ubuntu', desc: 'apt / dpkg 安装', primary: true },
-    rpm: { ext: '.rpm', name: 'RHEL / Fedora', desc: 'dnf / yum 安装' },
-    zst: { ext: 'pkg', name: 'Arch Linux', desc: 'pacman 安装' },
-    appimage: { ext: 'AppImage', name: '通用格式', desc: '单文件，任意发行版可运行' },
+    exe: { ext: '.exe', primary: true },
+    zip: { ext: '.zip' },
+    dmg: { ext: '.dmg', primary: true },
+    deb: { ext: '.deb', primary: true },
+    rpm: { ext: '.rpm' },
+    zst: { ext: 'pkg' },
+    appimage: { ext: 'AppImage' },
 }
 
 const ARCH_ALIASES = { amd64: 'amd64', x64: 'amd64', aarch64: 'aarch64', arm64: 'aarch64' }
@@ -75,13 +76,14 @@ const sortAssets = (assets) =>
         .slice()
         .sort((a, b) => (FORMAT_ORDER[assetExt(a.name)] ?? 99) - (FORMAT_ORDER[assetExt(b.name)] ?? 99))
 
-function buildRow(asset, fmtKey) {
+function buildRow(asset, fmtKey, t) {
     const f = FORMATS[fmtKey]
+    const labels = t.release.formats[fmtKey]
     return {
         key: fmtKey,
         ext: f.ext,
-        name: f.name,
-        desc: f.desc,
+        name: labels.name,
+        desc: labels.desc,
         primary: !!f.primary,
         url: MIRROR_PREFIX + asset.browser_download_url,
         file: asset.name,
@@ -94,7 +96,7 @@ function buildRow(asset, fmtKey) {
  * only lists the architectures that actually have assets, and the arch toggle
  * is hidden when a platform ships a single architecture.
  */
-function buildPlatforms(releaseAssets) {
+function buildPlatforms(releaseAssets, t) {
     const platforms = {}
     for (const rule of OS_RULES) {
         const matched = sortAssets(
@@ -104,7 +106,7 @@ function buildPlatforms(releaseAssets) {
         for (const arch of rule.archs) byArch[arch.key] = []
         for (const asset of matched) {
             const arch = archKey(asset.name)
-            if (byArch[arch]) byArch[arch].push(buildRow(asset, assetExt(asset.name)))
+            if (byArch[arch]) byArch[arch].push(buildRow(asset, assetExt(asset.name), t))
         }
         platforms[rule.os] = {
             archs: rule.archs.filter((a) => byArch[a.key].length),
@@ -124,18 +126,50 @@ const tag = ref('')
 const publishedAt = ref(null)
 const releaseUrl = ref(RELEASES_PAGE)
 const error = ref(false)
-const platformGroups = ref({})
+// The raw asset list is what we store; the console's row labels are derived
+// from it through a computed so a language switch rebuilds them. Storing the
+// finished `platformGroups` directly would freeze the labels at load time.
+const lastAssets = ref([])
+const fallbackApplied = ref(false)
+
+const { t, intlLocale } = useI18n()
+
+const platformGroups = computed(() => {
+    if (fallbackApplied.value) {
+        const next = {}
+        for (const rule of OS_RULES) {
+            next[rule.os] = {
+                archs: [{ key: 'any', label: t.value.release.allArchs }],
+                byArch: {
+                    any: [
+                        {
+                            key: 'link',
+                            ext: '↗',
+                            name: t.value.release.gotoDownloadPage,
+                            desc: t.value.release.gotoDownloadPageDesc,
+                            primary: true,
+                            url: RELEASES_PAGE,
+                            file: '',
+                        },
+                    ],
+                },
+            }
+        }
+        return next
+    }
+    return buildPlatforms(lastAssets.value, t.value)
+})
 
 const versionLabel = computed(() => {
-    if (error.value) return '查看 GitHub 更新日志'
-    if (!tag.value) return '正在获取最新版本…'
-    return `最新版本 ${tag.value} · 查看更新日志`
+    if (error.value) return t.value.release.viewChangelog
+    if (!tag.value) return t.value.release.loading
+    return format(t.value.release.versionLatest, { tag: tag.value })
 })
 
 const publishedLabel = computed(() => {
     if (error.value || !publishedAt.value) return ''
-    const date = new Date(publishedAt.value).toLocaleDateString('zh-CN')
-    return `当前最新版本 ${tag.value}，发布于 ${date}。`
+    const date = new Date(publishedAt.value).toLocaleDateString(intlLocale.value)
+    return format(t.value.release.published, { tag: tag.value, date })
 })
 
 // 并发去重：两个入口各自 onMounted 时会同时调 load()，共用这一条 Promise。
@@ -145,7 +179,8 @@ function applyRelease(release) {
     tag.value = release.tag_name
     publishedAt.value = release.published_at
     releaseUrl.value = release.html_url
-    platformGroups.value = buildPlatforms(release.assets)
+    lastAssets.value = release.assets
+    fallbackApplied.value = false
     error.value = false
     loading.value = false
 }
@@ -199,26 +234,8 @@ export function useRelease() {
 
 /** Every platform falls back to a single link to the releases page. */
 function applyReleasesPageFallback() {
-    const next = {}
-    for (const rule of OS_RULES) {
-        next[rule.os] = {
-            archs: [{ key: 'any', label: '全部架构' }],
-            byArch: {
-                any: [
-                    {
-                        key: 'link',
-                        ext: '↗',
-                        name: '前往下载页面',
-                        desc: '在 GitHub Releases 选择安装包',
-                        primary: true,
-                        url: RELEASES_PAGE,
-                        file: '',
-                    },
-                ],
-            },
-        }
-    }
-    platformGroups.value = next
+    fallbackApplied.value = true
+    lastAssets.value = []
     error.value = true
     loading.value = false
 }

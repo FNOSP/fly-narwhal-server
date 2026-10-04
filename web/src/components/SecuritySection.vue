@@ -1,17 +1,14 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { useI18n } from '../composables/useI18n'
 
-const steps = [
-    { k: '01', title: 'HKDF 派生密钥', desc: '主密钥经 HKDF 派生出独立加密密钥，不与原始口令直接接触。' },
-    { k: '02', title: '随机 Salt / Nonce', desc: '每次加密使用全新随机值，同一密码也得到完全不同的密文。' },
-    { k: '03', title: 'AES-256-GCM 认证加密', desc: '加密同时生成认证标签，密文被篡改即可被检测。' },
-    { k: '04', title: '密文安全落盘', desc: '磁盘上只有密文；写入完成后，敏感内存立即零化。' },
-]
+const { t } = useI18n()
 
-const guards = ['认证标签校验', '密文完整性检查', '敏感内存零化', '密钥异常自动清除', '篡改即失效']
+// Step numbers are language-neutral; titles/descs come from the catalog.
+const stepNos = ['01', '02', '03', '04']
 
 // Scramble demo: a readable password collapses into ciphertext once, when the
-// panel scrolls into view.
+// panel scrolls into view. The demo strings are fixed tokens, not UI copy.
 const plain = 'FeiNiu@2026'
 const cipher = 'Kq3#vX8$mZr1!pL6&nW0'
 const shown = ref(plain)
@@ -78,13 +75,13 @@ onBeforeUnmount(() => {
 
         <div class="shell">
             <div class="section-head sec__head">
-                <p v-reveal class="eyebrow">安全</p>
+                <p v-reveal class="eyebrow">{{ t.security.eyebrow }}</p>
                 <h2 v-reveal:mask class="h2">
-                    <span class="line-mask"><span style="--line-delay: 0ms">你的密码，</span></span>
-                    <span class="line-mask"><span style="--line-delay: 110ms">不再明文落盘。</span></span>
+                    <span class="line-mask"><span style="--line-delay: 0ms">{{ t.security.titleLine1 }}</span></span>
+                    <span class="line-mask"><span style="--line-delay: 110ms">{{ t.security.titleLine2 }}</span></span>
                 </h2>
                 <p v-reveal="160" class="lede">
-                    登录历史中的密码经认证加密后才写入磁盘。本地文件即使被拷走，也拿不到任何一个明文口令。
+                    {{ t.security.lede }}
                 </p>
             </div>
 
@@ -92,26 +89,26 @@ onBeforeUnmount(() => {
                 <div ref="demo" class="sec__panel">
                     <div class="vault">
                         <div class="vault__row">
-                            <span class="vault__label">登录历史 · NAS-Home</span>
+                            <span class="vault__label">{{ t.security.vaultLabel }}</span>
                             <span class="vault__lock" aria-hidden="true">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                     <rect x="5" y="10" width="14" height="10" rx="2.4" />
                                     <path d="M8 10V7.5a4 4 0 0 1 8 0V10" />
                                     <path d="M12 14v2.5" />
                                 </svg>
-                                已加密
+                                {{ t.security.encrypted }}
                             </span>
                         </div>
                         <code class="vault__value">{{ shown }}</code>
                         <div class="vault__meta">
                             <span>AES-256-GCM</span>
                             <span>HKDF-SHA256</span>
-                            <span>salt · nonce 随机</span>
+                            <span>{{ t.security.saltMeta }}</span>
                         </div>
                     </div>
 
                     <ul class="sec__guards">
-                        <li v-for="(g, i) in guards" :key="g" v-reveal="i * 80" class="guard">
+                        <li v-for="(g, i) in t.security.guards" :key="g" v-reveal="i * 80" class="guard">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M4.5 12.5l5 5 10-11" />
                             </svg>
@@ -121,8 +118,8 @@ onBeforeUnmount(() => {
                 </div>
 
                 <ol class="sec__steps">
-                    <li v-for="(s, i) in steps" :key="s.k" v-reveal="i * 110" class="step">
-                        <span class="step__k">{{ s.k }}</span>
+                    <li v-for="(s, i) in t.security.steps" :key="stepNos[i]" v-reveal="i * 110" class="step">
+                        <span class="step__k">{{ stepNos[i] }}</span>
                         <div class="step__body">
                             <h3 class="step__title">{{ s.title }}</h3>
                             <p class="step__desc">{{ s.desc }}</p>

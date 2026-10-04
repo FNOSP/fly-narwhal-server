@@ -1,5 +1,6 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRelease } from './useRelease'
+import { useI18n } from './useI18n'
 
 /**
  * Changelog channels: the client app (FlyNarwhal) and this server each keep a
@@ -19,7 +20,6 @@ import { useRelease } from './useRelease'
  */
 const CHANNELS = {
     client: {
-        label: '客户端',
         sources: [
             'https://cdn.jsdelivr.net/gh/FNOSP/FlyNarwhal@master/CHANGELOG.md',
             'https://raw.githubusercontent.com/FNOSP/FlyNarwhal/master/CHANGELOG.md',
@@ -27,7 +27,6 @@ const CHANNELS = {
         url: 'https://github.com/FNOSP/FlyNarwhal/blob/master/CHANGELOG.md',
     },
     server: {
-        label: '服务端',
         sources: [
             'https://cdn.jsdelivr.net/gh/FNOSP/fly-narwhal-server@master/CHANGELOG.md',
             'https://raw.githubusercontent.com/FNOSP/fly-narwhal-server/master/CHANGELOG.md',
@@ -119,6 +118,9 @@ function parseChangelog(text) {
                     version.categories.push(current)
                 }
                 const body = item[1]
+                // The changelog stays in its source language regardless of the
+                // UI locale, so no translated text ever reaches this parser and
+                // the full-width/half-width colon split stays safe.
                 const titled = body.match(/^\*\*(.+?)\*\*\s*[：:]\s*(.*)$/)
                 current.items.push(
                     titled
@@ -234,7 +236,9 @@ export function useChangelog() {
     const latest = ref(null)
     const history = ref([])
 
-    const channelLabel = computed(() => CHANNELS[channel.value].label)
+    const { t } = useI18n()
+
+    const channelLabel = computed(() => t.value.changelog.channels[channel.value])
     const changelogUrl = computed(() => CHANNELS[channel.value].url)
 
     // 下载区用的是 20 分钟 localStorage 缓存，更新日志则是每次刷新都取回。

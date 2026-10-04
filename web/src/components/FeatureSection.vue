@@ -1,50 +1,17 @@
 <script setup>
 import { onMounted, onBeforeUnmount, ref } from 'vue'
+import { useI18n } from '../composables/useI18n'
 
-const features = [
-    {
-        icon: 'layers',
-        title: 'Flutter 原生重写',
-        desc: '2.x 全面重写桌面端，告别 JVM 运行时的额外开销。启动链路、播放器初始化与首帧渲染都经过优化，安装包更轻、打开更快。',
-    },
-    {
-        icon: 'play',
-        title: '内置 mpv 播放内核',
-        desc: '基于 media_kit 与完整 libmpv，支持 GPU 硬解与本地解码，macOS / Linux 打包完整解码库，可直接处理 HDR、HLG 与 Dolby Vision。',
-    },
-    {
-        icon: 'subtitle',
-        title: 'PGS / SUP 字幕',
-        desc: '支持 HDMV PGS 蓝光字幕解码，兼容外挂与内封字幕，可在播放中随时切换字幕与音轨。',
-    },
-    {
-        icon: 'skip',
-        title: '智能跳过片头片尾',
-        desc: '由配套服务端分析剧集并给出片头片尾区间，播放时自动跳过，追剧不再手动拖进度条。',
-    },
-    {
-        icon: 'danmu',
-        title: '弹幕与播放进度',
-        desc: '拉取并缓存弹幕，配合播放进度与继续观看，多设备之间接续播放。',
-    },
-    {
-        icon: 'devices',
-        title: '三端双架构',
-        desc: 'Windows x64、macOS Intel / Apple Silicon、Linux x64 / arm64 全平台覆盖，提供 exe、dmg、deb、rpm、pkg.tar.zst 与 AppImage。',
-    },
-]
+const { t } = useI18n()
 
-const stats = [
-    { value: 3, suffix: '', label: '桌面平台' },
-    { value: 7, suffix: '', label: '安装包格式' },
-    { value: 2, suffix: '', label: 'CPU 架构组合' },
-    // { value: 2, suffix: '', label: '智能跳过区间' },
-]
+// Icons and the numeric stat values are structural; the text comes from `t`.
+const featureIcons = ['layers', 'play', 'subtitle', 'skip', 'danmu', 'devices']
+const statValues = [3, 7, 2]
 
 const root = ref(null)
 
 // Counting numbers, started once the stat row scrolls into view.
-const shown = ref(stats.map(() => 0))
+const shown = ref(statValues.map(() => 0))
 let counterObserver = null
 let raf = 0
 
@@ -52,11 +19,11 @@ function runCounters() {
     const start = performance.now()
     const duration = 1400
     const tick = (now) => {
-        const t = Math.min(1, (now - start) / duration)
+        const tn = Math.min(1, (now - start) / duration)
         // easeOutExpo keeps the last digits from crawling.
-        const eased = t === 1 ? 1 : 1 - Math.pow(2, -10 * t)
-        shown.value = stats.map((s) => Math.round(s.value * eased))
-        if (t < 1) raf = requestAnimationFrame(tick)
+        const eased = tn === 1 ? 1 : 1 - Math.pow(2, -10 * tn)
+        shown.value = statValues.map((v) => Math.round(v * eased))
+        if (tn < 1) raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
 }
@@ -66,7 +33,7 @@ onMounted(() => {
     if (!el) return
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (reduced) {
-        shown.value = stats.map((s) => s.value)
+        shown.value = statValues.slice()
         return
     }
     counterObserver = new IntersectionObserver(
@@ -107,18 +74,18 @@ function untilt(e) {
     <section id="features" class="features">
         <div class="shell">
             <div class="section-head features__head">
-                <p v-reveal class="eyebrow">核心特性</p>
+                <p v-reveal class="eyebrow">{{ t.features.eyebrow }}</p>
                 <h2 v-reveal="80" class="h2">
-                    为桌面观影<br />重新做一遍
+                    {{ t.features.h2Line1 }}<br />{{ t.features.h2Line2 }}
                 </h2>
                 <p v-reveal="160" class="lede">
-                    播放内核、字幕、跳过与弹幕都不是外壳功能，而是从头按桌面端的用法设计的。
+                    {{ t.features.lede }}
                 </p>
             </div>
 
             <div class="features__grid">
                 <article
-                    v-for="(f, i) in features"
+                    v-for="(f, i) in t.features.items"
                     :key="f.title"
                     v-reveal="(i % 3) * 90"
                     class="card"
@@ -126,19 +93,19 @@ function untilt(e) {
                     @mouseleave="untilt"
                 >
                     <div class="card__glyph">
-                        <svg v-if="f.icon === 'layers'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                        <svg v-if="featureIcons[i] === 'layers'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M12 3l9 5-9 5-9-5 9-5z" /><path d="M3 13l9 5 9-5" />
                         </svg>
-                        <svg v-else-if="f.icon === 'play'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                        <svg v-else-if="featureIcons[i] === 'play'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="12" cy="12" r="9" /><path d="M10 8.5l6 3.5-6 3.5z" />
                         </svg>
-                        <svg v-else-if="f.icon === 'subtitle'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                        <svg v-else-if="featureIcons[i] === 'subtitle'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="3" y="5" width="18" height="14" rx="3" /><path d="M7 14h4M14 14h3" />
                         </svg>
-                        <svg v-else-if="f.icon === 'skip'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                        <svg v-else-if="featureIcons[i] === 'skip'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M5 5l8 7-8 7z" /><path d="M19 5v14" />
                         </svg>
-                        <svg v-else-if="f.icon === 'danmu'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                        <svg v-else-if="featureIcons[i] === 'danmu'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="3" y="6" width="18" height="12" rx="3" /><path d="M7 10h7M7 14h4" />
                         </svg>
                         <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
@@ -151,8 +118,8 @@ function untilt(e) {
             </div>
 
             <div ref="root" class="stats">
-                <div v-for="(s, i) in stats" :key="s.label" class="stats__item">
-                    <div class="stats__value">{{ shown[i] }}<span>{{ s.suffix }}</span></div>
+                <div v-for="(s, i) in t.features.stats" :key="s.label" class="stats__item">
+                    <div class="stats__value">{{ shown[i] }}</div>
                     <div class="stats__label">{{ s.label }}</div>
                 </div>
             </div>

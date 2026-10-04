@@ -1,11 +1,15 @@
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { cachedFetch } from '../lib/cachedJsonStore'
+import { useI18n } from './useI18n'
 
 // Two repos, rendered as two labelled rows in the footer. Cache keys stay
-// separate so a stale client list never masquerades as the server one.
+// separate so a stale client list never masquerades as the server one. The
+// `label` is resolved from the catalog at render time (see `labels` below), so
+// it is deliberately not stored on the fetched group object — a language
+// switch then re-renders without re-fetching.
 const GROUPS = [
-    { key: 'client', label: '客户端', repo: 'FNOSP/FlyNarwhal', cacheKey: 'contributors' },
-    { key: 'server', label: '服务端', repo: 'FNOSP/fly-narwhal-server', cacheKey: 'contributors-server' },
+    { key: 'client', repo: 'FNOSP/FlyNarwhal', cacheKey: 'contributors' },
+    { key: 'server', repo: 'FNOSP/fly-narwhal-server', cacheKey: 'contributors-server' },
 ]
 
 const GRAPH_URL = (repo) => `https://github.com/${repo}/graphs/contributors`
@@ -16,8 +20,8 @@ const GRAPH_URL = (repo) => `https://github.com/${repo}/graphs/contributors`
 const CONTRIBUTORS_TTL = 60 * 60 * 1000
 
 const loading = ref(true)
-// One entry per group: { key, label, graphUrl, contributors }. A group whose
-// fetch failed AND has no cache keeps an empty list so its row hides itself.
+// One entry per group: { key, graphUrl, contributors }. A group whose fetch
+// failed AND has no cache keeps an empty list so its row hides itself.
 const groups = ref(GROUPS.map((g) => ({ ...g, graphUrl: GRAPH_URL(g.repo), contributors: [] })))
 
 let loadingPromise = null
@@ -67,6 +71,9 @@ function load() {
 }
 
 export function useContributors() {
+    const { t } = useI18n()
+    // Group label keyed by group key, resolved live from the catalog.
+    const labels = computed(() => t.value.changelog.channels)
     onMounted(load)
-    return { loading, groups }
+    return { loading, groups, labels }
 }

@@ -1,21 +1,29 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import ChangelogText from './ChangelogText.vue'
 import ChannelSwitch from './ChannelSwitch.vue'
 import ThemeToggle from './ThemeToggle.vue'
+import LocaleToggle from './LocaleToggle.vue'
 import { useChangelog } from '../composables/useChangelog'
+import { useI18n, format } from '../composables/useI18n'
 
 const { channel, setChannel, channelLabel, changelogUrl, loading, error, latest, history } = useChangelog()
+const { t } = useI18n()
 
+// Colors are theme tokens; the category label comes from the catalog.
 const CAT_META = {
-    Added: { label: '新增', color: 'var(--green)', bg: 'var(--green-tint)' },
-    Changed: { label: '改进', color: 'var(--orange-deep)', bg: 'rgba(255, 149, 0, 0.14)' },
-    Fixed: { label: '修复', color: 'var(--brand-deep)', bg: 'var(--brand-tint)' },
+    Added: { color: 'var(--green)', bg: 'var(--green-tint)' },
+    Changed: { color: 'var(--orange-deep)', bg: 'rgba(255, 149, 0, 0.14)' },
+    Fixed: { color: 'var(--brand-deep)', bg: 'var(--brand-tint)' },
 }
 
 function catMeta(name) {
-    return CAT_META[name] || { label: name, color: 'var(--ink-soft)', bg: 'var(--field)' }
+    const meta = CAT_META[name] || { color: 'var(--ink-soft)', bg: 'var(--field)' }
+    return { ...meta, label: t.value.changelog.categories[name] || name }
 }
+
+const crumb = computed(() => format(t.value.timeline.crumb, { brand: t.value.common.brand, channel: channelLabel.value }))
+const lede = computed(() => format(t.value.timeline.lede, { count: history.value.length || '…' }))
 
 // Cards stay collapsed (version + date + counts) until hovered; on touch
 // devices, where hover is unreliable, a tap pins a card open instead.
@@ -38,20 +46,21 @@ watch(channel, () => {
                 <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M19 12H5M11 18l-6-6 6-6" />
                 </svg>
-                返回首页
+                {{ t.timeline.backHome }}
             </a>
             <div class="tlpage__actions">
-                <span class="tlpage__crumb">飞鲸影视 · {{ channelLabel }}更新日志</span>
+                <span class="tlpage__crumb">{{ crumb }}</span>
+                <LocaleToggle />
                 <ThemeToggle />
             </div>
         </header>
 
         <main class="shell tlpage__main">
             <div class="tlpage__head">
-                <p class="eyebrow">全部版本</p>
-                <h1 class="tlpage__title">每一次发版，都有迹可循。</h1>
+                <p class="eyebrow">{{ t.timeline.eyebrow }}</p>
+                <h1 class="tlpage__title">{{ t.timeline.title }}</h1>
                 <p class="tlpage__lede">
-                    共 {{ history.length || '…' }} 个版本，每一次新增、改进与修复，都完整记录在这里。
+                    {{ lede }}
                 </p>
                 <div class="tlpage__switch">
                     <ChannelSwitch :model-value="channel" @update:model-value="setChannel" />
@@ -59,7 +68,7 @@ watch(channel, () => {
             </div>
 
             <!-- loading skeleton -->
-            <div v-if="loading" class="tlpage__skeleton" aria-label="更新日志加载中">
+            <div v-if="loading" class="tlpage__skeleton" :aria-label="t.changelog.loadingAria">
                 <div v-for="n in 3" :key="n" class="skel">
                     <div class="skel__bar skel__bar--w30"></div>
                     <div class="skel__bar"></div>
@@ -72,10 +81,10 @@ watch(channel, () => {
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <circle cx="12" cy="12" r="9" /><path d="M12 8v5M12 16.5h.01" />
                 </svg>
-                <p>更新日志暂时无法加载，可能是网络原因。</p>
+                <p>{{ t.changelog.error }}</p>
                 <div class="tlpage__error-actions">
-                    <a :href="changelogUrl" target="_blank" rel="noopener noreferrer">前往 GitHub 查看 →</a>
-                    <a href="#top">返回首页</a>
+                    <a :href="changelogUrl" target="_blank" rel="noopener noreferrer">{{ t.timeline.gotoGithub }}</a>
+                    <a href="#top">{{ t.timeline.backHome }}</a>
                 </div>
             </div>
 
@@ -96,7 +105,7 @@ watch(channel, () => {
                         <header class="tl__head">
                             <span class="tl__v">v{{ v.version }}</span>
                             <time v-if="v.date" class="tl__date">{{ v.date }}</time>
-                            <span v-if="latest && v.version === latest.version" class="tl__badge">最新版</span>
+                            <span v-if="latest && v.version === latest.version" class="tl__badge">{{ t.timeline.latestBadge }}</span>
                             <span class="tl__counts">
                                 <span
                                     v-for="cat in v.categories.filter((c) => c.items.length)"
@@ -138,7 +147,7 @@ watch(channel, () => {
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M19 12H5M11 18l-6-6 6-6" />
                     </svg>
-                    返回飞鲸影视首页
+                    {{ t.timeline.backToHome }}
                 </a>
             </footer>
         </main>

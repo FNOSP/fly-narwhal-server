@@ -1,32 +1,8 @@
 <script setup>
 import { ref } from 'vue'
+import { useI18n } from '../composables/useI18n'
 
-const faqs = [
-    {
-        q: '播放视频支持硬件解码吗？',
-        a: '播放器基于 media_kit / libmpv，具备 GPU 加速能力。最终效果取决于平台、驱动、视频格式与系统环境；HDR、字幕与音轨切换等体验仍在持续优化，请以实际版本表现为准。',
-    },
-    {
-        q: '支持用 FN ID 或通过 NAS 登录吗？',
-        a: '支持。当前登录流程同时覆盖 FN ID 与 NAS 登录两种场景，连接地址、端口与 HTTPS 都可以直接配置。',
-    },
-    {
-        q: '可以用飞牛 OS 的自签证书走 HTTPS 吗？',
-        a: '支持。当服务器证书校验不通过（自签名、已过期或域名不匹配）时，会弹框提示，可选择信任此证书、仅本次信任或取消访问。信任后会记录证书指纹，服务器更换证书时会重新询问；已信任的证书可在「设置 → 隐私与安全」中管理。',
-    },
-    {
-        q: '支持直链播放吗？',
-        a: '除 Dolby Vision Profile 5 之外，原画质下默认直链播放；部分播放失败场景会自动回退到 HLS。',
-    },
-    {
-        q: 'macOS 首次打开提示“无法验证开发者”或“已损坏”？',
-        a: '发布版对应用做了临时签名，多数情况只会提示“无法验证开发者”。若提示“已损坏”，把应用放入 /Applications 后在终端执行 xattr -dr com.apple.quarantine /Applications/FlyNarwhal.app 即可。通过应用内自动更新安装的版本不带隔离标记。下载区也有同样的说明。',
-    },
-    {
-        q: '这个项目是飞牛官方出品的吗？',
-        a: '不是。本项目为飞牛 OS 爱好者开发的第三方影视客户端，与飞牛影视官方无关。使用前请确保遵守相关服务条款。',
-    },
-]
+const { t } = useI18n()
 
 const open = ref(0)
 
@@ -39,13 +15,13 @@ function toggle(i) {
     <section id="faq" class="faq">
         <div class="shell faq__shell">
             <div class="section-head faq__head">
-                <p v-reveal class="eyebrow">常见问题</p>
-                <h2 v-reveal="80" class="h2">还想多了解一点？</h2>
+                <p v-reveal class="eyebrow">{{ t.faq.eyebrow }}</p>
+                <h2 v-reveal="80" class="h2">{{ t.faq.h2 }}</h2>
             </div>
 
             <div v-reveal="140" class="faq__list">
                 <div
-                    v-for="(f, i) in faqs"
+                    v-for="(f, i) in t.faq.items"
                     :key="f.q"
                     class="faq__item"
                     :class="{ 'faq__item--open': open === i }"

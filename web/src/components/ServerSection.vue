@@ -1,27 +1,13 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useScrollProgress } from '../composables/useParallax'
+import { useI18n } from '../composables/useI18n'
 
-const capabilities = [
-    {
-        tag: '弹幕',
-        title: '拉取与缓存',
-        desc: '客户端请求弹幕时由服务端统一拉取并落库缓存，同一剧集重复播放不再重复请求源站，也避免了跨域与限流问题。',
-        endpoint: 'GET /api/danmu/get',
-    },
-    {
-        tag: '分析',
-        title: '片头片尾检测',
-        desc: '服务端用 ffmpeg 分析剧集章节与音画特征，计算片头片尾区间并写入数据库，客户端播放时据此自动跳过。',
-        endpoint: 'POST /api/analysis/analyze',
-    },
-    {
-        tag: '鉴权',
-        title: '授权码',
-        desc: '客户端与服务端之间用一次性展示的授权码建立信任，配合请求签名校验，避免服务端被未授权的客户端调用。',
-        endpoint: 'POST /api/config/auth-code',
-    },
-]
+const { t } = useI18n()
+
+// API endpoints are technical tokens and stay literal; tag/title/desc come
+// from the catalog by position.
+const endpoints = ['GET /api/danmu/get', 'POST /api/analysis/analyze', 'POST /api/config/auth-code']
 
 const root = ref(null)
 const { progress } = useScrollProgress(root, { start: 1, end: 0.15 })
@@ -50,18 +36,17 @@ onBeforeUnmount(() => {
     <section id="server" ref="root" class="server">
         <div class="shell">
             <div class="section-head server__head">
-                <p v-reveal class="eyebrow">服务端</p>
-                <h2 v-reveal="80" class="h2">客户端之外的一半</h2>
+                <p v-reveal class="eyebrow">{{ t.server.eyebrow }}</p>
+                <h2 v-reveal="80" class="h2">{{ t.server.h2 }}</h2>
                 <p v-reveal="160" class="lede">
-                    飞鲸影视服务端以 GraalVM 原生二进制形式发布，运行在飞牛 NAS 上，负责弹幕、片头片尾分析与授权。
-                    无需安装 Java，解压后即可运行。
+                    {{ t.server.lede }}
                 </p>
             </div>
 
             <div class="server__layout">
                 <div class="server__list">
                     <article
-                        v-for="(c, i) in capabilities"
+                        v-for="(c, i) in t.server.capabilities"
                         :key="c.title"
                         v-reveal="i * 100"
                         class="cap"
@@ -70,7 +55,7 @@ onBeforeUnmount(() => {
                         <div class="cap__body">
                             <h3 class="cap__title">{{ c.title }}</h3>
                             <p class="cap__desc">{{ c.desc }}</p>
-                            <code class="cap__endpoint">{{ c.endpoint }}</code>
+                            <code class="cap__endpoint">{{ endpoints[i] }}</code>
                         </div>
                     </article>
                 </div>
@@ -81,8 +66,8 @@ onBeforeUnmount(() => {
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                                 <rect x="2" y="4" width="20" height="13" rx="2.4" /><path d="M8 21h8M12 17v4" />
                             </svg>
-                            <span>客户端</span>
-                            <small>Windows · macOS · Linux</small>
+                            <span>{{ t.server.diagramClient }}</span>
+                            <small>{{ t.server.diagramClientSub }}</small>
                         </div>
 
                         <div class="diagram__flow">
@@ -94,12 +79,12 @@ onBeforeUnmount(() => {
                                 <rect x="3" y="3" width="18" height="7" rx="2" /><rect x="3" y="14" width="18" height="7" rx="2" />
                                 <path d="M7 6.5h.01M7 17.5h.01" />
                             </svg>
-                            <span>飞鲸服务端</span>
-                            <small>飞牛 NAS · 原生二进制</small>
+                            <span>{{ t.server.diagramServer }}</span>
+                            <small>{{ t.server.diagramServerSub }}</small>
                         </div>
 
                         <ul class="diagram__log" aria-hidden="true">
-                            <li v-for="(step, i) in ['拉取弹幕', 'ffmpeg 分析', '缓存落库', '签名校验', '返回结果']" :key="step" :class="{ 'is-on': codeLine === i }">
+                            <li v-for="(step, i) in t.server.logSteps" :key="step" :class="{ 'is-on': codeLine === i }">
                                 <span class="diagram__log-dot"></span>{{ step }}
                             </li>
                         </ul>

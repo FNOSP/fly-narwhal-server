@@ -3,22 +3,33 @@ import { computed } from 'vue'
 import ChangelogText from './ChangelogText.vue'
 import ChannelSwitch from './ChannelSwitch.vue'
 import { useChangelog } from '../composables/useChangelog'
+import { useI18n, format } from '../composables/useI18n'
 
 const { channel, setChannel, channelLabel, changelogUrl, loading, error, latest, history } = useChangelog()
+const { t } = useI18n()
 
+// Colors are theme tokens; the category label comes from the catalog.
 const CAT_META = {
-    Added: { label: '新增', color: 'var(--green)', bg: 'var(--green-tint)' },
-    Changed: { label: '改进', color: 'var(--orange-deep)', bg: 'rgba(255, 149, 0, 0.14)' },
-    Fixed: { label: '修复', color: 'var(--brand-deep)', bg: 'var(--brand-tint)' },
+    Added: { color: 'var(--green)', bg: 'var(--green-tint)' },
+    Changed: { color: 'var(--orange-deep)', bg: 'rgba(255, 149, 0, 0.14)' },
+    Fixed: { color: 'var(--brand-deep)', bg: 'var(--brand-tint)' },
 }
 
 function catMeta(name) {
-    return CAT_META[name] || { label: name, color: 'var(--ink-soft)', bg: 'var(--field)' }
+    const meta = CAT_META[name] || { color: 'var(--ink-soft)', bg: 'var(--field)' }
+    return { ...meta, label: t.value.changelog.categories[name] || name }
 }
 
 // 「从 X 到今天」的 X 跟随当前渠道：取该渠道历史里最旧的一个版本。
 const oldest = computed(() =>
     history.value.length ? history.value[history.value.length - 1].version : null,
+)
+
+const viewAll = computed(() => format(t.value.changelog.viewAll, { channel: channelLabel.value }))
+const viewAllDesc = computed(() =>
+    oldest.value
+        ? format(t.value.changelog.viewAllDesc, { oldest: oldest.value, count: history.value.length })
+        : format(t.value.changelog.viewAllDescNoOldest, { count: history.value.length }),
 )
 </script>
 
@@ -26,13 +37,13 @@ const oldest = computed(() =>
     <section id="changelog" class="clg">
         <div class="shell">
             <div class="section-head clg__head">
-                <p v-reveal class="eyebrow">更新日志</p>
+                <p v-reveal class="eyebrow">{{ t.changelog.eyebrow }}</p>
                 <h2 v-reveal:mask class="h2">
-                    <span class="line-mask"><span style="--line-delay: 0ms">持续进化，</span></span>
-                    <span class="line-mask"><span style="--line-delay: 110ms">每个版本都有据可查。</span></span>
+                    <span class="line-mask"><span style="--line-delay: 0ms">{{ t.changelog.h2Line1 }}</span></span>
+                    <span class="line-mask"><span style="--line-delay: 110ms">{{ t.changelog.h2Line2 }}</span></span>
                 </h2>
                 <p v-reveal="180" class="lede">
-                    最新版本的完整变化，以及发布以来的全部更新记录。
+                    {{ t.changelog.lede }}
                 </p>
                 <div v-reveal="240" class="clg__switch">
                     <ChannelSwitch :model-value="channel" @update:model-value="setChannel" />
@@ -40,7 +51,7 @@ const oldest = computed(() =>
             </div>
 
             <!-- loading skeleton -->
-            <div v-if="loading" class="clg__skeleton" aria-label="更新日志加载中">
+            <div v-if="loading" class="clg__skeleton" :aria-label="t.changelog.loadingAria">
                 <div class="skel skel--latest">
                     <div class="skel__bar skel__bar--w30"></div>
                     <div class="skel__bar"></div>
@@ -59,8 +70,8 @@ const oldest = computed(() =>
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <circle cx="12" cy="12" r="9" /><path d="M12 8v5M12 16.5h.01" />
                 </svg>
-                <p>更新日志暂时无法加载，可能是网络原因。</p>
-                <a :href="changelogUrl" target="_blank" rel="noopener noreferrer">前往 GitHub 查看完整更新日志 →</a>
+                <p>{{ t.changelog.error }}</p>
+                <a :href="changelogUrl" target="_blank" rel="noopener noreferrer">{{ t.changelog.gotoGithub }}</a>
             </div>
 
             <template v-else>
@@ -69,7 +80,7 @@ const oldest = computed(() =>
                     <header class="clg-latest__head">
                         <div class="clg-latest__ver">
                             v{{ latest.version }}
-                            <span class="clg-latest__badge">最新版</span>
+                            <span class="clg-latest__badge">{{ t.changelog.latestBadge }}</span>
                         </div>
                         <time v-if="latest.date" class="clg-latest__date">{{ latest.date }}</time>
                     </header>
@@ -96,10 +107,9 @@ const oldest = computed(() =>
                             <span v-for="n in 3" :key="n" class="clg-more__dot" :class="{ 'clg-more__dot--end': n === 3 }"></span>
                         </div>
                         <div class="clg-more__body">
-                            <h3 class="clg-more__title">{{ channelLabel }}全部版本更新日志</h3>
+                            <h3 class="clg-more__title">{{ viewAll }}</h3>
                             <p class="clg-more__desc">
-                                <template v-if="oldest">从 {{ oldest }} 到今天共 {{ history.length }} 个版本，每一次发版的完整记录都在这里。</template>
-                                <template v-else>共 {{ history.length }} 个版本，每一次发版的完整记录都在这里。</template>
+                                {{ viewAllDesc }}
                             </p>
                         </div>
                         <svg class="clg-more__arrow" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
