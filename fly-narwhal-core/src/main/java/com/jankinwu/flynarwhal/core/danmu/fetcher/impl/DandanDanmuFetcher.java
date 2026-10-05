@@ -171,7 +171,7 @@ public class DandanDanmuFetcher extends AbstractDanmuFetcher {
      * encrypted sensitive-word comments (undecryptable without the official
      * client key); they are dropped rather than shown as garbage.
      */
-    static DanmuModel toModel(String p, String m) {
+    public static DanmuModel toModel(String p, String m) {
         if (m == null || m.isEmpty() || p == null || p.isEmpty()) return null;
         for (int i = 0; i < m.length(); i++) {
             char c = m.charAt(i);
