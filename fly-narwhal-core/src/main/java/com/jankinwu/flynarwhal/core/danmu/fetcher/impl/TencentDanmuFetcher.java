@@ -10,11 +10,10 @@ import org.jsoup.nodes.Document;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.concurrent.ExecutorService;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;

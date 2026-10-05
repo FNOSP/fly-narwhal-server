@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -60,5 +61,24 @@ class YoukuDanmuFetcherTest {
 
         expiry = YoukuDanmuFetcher.parseTokenExpiry("abc_notanumber");
         assertTrue(expiry >= before);
+    }
+
+    @Test
+    void vidKeepsBase64PaddingInQueryForm() {
+        // The shape 360 playlinks hand out; the padding is part of the vid.
+        assertEquals("XNjUyNzI5NDI0OA==", YoukuDanmuFetcher.extractVid(
+                "https://v.youku.com/video?vid=XNjUyNzI5NDI0OA=="));
+        assertEquals("XNjUyNzI5NDI0OA==", YoukuDanmuFetcher.extractVid(
+                "https://v.youku.com/video?vid=XNjUyNzI5NDI0OA%3D%3D"));
+        assertEquals("XNjUyNzI5NDI0OA==", YoukuDanmuFetcher.extractVid(
+                "https://v.youku.com/video?vid=XNjUyNzI5NDI0OA==&refer=360_pc_operation"));
+    }
+
+    @Test
+    void vidFromShowPathForm() {
+        assertEquals("XNjUyNzI5NDI0OA==", YoukuDanmuFetcher.extractVid(
+                "https://v.youku.com/v_show/id_XNjUyNzI5NDI0OA==.html"));
+        assertEquals("XNjUyNzI5NDI0OA==", YoukuDanmuFetcher.extractVid(
+                "https://v.youku.com/v_show/id_XNjUyNzI5NDI0OA==.html?spm=a2h0c.8166622 PhoneSokuPC_1.dtitle"));
     }
 }

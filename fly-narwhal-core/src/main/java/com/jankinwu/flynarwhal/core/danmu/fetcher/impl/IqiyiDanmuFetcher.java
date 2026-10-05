@@ -15,8 +15,6 @@ import org.brotli.dec.BrotliInputStream;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.concurrent.ExecutorService;
-
 import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -26,6 +24,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.regex.Matcher;

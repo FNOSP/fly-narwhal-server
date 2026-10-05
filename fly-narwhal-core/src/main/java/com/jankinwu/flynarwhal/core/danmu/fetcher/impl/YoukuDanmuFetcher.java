@@ -13,8 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.concurrent.ExecutorService;
-
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -22,6 +21,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -52,21 +52,34 @@ public class YoukuDanmuFetcher extends AbstractDanmuFetcher {
         return url.contains("youku.com");
     }
 
+    /**
+     * Extracts the vid from either the {@code /v_show/id_<vid>.html} path form or
+     * the {@code ?vid=<vid>} query form (the shape 360 playlinks hand out). The
+     * vid is base64 whose {@code =} padding is part of the id — the old
+     * {@code [^&=]+} pattern truncated it at the first padding character and the
+     * follow-up {@code replace("=", "")} stripped what survived, so query-form
+     * URLs resolved against a vid that openapi/mtop did not know.
+     */
+    static String extractVid(String url) {
+        if (url == null) return null;
+        if (url.contains("vid=")) {
+            Matcher m = Pattern.compile("vid=([^&]+)").matcher(url);
+            if (!m.find()) return null;
+            return m.group(1).replace("%3D", "=").replace("%3d", "=");
+        }
+        String[] parts = url.split("\\?")[0].split("/");
+        String last = parts[parts.length - 1];
+        String vid = last.replace("id_", "").replace(".html", "");
+        return vid.isEmpty() ? null : vid;
+    }
+
     @Override
     public Map<String, String> getEpisodeUrl(String url) {
         try {
-            String vid;
-            if (url.contains("vid=")) {
-                Matcher m = Pattern.compile("vid=([^&=]+)").matcher(url);
-                if (!m.find()) return Map.of();
-                vid = m.group(1).replace("%3D", "=").replace("=", "");
-            } else {
-                String[] parts = url.split("\\?")[0].split("/");
-                String last = parts[parts.length - 1];
-                vid = last.replace("id_", "").replace(".html", "");
-            }
+            String vid = extractVid(url);
+            if (vid == null || vid.isEmpty()) return Map.of();
 
-            String showUrl = "https://openapi.youku.com/v2/videos/show.json?client_id=53e6cc67237fc59a&video_id=" + vid + "&package=com.huawei.hwvplayer.youku&ext=show";
+            String showUrl = "https://openapi.youku.com/v2/videos/show.json?client_id=53e6cc67237fc59a&video_id=" + URLEncoder.encode(vid, StandardCharsets.UTF_8) + "&package=com.huawei.hwvplayer.youku&ext=show";
             String json = restTemplate.getForObject(showUrl, String.class);
             if (json == null) return Map.of();
             JsonNode root = objectMapper.readTree(json);
@@ -213,22 +226,10 @@ public class YoukuDanmuFetcher extends AbstractDanmuFetcher {
     protected List<String> getLinks(String url) {
         ensureCookies(false);
         try {
-            String vid = null;
-            if (url.contains("vid=")) {
-                Pattern p = Pattern.compile("vid=([^&=]+)");
-                Matcher m = p.matcher(url);
-                if (m.find()) {
-                    vid = m.group(1).replace("%3D", "=").replace("=", "");
-                }
-            } else {
-                String[] parts = url.split("\\?")[0].split("/");
-                String last = parts[parts.length - 1];
-                vid = last.replace("id_", "").replace(".html", "");
-            }
-            
+            String vid = extractVid(url);
             if (vid == null) return new ArrayList<>();
 
-            String showUrl = "https://openapi.youku.com/v2/videos/show.json?client_id=53e6cc67237fc59a&video_id=" + vid + "&package=com.huawei.hwvplayer.youku&ext=show";
+            String showUrl = "https://openapi.youku.com/v2/videos/show.json?client_id=53e6cc67237fc59a&video_id=" + URLEncoder.encode(vid, StandardCharsets.UTF_8) + "&package=com.huawei.hwvplayer.youku&ext=show";
             String json = restTemplate.getForObject(showUrl, String.class);
             JsonNode root = objectMapper.readTree(json);
             double duration = root.path("duration").asDouble(0);
