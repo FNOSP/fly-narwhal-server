@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.core.danmu.config.DanmuMatchProperties;
 import com.jankinwu.flynarwhal.core.danmu.fetcher.impl.DandanDanmuFetcher;
+import com.jankinwu.flynarwhal.core.danmu.fetcher.impl.DandanPlayOfficialDanmuFetcher;
 import com.jankinwu.flynarwhal.core.danmu.model.DanmuModel;
+import com.jankinwu.flynarwhal.core.danmu.repository.DandanAccount;
 import com.jankinwu.flynarwhal.core.danmu.repository.DanmuSourceConfigProvider;
 import com.jankinwu.flynarwhal.core.danmu.repository.DanmuUrlRepository;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +35,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.function.Function;
 import java.util.zip.GZIPInputStream;
 
 @Service
@@ -181,7 +184,11 @@ public class DanmuAppService {
             }
             Set<String> tried = new LinkedHashSet<>();
             for (String u : candidateUrls) {
-                if (u == null || !tried.add(u)) continue;
+                // The ?url= contract only understands play pages: pseudo-URLs
+                // (dandan:/ddpoff:) and scheme links have nothing to query.
+                if (u == null || !(u.startsWith("http://") || u.startsWith("https://")) || !tried.add(u)) {
+                    continue;
+                }
                 List<DanmuModel> fb = fetchFromFallbackServer(u);
                 if (!fb.isEmpty()) {
                     allDanmuData.computeIfAbsent(fallbackKey, k -> new ArrayList<>()).addAll(fb);
@@ -602,12 +609,16 @@ public class DanmuAppService {
     private List<String> searchVideoData(String doubanId, String name, String tvNum, boolean season) {
         if (doubanId != null && !doubanId.isEmpty()) {
             // The client knows the Douban subject id; skip the fuzzy title search
-            // and resolve the vendors straight from the detail endpoint.
-            List<String> direct = fetchVendorsByDoubanId(doubanId);
+            // and resolve the vendors straight from the detail endpoint. Only
+            // usable http(s) links count: vendors that convert to nothing (or to
+            // unresolvable scheme links) must not block the title search below.
+            List<String> direct = fetchVendorsByDoubanId(doubanId).stream()
+                    .filter(u -> u != null && (u.startsWith("http://") || u.startsWith("https://")))
+                    .collect(Collectors.toList());
             if (!direct.isEmpty()) {
                 return dedupeByDomain(direct);
             }
-            log.warn("douban_id={} resolved no vendors, falling back to title search title={}", doubanId, name);
+            log.warn("douban_id={} resolved no usable vendors, falling back to title search title={}", doubanId, name);
         }
         if (name == null || name.isEmpty()) return Collections.emptyList();
         String prepared = prepareSearchTitle(name);
@@ -630,21 +641,56 @@ public class DanmuAppService {
      * DandanDanmuFetcher expands it into per-episode links.
      */
     private List<String> searchByDandan(String name, String tvNum) {
-        String relay = effectiveDandanRelay();
-        if (relay.isEmpty() || name == null || name.isEmpty()) {
+        if (name == null || name.isEmpty()) {
             return Collections.emptyList();
         }
+        // Official open API wins when the client configured credentials: its
+        // curated library also covers western live-action works that no relay
+        // carries. Credentials are read per request so client-side edits apply
+        // immediately.
+        DandanAccount account = danmuSourceConfigProvider == null
+                ? null : danmuSourceConfigProvider.getDandanAccount();
+        if (account != null && account.isComplete()) {
+            DandanPlayClient client = new DandanPlayClient(
+                    restTemplate, objectMapper, account.appId(), account.appSecret());
+            return searchDandanSource(name, tvNum, DandanPlayOfficialDanmuFetcher.SCHEME,
+                    client::searchAnime);
+        }
+        String relay = effectiveDandanRelay();
+        if (relay.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return searchDandanSource(name, tvNum, DandanDanmuFetcher.SCHEME,
+                keyword -> relaySearchAnime(relay, keyword));
+    }
+
+    private List<JsonNode> relaySearchAnime(String relay, String keyword) {
+        List<JsonNode> out = new ArrayList<>();
         try {
-            String ddpPath = "/v2/search/anime?keyword=" + URLEncoder.encode(name, StandardCharsets.UTF_8);
+            String ddpPath = "/v2/search/anime?keyword=" + URLEncoder.encode(keyword, StandardCharsets.UTF_8);
             String api = relay + (relay.contains("?") ? "&" : "?")
                     + "path=" + URLEncoder.encode(ddpPath, StandardCharsets.UTF_8);
             Map<String, String> headers = new HashMap<>();
             headers.put(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
             String json = httpGetAsString(api, headers);
-            if (json == null || json.isEmpty()) return Collections.emptyList();
-
+            if (json == null || json.isEmpty()) return out;
             JsonNode animes = objectMapper.readTree(json).path("animes");
-            if (!animes.isArray() || animes.isEmpty()) return Collections.emptyList();
+            if (animes.isArray()) {
+                for (JsonNode anime : animes) {
+                    out.add(anime);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Dandan relay search failed, keyword={} err={}", keyword, String.valueOf(e));
+        }
+        return out;
+    }
+
+    private List<String> searchDandanSource(String name, String tvNum, String scheme,
+                                            Function<String, List<JsonNode>> search) {
+        try {
+            List<JsonNode> animes = search.apply(name);
+            if (animes == null || animes.isEmpty()) return Collections.emptyList();
 
             String expectedSeason = (tvNum == null || tvNum.isEmpty()) ? "一" : tvNum;
             for (JsonNode anime : animes) {
@@ -654,7 +700,7 @@ public class DanmuAppService {
                 if (!titleMatches(animeTitle, name)) continue;
                 String extracted = extractSeasonFromTitle(animeTitle, name);
                 if (Objects.equals(extracted, expectedSeason)) {
-                    return List.of(DandanDanmuFetcher.SCHEME + animeId);
+                    return List.of(scheme + animeId);
                 }
             }
             return Collections.emptyList();
@@ -913,12 +959,17 @@ public class DanmuAppService {
             if (cid != null && vid != null) {
                 return "https://v.qq.com/x/cover/" + cid + "/" + vid + ".html";
             }
+            // A universal detail link (cid only) is not an episode page — no
+            // fetcher can resolve it, and keeping it would block the title
+            // search fallback below.
+            return "";
         }
         if ("iqiyi".equalsIgnoreCase(scheme)) {
             String tvid = firstQuery(query, "tvid");
             if (tvid != null) {
                 return "http://www.iqiyi.com?tvid=" + tvid;
             }
+            return "";
         }
         return uri;
     }
