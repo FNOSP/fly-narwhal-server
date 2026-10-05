@@ -9,7 +9,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.brotli.dec.BrotliInputStream;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -26,7 +25,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -44,6 +43,12 @@ public class DanmuAppService {
      */
     public static final String WHOLE_WORK_KEY = "default";
 
+    /** Backstop for a whole per-episode fetch task; segments time out earlier. */
+    private static final long TASK_TIMEOUT_SECONDS = 120;
+
+    /** Public Douban weixin-miniapp API key used by the frodo search/detail endpoints. */
+    private static final String DOUBAN_API_KEY = "0ac44ae016490db2204ce0a042db2916";
+
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
             .followRedirects(HttpClient.Redirect.NORMAL)
@@ -53,6 +58,7 @@ public class DanmuAppService {
     private final DanmuService danmuService;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+    private final ExecutorService danmuFetchExecutor;
     @Nullable
     private final DanmuUrlRepository danmuUrlRepository;
 
@@ -107,20 +113,20 @@ public class DanmuAppService {
 
         Map<String, List<DanmuModel>> allDanmuData = new HashMap<>();
         if (!tasks.isEmpty()) {
-            ExecutorService executor = Executors.newFixedThreadPool(Math.min(20, tasks.size()));
-            try {
-                List<CompletableFuture<TaskResult>> futures = tasks.stream()
-                        .map(t -> CompletableFuture.supplyAsync(() -> fetchDanmu(t), executor))
-                        .collect(Collectors.toList());
+            List<CompletableFuture<TaskResult>> futures = tasks.stream()
+                    .map(t -> CompletableFuture.supplyAsync(() -> fetchDanmu(t), danmuFetchExecutor)
+                            .orTimeout(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                            .exceptionally(ex -> {
+                                log.warn("Danmu task failed or timed out: key={} url={} err={}", t.key, t.url, String.valueOf(ex));
+                                return new TaskResult(t.key, null);
+                            }))
+                    .collect(Collectors.toList());
 
-                for (CompletableFuture<TaskResult> f : futures) {
-                    TaskResult r = f.join();
-                    if (r != null && r.data != null) {
-                        allDanmuData.computeIfAbsent(r.key, k -> new ArrayList<>()).addAll(r.data);
-                    }
+            for (CompletableFuture<TaskResult> f : futures) {
+                TaskResult r = f.join();
+                if (r != null && r.data != null) {
+                    allDanmuData.computeIfAbsent(r.key, k -> new ArrayList<>()).addAll(r.data);
                 }
-            } finally {
-                executor.shutdown();
             }
         }
 
@@ -175,21 +181,21 @@ public class DanmuAppService {
         List<String> urls = urlDict.getOrDefault(firstKey, Collections.emptyList());
 
         Map<String, String> emojiData = new HashMap<>();
-        ExecutorService executor = Executors.newFixedThreadPool(Math.min(10, Math.max(1, urls.size())));
-        try {
-            List<CompletableFuture<Map<String, String>>> futures = urls.stream()
-                    .filter(Objects::nonNull)
-                    .filter(u -> !u.isEmpty())
-                    .map(u -> CompletableFuture.supplyAsync(() -> danmuService.getEmoji(u), executor))
-                    .collect(Collectors.toList());
-            for (CompletableFuture<Map<String, String>> f : futures) {
-                Map<String, String> m = f.join();
-                if (m != null) {
-                    emojiData.putAll(m);
-                }
+        List<CompletableFuture<Map<String, String>>> futures = urls.stream()
+                .filter(Objects::nonNull)
+                .filter(u -> !u.isEmpty())
+                .map(u -> CompletableFuture.supplyAsync(() -> danmuService.getEmoji(u), danmuFetchExecutor)
+                        .orTimeout(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                        .exceptionally(ex -> {
+                            log.warn("Emoji task failed or timed out: url={} err={}", u, String.valueOf(ex));
+                            return Map.of();
+                        }))
+                .collect(Collectors.toList());
+        for (CompletableFuture<Map<String, String>> f : futures) {
+            Map<String, String> m = f.join();
+            if (m != null) {
+                emojiData.putAll(m);
             }
-        } finally {
-            executor.shutdown();
         }
         return emojiData;
     }
@@ -236,7 +242,7 @@ public class DanmuAppService {
         }
 
         if (platformUrlList.isEmpty()) {
-            platformUrlList = searchVideoData(sanitizeStr(title), sanitizeStr(seasonNumber), season);
+            platformUrlList = searchVideoData(doubanId, sanitizeStr(title), sanitizeStr(seasonNumber), season);
         }
 
         if (platformUrlList.isEmpty()) {
@@ -383,7 +389,16 @@ public class DanmuAppService {
         return penalty + platformPriority(url);
     }
 
-    private List<String> searchVideoData(String name, String tvNum, boolean season) {
+    private List<String> searchVideoData(String doubanId, String name, String tvNum, boolean season) {
+        if (doubanId != null && !doubanId.isEmpty()) {
+            // The client knows the Douban subject id; skip the fuzzy title search
+            // and resolve the vendors straight from the detail endpoint.
+            List<String> direct = fetchVendorsByDoubanId(doubanId);
+            if (!direct.isEmpty()) {
+                return dedupeByDomain(direct);
+            }
+            log.warn("douban_id={} resolved no vendors, falling back to title search title={}", doubanId, name);
+        }
         if (name == null || name.isEmpty()) return Collections.emptyList();
         String normalizedTvNum = normalizeSeasonNumber(tvNum);
         List<String> urlList = new ArrayList<>();
@@ -491,21 +506,11 @@ public class DanmuAppService {
 
     private List<String> searchByDouban(String name, String tvNum, boolean season) {
         try {
-            String apiKey = "0ac44ae016490db2204ce0a042db2916";
+            String apiKey = DOUBAN_API_KEY;
             String q = URLEncoder.encode(name, StandardCharsets.UTF_8);
             String url = "https://frodo.douban.com/api/v2/search/weixin?q=" + q + "&start=0&count=20&apiKey=" + apiKey;
 
-            Map<String, String> headers = new HashMap<>();
-            headers.put(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090c33)XWEB/11581");
-            headers.put("xweb_xhr", "1");
-            headers.put(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
-            headers.put("sec-fetch-site", "cross-site");
-            headers.put("sec-fetch-mode", "cors");
-            headers.put("sec-fetch-dest", "empty");
-            headers.put("referer", "https://servicewechat.com/wx2f9b06c1de1ccfca/99/page-frame.html");
-            headers.put(HttpHeaders.ACCEPT_LANGUAGE, "zh-CN,zh;q=0.9");
-            headers.put(HttpHeaders.ACCEPT_ENCODING, "identity");
-
+            Map<String, String> headers = doubanWeixinHeaders();
             String body = httpGetAsString(url, headers);
             if (body == null || body.isEmpty()) return Collections.emptyList();
             JsonNode root = objectMapper.readTree(body);
@@ -532,9 +537,22 @@ public class DanmuAppService {
             }
 
             if (targetId == null || targetId.isEmpty()) return Collections.emptyList();
+            return fetchVendorsByDoubanId(targetId);
+        } catch (Exception e) {
+            log.warn("Douban search failed, title={} seasonNumber={} season={} err={}", name, tvNum, season, String.valueOf(e));
+            return Collections.emptyList();
+        }
+    }
 
-            String detailUrl = "https://frodo.douban.com/api/v2/tv/" + targetId + "?apiKey=" + apiKey;
-            String detailBody = httpGetAsString(detailUrl, headers);
+    /**
+     * Resolves the playable vendor URLs of one Douban TV subject. Shared by the
+     * title-search path and the direct douban_id path.
+     */
+    private List<String> fetchVendorsByDoubanId(String doubanId) {
+        if (doubanId == null || doubanId.isEmpty()) return Collections.emptyList();
+        try {
+            String detailUrl = "https://frodo.douban.com/api/v2/tv/" + doubanId + "?apiKey=" + DOUBAN_API_KEY;
+            String detailBody = httpGetAsString(detailUrl, doubanWeixinHeaders());
             if (detailBody == null || detailBody.isEmpty()) return Collections.emptyList();
             JsonNode detailRoot = objectMapper.readTree(detailBody);
             JsonNode vendors = detailRoot.path("vendors");
@@ -559,9 +577,23 @@ public class DanmuAppService {
             }
             return urls;
         } catch (Exception e) {
-            log.warn("Douban search failed, title={} seasonNumber={} season={} err={}", name, tvNum, season, String.valueOf(e));
+            log.warn("Douban detail lookup failed, doubanId={} err={}", doubanId, String.valueOf(e));
             return Collections.emptyList();
         }
+    }
+
+    private Map<String, String> doubanWeixinHeaders() {
+        Map<String, String> headers = new HashMap<>();
+        headers.put(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090c33)XWEB/11581");
+        headers.put("xweb_xhr", "1");
+        headers.put(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
+        headers.put("sec-fetch-site", "cross-site");
+        headers.put("sec-fetch-mode", "cors");
+        headers.put("sec-fetch-dest", "empty");
+        headers.put("referer", "https://servicewechat.com/wx2f9b06c1de1ccfca/99/page-frame.html");
+        headers.put(HttpHeaders.ACCEPT_LANGUAGE, "zh-CN,zh;q=0.9");
+        headers.put(HttpHeaders.ACCEPT_ENCODING, "identity");
+        return headers;
     }
 
     private String convertVendorUriToHttp(String uri) {
@@ -585,18 +617,6 @@ public class DanmuAppService {
             }
         }
         return uri;
-    }
-
-    private String decodeBodyAsString(ResponseEntity<byte[]> response) {
-        if (response == null) return null;
-        byte[] body = response.getBody();
-        if (body == null || body.length == 0) return null;
-        String encoding = null;
-        try {
-            encoding = response.getHeaders().getFirst(HttpHeaders.CONTENT_ENCODING);
-        } catch (Exception ignored) {
-        }
-        return decodeBytesAsString(body, encoding);
     }
 
     private String httpGetAsString(String url, Map<String, String> headers) {
@@ -777,32 +797,6 @@ public class DanmuAppService {
         if (v.isEmpty()) return null;
         v = v.replaceAll("\\s+", "");
         return v.isEmpty() ? null : v;
-    }
-
-    private String resolveEpisodeKey(Map<String, List<String>> urlDict, String episodeNumberKey, String episodeTitleKey) {
-        if (urlDict == null || urlDict.isEmpty()) return null;
-
-        if (episodeNumberKey != null && urlDict.containsKey(episodeNumberKey)) return episodeNumberKey;
-        if (episodeTitleKey != null && urlDict.containsKey(episodeTitleKey)) return episodeTitleKey;
-
-        String epNorm = normalizeEpisodeNumberKey(episodeNumberKey);
-        if (epNorm != null) {
-            for (String key : urlDict.keySet()) {
-                String keyNorm = normalizeEpisodeNumberKey(key);
-                if (keyNorm != null && keyNorm.equals(epNorm)) return key;
-            }
-        }
-
-        String titleNorm = normalizeTitleKey(episodeTitleKey);
-        if (titleNorm != null) {
-            for (String key : urlDict.keySet()) {
-                String keyNorm = normalizeTitleKey(key);
-                if (keyNorm == null) continue;
-                if (keyNorm.contains(titleNorm) || titleNorm.contains(keyNorm)) return key;
-            }
-        }
-
-        return null;
     }
 
     private String normalizeEpisodeNumberKey(String key) {
