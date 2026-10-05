@@ -54,18 +54,31 @@ const glowScale = computed(() => 1 + progress.value * 0.35)
                 <button class="btn btn-ghost btn-lg" type="button" @click="emit('auth')">{{ t.hero.getAuthCode }}</button>
             </div>
 
-            <a class="hero__badge" href="#changelog">
-                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-                    <path
-                        d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 12.5a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11zM7.25 4h1.5v4.5l3 1.8-.75 1.24L7.25 9.5V4z"
-                    />
-                </svg>
-                <span>{{ versionLabel }}</span>
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                    <path d="m7 6 5 5 5-5" stroke-linecap="round" stroke-linejoin="round" />
-                    <path d="m7 13 5 5 5-5" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-            </a>
+            <div class="hero__meta">
+                <a class="hero__badge" href="#changelog">
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+                        <path
+                            d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 12.5a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11zM7.25 4h1.5v4.5l3 1.8-.75 1.24L7.25 9.5V4z"
+                        />
+                    </svg>
+                    <span>{{ versionLabel }}</span>
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path d="m7 6 5 5 5-5" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="m7 13 5 5 5-5" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </a>
+
+                <a class="hero__guide" href="#/guide">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                    </svg>
+                    <span>{{ t.hero.guide }}</span>
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
+                        <path d="m9 6 6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </a>
+            </div>
         </div>
 
         <div class="hero__scroll-hint" :style="{ opacity: contentOpacity }" aria-hidden="true">
@@ -195,6 +208,14 @@ const glowScale = computed(() => 1 + progress.value * 0.35)
     margin-bottom: 26px;
 }
 
+.hero__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
 .hero__badge {
     display: inline-flex;
     align-items: center;
@@ -210,6 +231,27 @@ const glowScale = computed(() => 1 + progress.value * 0.35)
 
 .hero__badge:hover {
     background: rgba(0, 122, 255, 0.18);
+}
+
+/* Second pill in the meta row: entry to the #/guide usage-guide page, drawn
+   in the badge's outline variant so the version badge keeps the fill. */
+.hero__guide {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 16px;
+    border-radius: 999px;
+    border: 1px solid rgba(0, 122, 255, 0.28);
+    background: transparent;
+    color: var(--brand);
+    font-size: 13.5px;
+    font-weight: 600;
+    transition: background-color 0.25s var(--ease), border-color 0.25s var(--ease);
+}
+
+.hero__guide:hover {
+    background: var(--brand-tint);
+    border-color: transparent;
 }
 
 .hero__scroll-hint {
@@ -255,7 +297,7 @@ const glowScale = computed(() => 1 + progress.value * 0.35)
     animation: hero-rise 0.7s var(--ease) 0.55s both;
 }
 
-.hero__badge {
+.hero__meta {
     animation: hero-rise 0.7s var(--ease) 0.65s both;
 }
 
@@ -317,7 +359,7 @@ const glowScale = computed(() => 1 + progress.value * 0.35)
     .hero__title .line-mask > span,
     .hero__lede,
     .hero__cta,
-    .hero__badge,
+    .hero__meta,
     .hero__scroll-hint span,
     .hero__scroll-hint svg {
         animation: none;

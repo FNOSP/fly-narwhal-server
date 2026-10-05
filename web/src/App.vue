@@ -16,6 +16,7 @@ import FaqSection from './components/FaqSection.vue'
 import CtaSection from './components/CtaSection.vue'
 import TimelinePage from './components/TimelinePage.vue'
 import CreditsPage from './components/CreditsPage.vue'
+import GuidePage from './components/GuidePage.vue'
 import SiteFooter from './components/SiteFooter.vue'
 import AuthCodeModal from './components/AuthCodeModal.vue'
 import { useRelease } from './composables/useRelease'
@@ -24,14 +25,16 @@ import { useAuthCode } from './composables/useAuthCode'
 const { loading, tag, releaseUrl, platformGroups, versionLabel, publishedLabel, osRules } = useRelease()
 const auth = useAuthCode()
 
-// Standalone pages live behind `#/timeline` (full changelog) and `#/credits`
-// (open-source acknowledgements); everything else renders the landing page.
+// Standalone pages live behind `#/timeline` (full changelog), `#/credits`
+// (open-source acknowledgements) and `#/guide` (usage guide); everything else
+// renders the landing page.
 // A tiny hash router — no dependency — keeps section anchors like `#features`
 // working as before.
 function routeFromHash() {
     const hash = window.location.hash
     if (hash.startsWith('#/timeline')) return 'timeline'
     if (hash.startsWith('#/credits')) return 'credits'
+    if (hash.startsWith('#/guide')) return 'guide'
     return 'home'
 }
 
@@ -96,6 +99,7 @@ function scrollToDownload() {
 <template>
     <TimelinePage v-if="route === 'timeline'" />
     <CreditsPage v-else-if="route === 'credits'" />
+    <GuidePage v-else-if="route === 'guide'" />
 
     <template v-else>
         <SiteNav :solid="navSolid" :progress="docProgress" @download="scrollToDownload" @auth="auth.request" />
