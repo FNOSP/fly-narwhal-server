@@ -8,6 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.concurrent.ExecutorService;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -21,8 +23,8 @@ public class MgtvDanmuFetcher extends AbstractDanmuFetcher {
     private static final String API_DANMAKU = "https://galaxy.bz.mgtv.com/rdbarrage";
     private final ObjectMapper objectMapper;
 
-    public MgtvDanmuFetcher(RestTemplate restTemplate, ObjectMapper objectMapper) {
-        super(restTemplate);
+    public MgtvDanmuFetcher(RestTemplate restTemplate, ObjectMapper objectMapper, ExecutorService danmuFetchExecutor) {
+        super(restTemplate, danmuFetchExecutor);
         this.objectMapper = objectMapper;
     }
 
@@ -61,6 +63,7 @@ public class MgtvDanmuFetcher extends AbstractDanmuFetcher {
             }
             return urlDict;
         } catch (Exception e) {
+            log.warn("Failed to resolve Mgtv episode urls for {}: {}", url, String.valueOf(e));
             return Map.of();
         }
     }

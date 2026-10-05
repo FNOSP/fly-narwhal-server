@@ -10,6 +10,8 @@ import org.jsoup.nodes.Document;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.concurrent.ExecutorService;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -25,8 +27,8 @@ public class TencentDanmuFetcher extends AbstractDanmuFetcher {
     private static final String API_DANMAKU_SEGMENT = "https://dm.video.qq.com/barrage/segment/";
     private final ObjectMapper objectMapper;
 
-    public TencentDanmuFetcher(RestTemplate restTemplate, ObjectMapper objectMapper) {
-        super(restTemplate);
+    public TencentDanmuFetcher(RestTemplate restTemplate, ObjectMapper objectMapper, ExecutorService danmuFetchExecutor) {
+        super(restTemplate, danmuFetchExecutor);
         this.objectMapper = objectMapper;
     }
 
@@ -90,6 +92,7 @@ public class TencentDanmuFetcher extends AbstractDanmuFetcher {
             // different episode would silently receive episode 1's danmaku.
             return map;
         } catch (Exception e) {
+            log.warn("Failed to resolve Tencent episode urls for {}: {}", url, String.valueOf(e));
             return Map.of();
         }
     }

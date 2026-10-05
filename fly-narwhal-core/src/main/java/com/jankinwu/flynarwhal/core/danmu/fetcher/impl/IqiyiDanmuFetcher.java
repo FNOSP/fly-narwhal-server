@@ -15,6 +15,8 @@ import org.brotli.dec.BrotliInputStream;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.concurrent.ExecutorService;
+
 import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -39,8 +41,8 @@ public class IqiyiDanmuFetcher extends AbstractDanmuFetcher {
 
     private final ObjectMapper objectMapper;
 
-    public IqiyiDanmuFetcher(RestTemplate restTemplate, ObjectMapper objectMapper) {
-        super(restTemplate);
+    public IqiyiDanmuFetcher(RestTemplate restTemplate, ObjectMapper objectMapper, ExecutorService danmuFetchExecutor) {
+        super(restTemplate, danmuFetchExecutor);
         this.objectMapper = objectMapper;
     }
 

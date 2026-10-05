@@ -13,6 +13,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.concurrent.ExecutorService;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -28,14 +30,20 @@ import java.util.regex.Pattern;
 public class YoukuDanmuFetcher extends AbstractDanmuFetcher {
 
     private final ObjectMapper objectMapper;
-    private String cna;
-    private String token;
-    private String tokenEnc;
+    private volatile String cna;
+    private volatile String token;
+    private volatile String tokenEnc;
+    /** Expiry of the current {@code _m_h5_tk} in epoch millis; 0 means unknown. */
+    private volatile long tokenExpiresAt;
     private static final String APP_KEY = "24679788";
     private static final String SECRET_KEY = "MkmC9SoIw6xCkSKHhJ7b5D2r51kBiREr";
+    /** Refresh the token this long before its actual expiry to avoid races. */
+    private static final long TOKEN_REFRESH_MARGIN_MILLIS = 60_000L;
+    /** Fallback lifetime when the token carries no parsable expiry suffix. */
+    private static final long TOKEN_FALLBACK_LIFETIME_MILLIS = 30 * 60_000L;
 
-    public YoukuDanmuFetcher(RestTemplate restTemplate, ObjectMapper objectMapper) {
-        super(restTemplate);
+    public YoukuDanmuFetcher(RestTemplate restTemplate, ObjectMapper objectMapper, ExecutorService danmuFetchExecutor) {
+        super(restTemplate, danmuFetchExecutor);
         this.objectMapper = objectMapper;
     }
 
@@ -98,47 +106,96 @@ public class YoukuDanmuFetcher extends AbstractDanmuFetcher {
 
             return map;
         } catch (Exception e) {
+            log.warn("Failed to resolve Youku episode urls for {}: {}", url, String.valueOf(e));
             return Map.of();
         }
     }
 
-    private synchronized void ensureCookies() {
-        if (cna == null) {
-            try {
-                ResponseEntity<String> response = restTemplate.getForEntity("https://log.mmstat.com/eg.js", String.class);
-                List<String> cookies = response.getHeaders().get("Set-Cookie");
-                if (cookies != null) {
-                    for (String cookie : cookies) {
-                        if (cookie.contains("cna=")) {
-                            cna = parseCookie(cookie, "cna");
+    private void ensureCookies(boolean force) {
+        synchronized (this) {
+            if (cna == null) {
+                try {
+                    ResponseEntity<String> response = restTemplate.getForEntity("https://log.mmstat.com/eg.js", String.class);
+                    List<String> cookies = response.getHeaders().get("Set-Cookie");
+                    if (cookies != null) {
+                        for (String cookie : cookies) {
+                            if (cookie.contains("cna=")) {
+                                cna = parseCookie(cookie, "cna");
+                            }
                         }
                     }
+                } catch (Exception e) {
+                    log.error("Failed to get Youku cna", e);
                 }
-            } catch (Exception e) {
-                log.error("Failed to get Youku cna", e);
             }
-        }
-        
-        if (token == null) {
-            try {
-                ResponseEntity<String> response = restTemplate.getForEntity(
-                        "https://acs.youku.com/h5/mtop.com.youku.aplatform.weakget/1.0/?jsv=2.5.1&appKey=" + APP_KEY, 
-                        String.class);
-                List<String> cookies = response.getHeaders().get("Set-Cookie");
-                if (cookies != null) {
-                    for (String cookie : cookies) {
-                        if (cookie.contains("_m_h5_tk=")) {
-                            token = parseCookie(cookie, "_m_h5_tk");
-                        }
-                        if (cookie.contains("_m_h5_tk_enc=")) {
-                            tokenEnc = parseCookie(cookie, "_m_h5_tk_enc");
+
+            // The old code fetched _m_h5_tk exactly once per process; after it
+            // expired every signed request failed and Youku danmu went silently
+            // empty forever. Refresh proactively on expiry and on force.
+            boolean stale = force || token == null
+                    || (tokenExpiresAt > 0 && System.currentTimeMillis() > tokenExpiresAt - TOKEN_REFRESH_MARGIN_MILLIS);
+            if (stale) {
+                token = null;
+                tokenEnc = null;
+                tokenExpiresAt = 0;
+                try {
+                    ResponseEntity<String> response = restTemplate.getForEntity(
+                            "https://acs.youku.com/h5/mtop.com.youku.aplatform.weakget/1.0/?jsv=2.5.1&appKey=" + APP_KEY,
+                            String.class);
+                    List<String> cookies = response.getHeaders().get("Set-Cookie");
+                    if (cookies != null) {
+                        for (String cookie : cookies) {
+                            if (cookie.contains("_m_h5_tk=")) {
+                                token = parseCookie(cookie, "_m_h5_tk");
+                            }
+                            if (cookie.contains("_m_h5_tk_enc=")) {
+                                tokenEnc = parseCookie(cookie, "_m_h5_tk_enc");
+                            }
                         }
                     }
+                    if (token != null) {
+                        tokenExpiresAt = parseTokenExpiry(token);
+                    }
+                } catch (Exception e) {
+                    log.error("Failed to get Youku token", e);
                 }
-            } catch (Exception e) {
-                log.error("Failed to get Youku token", e);
             }
         }
+    }
+
+    /**
+     * {@code _m_h5_tk} is shaped {@code <hash>_<expiry epoch millis>}. Falls back
+     * to a short conservative lifetime when the suffix is missing or unparsable.
+     */
+    static long parseTokenExpiry(String tokenValue) {
+        int idx = tokenValue.lastIndexOf('_');
+        if (idx >= 0 && idx < tokenValue.length() - 1) {
+            try {
+                return Long.parseLong(tokenValue.substring(idx + 1));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return System.currentTimeMillis() + TOKEN_FALLBACK_LIFETIME_MILLIS;
+    }
+
+    /**
+     * Detects mtop's token/session expiry error codes. Note the upstream typo
+     * in {@code FAIL_SYS_TOKEN_EXOIRED} is real and must be matched as-is.
+     */
+    static boolean isTokenExpiredResponse(JsonNode root) {
+        if (root == null) return false;
+        JsonNode ret = root.path("ret");
+        if (!ret.isArray()) return false;
+        for (JsonNode r : ret) {
+            String code = r.asText("");
+            if (code.startsWith("FAIL_SYS_TOKEN_EXOIRED")
+                    || code.startsWith("FAIL_SYS_TOKEN_EMPTY")
+                    || code.startsWith("FAIL_SYS_TOKEN_EXPIRED")
+                    || code.startsWith("FAIL_SYS_SESSION_EXPIRED")) {
+                return true;
+            }
+        }
+        return false;
     }
     
     private String parseCookie(String cookieHeader, String name) {
@@ -154,7 +211,7 @@ public class YoukuDanmuFetcher extends AbstractDanmuFetcher {
 
     @Override
     protected List<String> getLinks(String url) {
-        ensureCookies();
+        ensureCookies(false);
         try {
             String vid = null;
             if (url.contains("vid=")) {
@@ -192,82 +249,103 @@ public class YoukuDanmuFetcher extends AbstractDanmuFetcher {
     protected List<DanmuModel> parse(String link) {
         List<DanmuModel> list = new ArrayList<>();
         if (!link.startsWith("youku:")) return list;
-        
+
         String[] parts = link.split(":");
         String vid = parts[1];
         int mat = Integer.parseInt(parts[2]);
-        
+
         try {
-            ensureCookies();
-            if (token == null) return list;
+            ensureCookies(false);
+            if (token == null) {
+                log.warn("Youku token unavailable, skipping segment vid={} mat={}", vid, mat);
+                return list;
+            }
 
-            long t = System.currentTimeMillis();
-            
-            Map<String, Object> msgMap = new HashMap<>();
-            msgMap.put("ctime", t);
-            msgMap.put("ctype", 10004);
-            msgMap.put("cver", "v1.0");
-            msgMap.put("guid", cna);
-            msgMap.put("mat", mat);
-            msgMap.put("mcount", 1);
-            msgMap.put("pid", 0);
-            msgMap.put("sver", "3.1.0");
-            msgMap.put("type", 1);
-            msgMap.put("vid", vid);
-            
-            String msgJson = objectMapper.writeValueAsString(msgMap).replace(" ", "");
-            String msgBase64 = Base64.getEncoder().encodeToString(msgJson.getBytes(StandardCharsets.UTF_8));
-            
-            Map<String, String> finalMsg = new HashMap<>();
-            finalMsg.put("msg", msgBase64);
-            finalMsg.put("sign", md5(msgBase64 + SECRET_KEY));
-            
-            String dataJson = objectMapper.writeValueAsString(finalMsg).replace(" ", "");
-            
-            String rawToken = token.split("_")[0];
-            String signSource = rawToken + "&" + t + "&" + APP_KEY + "&" + dataJson;
-            String sign = md5(signSource);
-            
-            String url = "https://acs.youku.com/h5/mopen.youku.danmu.list/1.0/?jsv=2.5.6&appKey=" + APP_KEY + 
-                    "&t=" + t + "&sign=" + sign + "&api=mopen.youku.danmu.list&v=1.0&type=originaljson&dataType=jsonp&timeout=20000";
-            
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-            headers.set("Referer", "https://v.youku.com");
-            StringBuilder cookieHeader = new StringBuilder();
-            if (cna != null) cookieHeader.append("cna=").append(cna).append("; ");
-            if (token != null) cookieHeader.append("_m_h5_tk=").append(token).append("; ");
-            if (tokenEnc != null) cookieHeader.append("_m_h5_tk_enc=").append(tokenEnc).append("; ");
-            headers.set("Cookie", cookieHeader.toString());
+            JsonNode responseRoot = requestSegment(vid, mat);
+            if (isTokenExpiredResponse(responseRoot)) {
+                log.warn("Youku token rejected (ret={}), refreshing and retrying vid={} mat={}",
+                        responseRoot.path("ret"), vid, mat);
+                ensureCookies(true);
+                if (token == null) return list;
+                responseRoot = requestSegment(vid, mat);
+            }
+            if (responseRoot == null) return list;
 
-            HttpEntity<String> entity = new HttpEntity<>("data=" + dataJson, headers);
-            
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
-            
-            JsonNode responseRoot = objectMapper.readTree(response.getBody());
             JsonNode resultNode = responseRoot.path("data").path("result");
             if (resultNode.isTextual()) {
                 resultNode = objectMapper.readTree(resultNode.asText());
             }
-            
+
             JsonNode danmus = resultNode.path("data").path("result");
             if (danmus.isArray()) {
                 for (JsonNode item : danmus) {
                     DanmuModel model = new DanmuModel();
                     model.setTime(item.path("playat").asDouble(0) / 1000.0);
                     model.setText(item.path("content").asText());
-                    
+
                     String props = item.path("propertis").asText("{}");
                     JsonNode propNode = objectMapper.readTree(props);
                     model.setColor(propNode.path("color").asText("#FFFFFF"));
-                    
+
                     list.add(model);
                 }
             }
-            
+
         } catch (Exception e) {
+            log.warn("Failed to parse Youku danmu segment vid={} mat={}: {}", vid, mat, String.valueOf(e));
         }
         return list;
+    }
+
+    /**
+     * Performs one signed mtop danmu request and returns the parsed body, or
+     * null when the transport failed. The caller decides whether an expired
+     * token answer is worth a refresh-and-retry.
+     */
+    private JsonNode requestSegment(String vid, int mat) throws Exception {
+        long t = System.currentTimeMillis();
+
+        Map<String, Object> msgMap = new HashMap<>();
+        msgMap.put("ctime", t);
+        msgMap.put("ctype", 10004);
+        msgMap.put("cver", "v1.0");
+        msgMap.put("guid", cna);
+        msgMap.put("mat", mat);
+        msgMap.put("mcount", 1);
+        msgMap.put("pid", 0);
+        msgMap.put("sver", "3.1.0");
+        msgMap.put("type", 1);
+        msgMap.put("vid", vid);
+
+        String msgJson = objectMapper.writeValueAsString(msgMap).replace(" ", "");
+        String msgBase64 = Base64.getEncoder().encodeToString(msgJson.getBytes(StandardCharsets.UTF_8));
+
+        Map<String, String> finalMsg = new HashMap<>();
+        finalMsg.put("msg", msgBase64);
+        finalMsg.put("sign", md5(msgBase64 + SECRET_KEY));
+
+        String dataJson = objectMapper.writeValueAsString(finalMsg).replace(" ", "");
+
+        String rawToken = token.split("_")[0];
+        String signSource = rawToken + "&" + t + "&" + APP_KEY + "&" + dataJson;
+        String sign = md5(signSource);
+
+        String url = "https://acs.youku.com/h5/mopen.youku.danmu.list/1.0/?jsv=2.5.6&appKey=" + APP_KEY +
+                "&t=" + t + "&sign=" + sign + "&api=mopen.youku.danmu.list&v=1.0&type=originaljson&dataType=jsonp&timeout=20000";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        headers.set("Referer", "https://v.youku.com");
+        StringBuilder cookieHeader = new StringBuilder();
+        if (cna != null) cookieHeader.append("cna=").append(cna).append("; ");
+        if (token != null) cookieHeader.append("_m_h5_tk=").append(token).append("; ");
+        if (tokenEnc != null) cookieHeader.append("_m_h5_tk_enc=").append(tokenEnc).append("; ");
+        headers.set("Cookie", cookieHeader.toString());
+
+        HttpEntity<String> entity = new HttpEntity<>("data=" + dataJson, headers);
+
+        ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
+        return objectMapper.readTree(response.getBody());
     }
     
     private String md5(String input) {
