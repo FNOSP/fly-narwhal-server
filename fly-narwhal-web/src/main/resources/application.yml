@@ -56,3 +56,14 @@ fly-narwhal:
     # Clients below this version receive a 4001 code with an upgrade prompt;
     # clients sending no version header (legacy) are always allowed.
     min-version: ${FLY_NARWHAL_CLIENT_MIN_VERSION:2.4.0}
+
+danmu:
+  cache:
+    dir: ${DANMU_CACHE_DIR:./data/danmu-cache}
+    max-files: 100
+    # Full results live for a month; sparse results (fewer than min-count
+    # entries, i.e. likely incomplete fetches) expire after an hour so they
+    # get re-crawled soon. Empty results are never cached at all.
+    ttl-days: 30
+    sparse-ttl-minutes: 60
+    min-count: 100
