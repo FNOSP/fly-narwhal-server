@@ -67,3 +67,22 @@ danmu:
     ttl-days: 30
     sparse-ttl-minutes: 60
     min-count: 100
+  post:
+    # Post-processing runs per request on the RAW cached payload, so changing
+    # any of these takes effect immediately without purging the cache.
+    # Per-title time offset rules, most specific wins:
+    #   剧名:秒, 剧名/S01:秒, 剧名/S01/E03:秒  (negative = earlier)
+    offset-rules: ${DANMU_POST_OFFSET_RULES:}
+    # Collapse identical text within n-minute buckets (0 = off).
+    dedupe-minutes: 1
+    # Blocked words, "|"-separated; each entry is a literal or /regex/ with
+    # optional i/m/s flags, e.g. "^\\d{2,4}[-/.]\\d{1,2}[-/.]\\d{1,2}$|打卡"
+    blocked-words: ${DANMU_POST_BLOCKED_WORDS:}
+    # Cap total entries in thousands by equal-interval sampling (0 = off).
+    limit-k: ${DANMU_POST_LIMIT_K:0}
+    # Convert top(5)/bottom(4) danmu to scrolling(1) for players lacking support.
+    top-bottom-to-scroll: ${DANMU_POST_TOP_BOTTOM_TO_SCROLL:false}
+    # default | white (force all white) | color (white entries get a pool color)
+    color-mode: ${DANMU_POST_COLOR_MODE:default}
+    # Decimal RGB pool for color-mode=color; empty uses the built-in 9 colors.
+    color-pool: ""

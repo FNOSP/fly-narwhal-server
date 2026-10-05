@@ -32,6 +32,7 @@ public class DanmuSseService {
 
     private final DanmuAppService danmuAppService;
     private final DanmuFileCache danmuFileCache;
+    private final DanmuPostProcessor danmuPostProcessor;
     private final ObjectMapper objectMapper;
 
     private final ConcurrentHashMap<String, CompletableFuture<String>> inFlight = new ConcurrentHashMap<>();
@@ -55,7 +56,10 @@ public class DanmuSseService {
 
         Optional<String> cached = danmuFileCache.read(requestKey);
         if (cached.isPresent()) {
-            SSE_EXECUTOR.execute(() -> sendAndComplete(emitter, cached.get(), requestedType));
+            // The cache holds the RAW payload; post-processing runs per request so
+            // config changes apply immediately without purging anything.
+            SSE_EXECUTOR.execute(() -> sendAndComplete(emitter,
+                    danmuPostProcessor.process(cached.get(), title, seasonNumber, episodeNumber), requestedType));
             return emitter;
         }
 
@@ -69,7 +73,8 @@ public class DanmuSseService {
                 completeWithError(emitter, ex);
                 return;
             }
-            sendAndComplete(emitter, canonicalJson, requestedType);
+            sendAndComplete(emitter,
+                    danmuPostProcessor.process(canonicalJson, title, seasonNumber, episodeNumber), requestedType);
         }, SSE_EXECUTOR);
 
         return emitter;
