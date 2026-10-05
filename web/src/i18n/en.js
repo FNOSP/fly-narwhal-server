@@ -38,6 +38,7 @@ export default {
         lede: 'A third-party desktop client for fnOS media services. Version 2.0 is a fresh start: rewritten natively in Flutter with a built-in mpv playback core, covering Windows, macOS and Linux, with smart intro/outro skipping and danmaku.',
         download: 'Download',
         getAuthCode: 'Get auth code',
+        guide: 'User guide',
         scrollHint: 'Scroll down',
     },
 
@@ -365,6 +366,7 @@ export default {
             changelog: 'Changelog',
             issues: 'Report an issue',
             credits: 'Acknowledgements',
+            guide: 'User guide',
         },
         disclaimer: 'This project is a third-party media client built by fnOS enthusiasts and is not affiliated with the fnOS media team. Please be sure to comply with the relevant terms of service before using it.',
         copyright: '© {year} FNOSP · Released under the AGPL-3.0 open-source license',
@@ -418,6 +420,126 @@ export default {
             vue: 'Web UI framework',
             vite: 'Frontend build tool and dev server',
             vitePluginVue: 'Vue single-file component support for Vite',
+        },
+    },
+
+    guide: {
+        crumb: 'Fly Narwhal · User guide',
+        eyebrow: 'User guide',
+        title: 'Set it up once, watch smarter.',
+        lede: 'From connecting the Fly Narwhal server, to smart intro/outro analysis and skipping, to danmaku display and sources — this guide walks you through every related setting in the Fly Narwhal client.',
+        backHome: 'Back to home',
+        backToHome: 'Back to the Fly Narwhal home page',
+        tocAria: 'Table of contents',
+        toc: {
+            server: 'Server setup',
+            smartSkip: 'Smart intro/outro skip',
+            danmaku: 'Danmaku setup',
+        },
+        server: {
+            title: 'Enable and configure the Fly Narwhal server',
+            lead: 'The Fly Narwhal server runs on your fnOS NAS and powers intro/outro analysis, danmaku and more. Smart skip and danmaku only become available after the client is connected to it.',
+            prereq: 'Prerequisite: the latest version of the Fly Narwhal client is installed.',
+            steps: [
+                {
+                    title: 'Turn on the server switch',
+                    desc: 'Open “Settings” → “Server” in the client and turn on “Enable Fly Narwhal server”. The remaining configuration cards unfold once the switch is on.',
+                },
+                {
+                    title: 'Fill in the server address',
+                    desc: 'Enter the full server URL in “Fly Narwhal server address”, e.g. http://192.168.1.1:5365. Press Enter or click outside the field to save.',
+                },
+                {
+                    title: 'Fill in the auth code',
+                    desc: 'Click “Fill in auth code”. Open Fly Narwhal in fnOS, click “Get auth code” in the top-right corner, then copy the code into the dialog and press “OK”.',
+                },
+                {
+                    title: 'Test the connection',
+                    desc: 'Click the “Test” button next to the address field. On success you will see “Fly Narwhal server connected, current server version: x.y.z”; on failure the toast names the reason, such as an invalid or unreachable address.',
+                },
+            ],
+            tips: [
+                'Smart skip, danmaku and the other server features only activate when all three are in place: the enable switch, the server address and the auth code.',
+                'The server configuration is separate from the client’s “Sign in” page (IP:Port, username/password, access code); they do not affect each other.',
+            ],
+        },
+        smartSkip: {
+            title: 'Analyze and skip intros/outros automatically',
+            lead: 'The server analyzes the video and audio features of your episodes to locate intro and outro ranges; the player then skips them automatically — no more dragging the progress bar.',
+            sections: [
+                {
+                    title: 'Step 1 · Start a smart analysis',
+                    points: [
+                        'On a show’s detail page click “⋯ More actions” → “Smart analyze intro/outro” to submit the whole series; the “⋯” menu on a season poster analyzes that season only.',
+                        'The same entry is available in the “⋯” menus of the season detail page, Favorites and the media library.',
+                        'After submitting you will see “Intro/outro analysis task submitted”; the season detail page shows “Smart analysis: {status}” (not analyzed, preparing, queued, analyzing, partially done, completed, failed) and polls automatically for the analysis status.',
+                        'TV shows only — movies have no such entry; videos from cloud drives or STRM files cannot use smart analysis.',
+                    ],
+                },
+                {
+                    title: 'Step 2 · Turn on smart skip',
+                    points: [
+                        'Play any episode, open “Settings” → “Skip intro/outro” in the player control bar, and turn on “Smart skip intro/outro”.',
+                        'When playback reaches the start of an intro-like segment it skips immediately and shows “Intro skipped automatically” at the bottom-left, with an “Undo 5” countdown — you have 5 seconds to jump back.',
+                        'At the start of the outro a countdown reads “Skipping outro in N seconds” and can be cancelled; with auto-play next enabled it reads “Playing next episode in N seconds” instead (“Ending playback in N seconds” while the next episode is not ready yet).',
+                        'Open “Smart skip settings” to pick which segment types to skip: intro, outro, recap, next-episode preview and ads.',
+                    ],
+                },
+                {
+                    title: 'Tune the analysis parameters (optional)',
+                    points: [
+                        'Under “Settings” → “Server” → “Smart skip configuration”, click “Configure” (client version ≥ 2.4.0 required).',
+                        'Detection modes: five independent switches for detecting intros, outros, recaps, next-episode previews and ads.',
+                        'Duration limits: minimum and maximum lengths for intros and outros (seconds); boundary offsets: intro start/end offset and outro end offset (±60 s).',
+                        'Advanced: prefer fingerprint matching, fallback black-frame analyzer and anime mode; “Restore defaults” is always one click away.',
+                    ],
+                },
+                {
+                    title: 'Manual mode (no server needed)',
+                    points: [
+                        'On the same “Skip intro/outro” page, set “Intro length” and “Outro length” by hand (0–600 s).',
+                        'One-click shortcuts while playing: “Set current time as intro” and “Set remaining time as outro”.',
+                        '“Reset” in the top-right clears both lengths; the manual sliders are disabled while smart skip is on.',
+                    ],
+                },
+            ],
+            tips: [
+                'Analysis results are stored per season — analyze once, reuse forever; the smart-skip switch is remembered per user.',
+            ],
+        },
+        danmaku: {
+            title: 'Danmaku configuration',
+            lead: 'Danmaku are fetched and aggregated by the Fly Narwhal server. Once connected, you can turn danmaku on in the player and tune both the display and the sources to taste.',
+            sections: [
+                {
+                    title: 'Turn danmaku on in the player',
+                    points: [
+                        'Complete the server setup in chapter 1 first — otherwise the player shows no danmaku controls at all.',
+                        'Click the “Turn danmaku on” button in the player control bar to load danmaku for the current episode; click again to turn them off.',
+                        'The neighbouring “Danmaku settings” button opens the display panel.',
+                    ],
+                },
+                {
+                    title: 'Display settings',
+                    points: [
+                        'Display area: five steps — 10% / 25% / 50% / 75% / 100%; opacity: continuous 0–100%.',
+                        'Font size: 50%–170%; scroll speed: five steps from very slow to very fast.',
+                        '“Advanced settings” offers “Sync danmaku speed with playback rate” and “Show danmaku debug info”.',
+                    ],
+                },
+                {
+                    title: 'Danmaku sources (optional)',
+                    points: [
+                        'Under “Settings” → “Server” (client version ≥ 2.4.0 required), two extra source types can be added.',
+                        '“dandanplay source”: point at a dandanplay relay server to supplement anime danmaku; enter the relay address and save, or clear the field and save to disable it.',
+                        '“Fallback danmaku servers”: tried in order whenever all direct sources come back empty; any third-party server compatible with the dandanplay protocol works. Add servers (name optional, address must start with http:// or https://), then toggle, edit or delete each one.',
+                    ],
+                },
+            ],
+            tips: [
+                'Direct sources such as bilibili, iQiyi and Migu are aggregated by the server; the client has no per-platform switches.',
+                'If loading fails you will see “Danmaku request failed, please check the Fly Narwhal server configuration” — revisit chapter 1 first.',
+            ],
         },
     },
 

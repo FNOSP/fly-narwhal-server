@@ -17,7 +17,7 @@ const { groups, labels } = useContributors()
 // 这里追加尺寸参数拿到 2x 图，避免在高分屏上发糊。
 const avatarSrc = (c) => c.avatar + '&s=80'
 
-// External repo links and the two internal hash-route pages, kept in one list
+// External repo links and the internal hash-route pages, kept in one list
 // so the nav grid renders in a stable order. hrefs stay literal; labels come
 // from the catalog.
 const links = [
@@ -27,6 +27,7 @@ const links = [
     { key: 'changelog', href: '#/timeline' },
     { key: 'issues', href: 'https://github.com/FNOSP/FlyNarwhal/issues', external: true },
     { key: 'credits', href: '#/credits' },
+    { key: 'guide', href: '#/guide' },
 ]
 
 const commitsTip = (c) => format(t.value.footer.commitsTip, { login: c.login, commits: c.commits })
