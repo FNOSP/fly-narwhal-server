@@ -3,6 +3,7 @@ package com.jankinwu.flynarwhal.core.danmu.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.core.danmu.config.DanmuMatchProperties;
 import com.jankinwu.flynarwhal.core.danmu.model.DanmuModel;
+import com.jankinwu.flynarwhal.core.danmu.repository.DanmuSourceConfigProvider;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -17,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DanmuAppServiceFallbackTest {
 
     private DanmuAppService service() {
-        return new DanmuAppService(null, null, new ObjectMapper(), new DanmuMatchProperties(), null, null);
+        return new DanmuAppService(null, null, new ObjectMapper(), new DanmuMatchProperties(), null, null, null);
     }
 
     @Test
@@ -90,5 +91,34 @@ class DanmuAppServiceFallbackTest {
         assertEquals("#AABBCC", DanmuAppService.expandHexColor("#aabbcc"));
         assertEquals("#FFFFFF", DanmuAppService.expandHexColor(""));
         assertEquals("#FFFFFF", DanmuAppService.expandHexColor("xyz"));
+    }
+
+    // ---- DB-backed provider wiring ----
+
+    @Test
+    void providerSuppliesServersInOrderAndRelay() {
+        DanmuSourceConfigProvider stub = new DanmuSourceConfigProvider() {
+            @Override
+            public String getDandanRelayUrl() {
+                return "https://relay.example/ddp/v1";
+            }
+
+            @Override
+            public List<String> getFallbackServers() {
+                return List.of("https://a.example", " ", "https://b.example");
+            }
+        };
+        DanmuAppService svc = new DanmuAppService(null, null, new ObjectMapper(),
+                new DanmuMatchProperties(), null, null, stub);
+        assertEquals(List.of("https://a.example", "https://b.example"), svc.effectiveFallbackServers(),
+                "blank entries are dropped, order preserved");
+        assertEquals("https://relay.example/ddp/v1", svc.effectiveDandanRelay());
+    }
+
+    @Test
+    void withoutProviderStaticConfigDefaultsToDisabled() {
+        DanmuAppService svc = service();
+        assertTrue(svc.effectiveFallbackServers().isEmpty());
+        assertEquals("", svc.effectiveDandanRelay());
     }
 }

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.core.danmu.config.DanmuMatchProperties;
 import com.jankinwu.flynarwhal.core.danmu.fetcher.impl.DandanDanmuFetcher;
 import com.jankinwu.flynarwhal.core.danmu.model.DanmuModel;
+import com.jankinwu.flynarwhal.core.danmu.repository.DanmuSourceConfigProvider;
 import com.jankinwu.flynarwhal.core.danmu.repository.DanmuUrlRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -65,18 +66,22 @@ public class DanmuAppService {
     private final ExecutorService danmuFetchExecutor;
     @Nullable
     private final DanmuUrlRepository danmuUrlRepository;
+    @Nullable
+    private final DanmuSourceConfigProvider danmuSourceConfigProvider;
 
     /**
-     * Last-resort third-party danmu server using the dandanplay-compatible
-     * "?url=&lt;play page&gt;&amp;ac=dm" contract (e.g. https://api.danmu.icu).
-     * Queried only when the direct fetchers returned nothing. Empty = off.
+     * Static fallback for the third-party danmu server ("?url=&lt;play page&gt;&amp;ac=dm"
+     * contract), used only when no {@link DanmuSourceConfigProvider} is wired
+     * (core-standalone tests). The DB-backed provider takes precedence and can
+     * carry several servers; empty means off.
      */
     @Value("${danmu.source.fallback-server:}")
     private String fallbackServer = "";
 
     /**
-     * Dandanplay ddp relay base URL (see DandanDanmuFetcher). Empty disables
-     * the dandan search channel; the pseudo-URL scheme is "dandan:{id}".
+     * Static fallback for the dandanplay ddp relay base URL, used only when no
+     * {@link DanmuSourceConfigProvider} is wired. Empty disables the dandan
+     * search channel.
      */
     @Value("${danmu.source.dandan.relay-url:}")
     private String dandanRelay = "";
@@ -237,12 +242,54 @@ public class DanmuAppService {
         return emojiData;
     }
 
+    /**
+     * Effective dandan relay: DB-backed provider first, static config as the
+     * no-provider fallback. Blank disables the channel.
+     */
+    String effectiveDandanRelay() {
+        if (danmuSourceConfigProvider != null) {
+            String v = danmuSourceConfigProvider.getDandanRelayUrl();
+            return v == null ? "" : v.trim();
+        }
+        return dandanRelay == null ? "" : dandanRelay.trim();
+    }
+
+    /**
+     * Effective fallback servers in try order: DB-backed provider first,
+     * static config as the no-provider fallback.
+     */
+    List<String> effectiveFallbackServers() {
+        if (danmuSourceConfigProvider != null) {
+            List<String> servers = danmuSourceConfigProvider.getFallbackServers();
+            if (servers == null) return Collections.emptyList();
+            return servers.stream()
+                    .filter(s -> s != null && !s.isBlank())
+                    .map(String::trim)
+                    .collect(Collectors.toList());
+        }
+        if (fallbackServer == null || fallbackServer.isBlank()) return Collections.emptyList();
+        return List.of(fallbackServer.trim());
+    }
+
     private List<DanmuModel> fetchFromFallbackServer(String playUrl) {
-        if (fallbackServer == null || fallbackServer.isBlank() || playUrl == null || playUrl.isEmpty()) {
+        if (playUrl == null || playUrl.isEmpty()) {
             return Collections.emptyList();
         }
+        List<String> servers = effectiveFallbackServers();
+        for (int i = 0; i < servers.size(); i++) {
+            List<DanmuModel> list = requestFallbackServer(servers.get(i), playUrl);
+            if (!list.isEmpty()) {
+                if (servers.size() > 1) {
+                    log.info("Fallback danmu server #{} ({}) served {}", i + 1, servers.get(i), playUrl);
+                }
+                return list;
+            }
+        }
+        return Collections.emptyList();
+    }
+
+    private List<DanmuModel> requestFallbackServer(String base, String playUrl) {
         try {
-            String base = fallbackServer.trim();
             String api = base + (base.contains("?") ? "&" : "?")
                     + "url=" + URLEncoder.encode(playUrl, StandardCharsets.UTF_8) + "&ac=dm";
             Map<String, String> headers = new HashMap<>();
@@ -253,7 +300,7 @@ public class DanmuAppService {
             log.info("Fallback danmu server returned {} entries for {}", list.size(), playUrl);
             return list;
         } catch (Exception e) {
-            log.warn("Fallback danmu server failed for {}: {}", playUrl, String.valueOf(e));
+            log.warn("Fallback danmu server {} failed for {}: {}", base, playUrl, String.valueOf(e));
             return Collections.emptyList();
         }
     }
@@ -565,12 +612,13 @@ public class DanmuAppService {
      * DandanDanmuFetcher expands it into per-episode links.
      */
     private List<String> searchByDandan(String name, String tvNum) {
-        if (dandanRelay == null || dandanRelay.isBlank() || name == null || name.isEmpty()) {
+        String relay = effectiveDandanRelay();
+        if (relay.isEmpty() || name == null || name.isEmpty()) {
             return Collections.emptyList();
         }
         try {
             String ddpPath = "/v2/search/anime?keyword=" + URLEncoder.encode(name, StandardCharsets.UTF_8);
-            String api = dandanRelay.trim() + (dandanRelay.contains("?") ? "&" : "?")
+            String api = relay + (relay.contains("?") ? "&" : "?")
                     + "path=" + URLEncoder.encode(ddpPath, StandardCharsets.UTF_8);
             Map<String, String> headers = new HashMap<>();
             headers.put(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");

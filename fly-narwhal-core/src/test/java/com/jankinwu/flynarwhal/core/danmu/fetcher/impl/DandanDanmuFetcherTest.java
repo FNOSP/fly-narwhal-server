@@ -17,7 +17,7 @@ class DandanDanmuFetcherTest {
 
     @Test
     void supportsOnlyPseudoUrls() {
-        DandanDanmuFetcher f = new DandanDanmuFetcher(null, null, null, "");
+        DandanDanmuFetcher f = new DandanDanmuFetcher(null, null, null, "", null);
         assertTrue(f.supports("dandan:176170001"));
         assertFalse(f.supports("https://www.bilibili.com/x"));
         assertFalse(f.supports(null));
