@@ -158,15 +158,33 @@ public class DanmuAppService {
         }
 
         // Every direct source came back empty: try the configured third-party
-        // fallback server against the candidate play URLs, first hit wins.
+        // fallback servers, first hit wins. When the episode expansion itself
+        // produced no tasks (e.g. 360 found play pages the fetchers could not
+        // expand), a fresh search still yields the raw platform URLs the
+        // ?url= contract needs — without this, the exact case the fallback
+        // exists for was skipped entirely.
         boolean allEmpty = allDanmuData.values().stream().allMatch(List::isEmpty);
-        if (!tasks.isEmpty() && allEmpty) {
+        if (allEmpty) {
+            List<String> candidateUrls;
+            String fallbackKey;
+            if (!tasks.isEmpty()) {
+                candidateUrls = new ArrayList<>();
+                for (Task t : tasks) {
+                    candidateUrls.add(t.url);
+                }
+                fallbackKey = tasks.get(0).key;
+            } else {
+                candidateUrls = searchVideoData(sanitizedDoubanId, title, sanitizeStr(seasonNumber), season);
+                fallbackKey = episodeNumber != null && episodeNumber == 0
+                        ? WHOLE_WORK_KEY
+                        : (episodeNumber != null ? String.valueOf(episodeNumber) : "1");
+            }
             Set<String> tried = new LinkedHashSet<>();
-            for (Task t : tasks) {
-                if (!tried.add(t.url)) continue;
-                List<DanmuModel> fb = fetchFromFallbackServer(t.url);
+            for (String u : candidateUrls) {
+                if (u == null || !tried.add(u)) continue;
+                List<DanmuModel> fb = fetchFromFallbackServer(u);
                 if (!fb.isEmpty()) {
-                    allDanmuData.computeIfAbsent(t.key, k -> new ArrayList<>()).addAll(fb);
+                    allDanmuData.computeIfAbsent(fallbackKey, k -> new ArrayList<>()).addAll(fb);
                     break;
                 }
             }
@@ -822,13 +840,22 @@ public class DanmuAppService {
     }
 
     /**
-     * Resolves the playable vendor URLs of one Douban TV subject. Shared by the
-     * title-search path and the direct douban_id path.
+     * Resolves the playable vendor URLs of one Douban subject. Shared by the
+     * title-search path and the direct douban_id path. Douban splits TV and
+     * movies into separate detail endpoints (/api/v2/tv vs /api/v2/movie), so
+     * when the TV endpoint yields nothing the movie endpoint gets a try — a
+     * film like 奥本海默 404s on the TV endpoint.
      */
     private List<String> fetchVendorsByDoubanId(String doubanId) {
         if (doubanId == null || doubanId.isEmpty()) return Collections.emptyList();
+        List<String> urls = fetchVendorsByDoubanId(doubanId, "tv");
+        if (!urls.isEmpty()) return urls;
+        return fetchVendorsByDoubanId(doubanId, "movie");
+    }
+
+    private List<String> fetchVendorsByDoubanId(String doubanId, String kind) {
         try {
-            String detailUrl = "https://frodo.douban.com/api/v2/tv/" + doubanId + "?apiKey=" + DOUBAN_API_KEY;
+            String detailUrl = "https://frodo.douban.com/api/v2/" + kind + "/" + doubanId + "?apiKey=" + DOUBAN_API_KEY;
             String detailBody = httpGetAsString(detailUrl, doubanWeixinHeaders());
             if (detailBody == null || detailBody.isEmpty()) return Collections.emptyList();
             JsonNode detailRoot = objectMapper.readTree(detailBody);
