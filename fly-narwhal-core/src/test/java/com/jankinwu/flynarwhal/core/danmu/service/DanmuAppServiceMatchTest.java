@@ -97,7 +97,12 @@ class DanmuAppServiceMatchTest {
                 < svc.platformPriority("https://www.iqiyi.com/v_x.html"));
         assertTrue(svc.platformPriority("https://www.iqiyi.com/v_x.html")
                 < svc.platformPriority("https://www.bilibili.com/bangumi/play/ss1"));
-        assertEquals(10, svc.platformPriority("https://www.migu.cn/x"));
+        // Migu joined the builtin order behind sohu; dandan pseudo-URLs rank
+        // behind every real platform; unknown domains rank last.
+        assertTrue(svc.platformPriority("https://www.sohu.com/x") < svc.platformPriority("https://www.migu.cn/x"));
+        assertEquals(6, svc.platformPriority("https://www.migu.cn/x"));
+        assertEquals(7, svc.platformPriority("dandan:17617"));
+        assertEquals(10, svc.platformPriority("https://example.com/x"));
     }
 
     @Test
