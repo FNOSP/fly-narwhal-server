@@ -3,6 +3,7 @@ package com.jankinwu.flynarwhal.core.danmu.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.core.danmu.config.DanmuMatchProperties;
+import com.jankinwu.flynarwhal.core.danmu.fetcher.impl.DandanDanmuFetcher;
 import com.jankinwu.flynarwhal.core.danmu.model.DanmuModel;
 import com.jankinwu.flynarwhal.core.danmu.repository.DanmuUrlRepository;
 import lombok.RequiredArgsConstructor;
@@ -72,6 +73,13 @@ public class DanmuAppService {
      */
     @Value("${danmu.source.fallback-server:}")
     private String fallbackServer = "";
+
+    /**
+     * Dandanplay ddp relay base URL (see DandanDanmuFetcher). Empty disables
+     * the dandan search channel; the pseudo-URL scheme is "dandan:{id}".
+     */
+    @Value("${danmu.source.dandan.relay-url:}")
+    private String dandanRelay = "";
 
     public Object getDanmu(
             String doubanId,
@@ -545,7 +553,49 @@ public class DanmuAppService {
         List<String> urlList = new ArrayList<>();
         urlList.addAll(searchByDouban(prepared, normalizedTvNum, season));
         urlList.addAll(searchBy360(prepared, normalizedTvNum, season));
+        urlList.addAll(searchByDandan(prepared, normalizedTvNum));
         return dedupeByDomain(urlList);
+    }
+
+    /**
+     * Dandanplay title search via the configured ddp relay. Returns at most one
+     * pseudo-URL ("dandan:{animeId}") and only on a confident title+season
+     * match — dandan is an auxiliary channel next to Douban/360, so it never
+     * guesses. The pseudo-URL flows through the regular pipeline:
+     * DandanDanmuFetcher expands it into per-episode links.
+     */
+    private List<String> searchByDandan(String name, String tvNum) {
+        if (dandanRelay == null || dandanRelay.isBlank() || name == null || name.isEmpty()) {
+            return Collections.emptyList();
+        }
+        try {
+            String ddpPath = "/v2/search/anime?keyword=" + URLEncoder.encode(name, StandardCharsets.UTF_8);
+            String api = dandanRelay.trim() + (dandanRelay.contains("?") ? "&" : "?")
+                    + "path=" + URLEncoder.encode(ddpPath, StandardCharsets.UTF_8);
+            Map<String, String> headers = new HashMap<>();
+            headers.put(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+            String json = httpGetAsString(api, headers);
+            if (json == null || json.isEmpty()) return Collections.emptyList();
+
+            JsonNode animes = objectMapper.readTree(json).path("animes");
+            if (!animes.isArray() || animes.isEmpty()) return Collections.emptyList();
+
+            String expectedSeason = (tvNum == null || tvNum.isEmpty()) ? "一" : tvNum;
+            for (JsonNode anime : animes) {
+                String animeTitle = anime.path("animeTitle").asText("");
+                String animeId = anime.path("animeId").asText("");
+                if (animeId.isEmpty()) continue;
+                if (!titleMatches(animeTitle, name)) continue;
+                String extracted = extractSeasonFromTitle(animeTitle, name);
+                if (Objects.equals(extracted, expectedSeason)) {
+                    return List.of(DandanDanmuFetcher.SCHEME + animeId);
+                }
+            }
+            return Collections.emptyList();
+        } catch (Exception e) {
+            log.warn("Dandan search failed, title={} err={}", name, String.valueOf(e));
+            return Collections.emptyList();
+        }
     }
 
     /**
@@ -950,6 +1000,8 @@ public class DanmuAppService {
     }
 
     private String extractDomainKey(String url) {
+        // Internal pseudo-URLs have no host; key them by scheme so dedupe keeps them.
+        if (url.startsWith(DandanDanmuFetcher.SCHEME)) return "dandan";
         try {
             URI uri = URI.create(url);
             String host = uri.getHost();
@@ -984,6 +1036,7 @@ public class DanmuAppService {
         if (u.contains("mgtv.com")) return 4;
         if (u.contains("sohu.com")) return 5;
         if (u.contains("miguvideo.com") || u.contains("migu.cn")) return 6;
+        if (u.startsWith(DandanDanmuFetcher.SCHEME)) return 7;
         return 10;
     }
 
@@ -998,6 +1051,7 @@ public class DanmuAppService {
             case "iqiyi", "qiyi" -> lowerUrl.contains("iqiyi.com");
             case "bilibili", "bili" -> lowerUrl.contains("bilibili.com");
             case "mgtv", "mango" -> lowerUrl.contains("mgtv.com");
+            case "dandan", "dandanplay" -> lowerUrl.startsWith(DandanDanmuFetcher.SCHEME);
             case "" -> false;
             default -> lowerUrl.contains(key.trim().toLowerCase());
         };

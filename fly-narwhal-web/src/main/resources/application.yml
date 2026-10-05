@@ -106,3 +106,8 @@ danmu:
     # "?url=<play page>&ac=dm" contract (e.g. https://api.danmu.icu), queried
     # only when every direct source returned nothing. Empty = disabled.
     fallback-server: ${DANMU_SOURCE_FALLBACK_SERVER:}
+    dandan:
+      # Dandanplay via a public ddp relay ("{base}?path=<urlencoded /v2/...>"),
+      # the relay holds the open-platform credentials. Searched as an auxiliary
+      # title channel next to Douban/360. Empty = source disabled.
+      relay-url: ${DANMU_SOURCE_DANDAN_RELAY:https://api.danmaku.weeblify.app/ddp/v1}
