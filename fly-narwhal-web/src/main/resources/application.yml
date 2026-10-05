@@ -86,3 +86,18 @@ danmu:
     color-mode: ${DANMU_POST_COLOR_MODE:default}
     # Decimal RGB pool for color-mode=color; empty uses the built-in 9 colors.
     color-pool: ""
+  match:
+    # Preferred platform ranking for candidate play URLs, ","-separated
+    # (qq/tencent, iqiyi/qiyi, bilibili/bili, youku, mgtv/mango, sohu, or any
+    # domain fragment); empty keeps the built-in qq > iqiyi > bilibili > youku
+    # > mgtv > sohu.
+    platform-order: ${DANMU_MATCH_PLATFORM_ORDER:}
+    # Exact whole-title replacements applied before searching, ";"-separated,
+    # each "原始标题->映射标题".
+    title-mapping: ${DANMU_MATCH_TITLE_MAPPING:}
+    # Regex noise stripped from titles before searching, ";;"-separated;
+    # empty uses the built-in default (（真彩）/【4K】/(完整版) brackets).
+    noise-patterns: ${DANMU_MATCH_NOISE_PATTERNS:}
+    # Require candidate titles to equal/prefix the query token and disable the
+    # "any first row" fallback (searching 遮天 must not land on 古惑仔3之只手遮天).
+    strict-title: ${DANMU_MATCH_STRICT_TITLE:false}

@@ -2,6 +2,7 @@ package com.jankinwu.flynarwhal.core.danmu.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jankinwu.flynarwhal.core.danmu.config.DanmuMatchProperties;
 import com.jankinwu.flynarwhal.core.danmu.model.DanmuModel;
 import com.jankinwu.flynarwhal.core.danmu.repository.DanmuUrlRepository;
 import lombok.RequiredArgsConstructor;
@@ -58,6 +59,7 @@ public class DanmuAppService {
     private final DanmuService danmuService;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+    private final DanmuMatchProperties matchProperties;
     private final ExecutorService danmuFetchExecutor;
     @Nullable
     private final DanmuUrlRepository danmuUrlRepository;
@@ -400,11 +402,50 @@ public class DanmuAppService {
             log.warn("douban_id={} resolved no vendors, falling back to title search title={}", doubanId, name);
         }
         if (name == null || name.isEmpty()) return Collections.emptyList();
+        String prepared = prepareSearchTitle(name);
+        if (!prepared.equals(name)) {
+            log.info("Search title prepared: '{}' -> '{}'", name, prepared);
+        }
         String normalizedTvNum = normalizeSeasonNumber(tvNum);
         List<String> urlList = new ArrayList<>();
-        urlList.addAll(searchByDouban(name, normalizedTvNum, season));
-        urlList.addAll(searchBy360(name, normalizedTvNum, season));
+        urlList.addAll(searchByDouban(prepared, normalizedTvNum, season));
+        urlList.addAll(searchBy360(prepared, normalizedTvNum, season));
         return dedupeByDomain(urlList);
+    }
+
+    /**
+     * Applies the configured title mapping and strips release-group noise
+     * before the title reaches any search endpoint. Falls back to the mapped
+     * title if noise-stripping empties it.
+     */
+    String prepareSearchTitle(String name) {
+        if (name == null) return null;
+        String mapped = applyTitleMapping(name.trim());
+        String cleaned = mapped;
+        for (String pattern : matchProperties.getNoisePatterns()) {
+            if (pattern == null || pattern.isBlank()) continue;
+            try {
+                cleaned = cleaned.replaceAll(pattern, "");
+            } catch (Exception e) {
+                log.warn("Invalid danmu.match.noise-patterns regex skipped: {} ({})", pattern, String.valueOf(e));
+            }
+        }
+        cleaned = cleaned.trim();
+        return cleaned.isEmpty() ? mapped : cleaned;
+    }
+
+    private String applyTitleMapping(String name) {
+        for (String entry : matchProperties.getTitleMapping()) {
+            if (entry == null) continue;
+            int idx = entry.indexOf("->");
+            if (idx <= 0) continue;
+            String from = entry.substring(0, idx).trim();
+            String to = entry.substring(idx + 2).trim();
+            if (!from.isEmpty() && !to.isEmpty() && from.equals(name)) {
+                return to;
+            }
+        }
+        return name;
     }
 
     private List<String> searchBy360(String name, String tvNum, boolean season) {
@@ -446,7 +487,6 @@ public class DanmuAppService {
                 return Collections.emptyList();
             }
 
-            String token = name.split(" ")[0];
             String expectedSeason = (tvNum == null || tvNum.isEmpty()) ? "一" : tvNum;
             for (JsonNode item : rows) {
                 JsonNode playlinks = item.path("playlinks");
@@ -464,7 +504,7 @@ public class DanmuAppService {
 
                 boolean seasonMatch = Objects.equals(extracted, expectedSeason);
                 boolean typeMatch = (season && catId >= 2) || (!season && catId < 2);
-                if (title.contains(token) && seasonMatch && typeMatch) {
+                if (titleMatches(title, name) && seasonMatch && typeMatch) {
                     List<String> urls = new ArrayList<>();
                     playlinks.fields().forEachRemaining(e -> {
                         String v = sanitizeUrlValue(e.getValue().asText());
@@ -478,7 +518,7 @@ public class DanmuAppService {
                 JsonNode playlinks = item.path("playlinks");
                 if (!playlinks.isObject() || playlinks.isEmpty()) continue;
                 String title = item.path("titleTxt").asText("");
-                if (!title.contains(token)) continue;
+                if (!titleMatches(title, name)) continue;
                 List<String> urls = new ArrayList<>();
                 playlinks.fields().forEachRemaining(e -> {
                     String v = sanitizeUrlValue(e.getValue().asText());
@@ -487,15 +527,19 @@ public class DanmuAppService {
                 if (!urls.isEmpty()) return urls;
             }
 
-            for (JsonNode item : rows) {
-                JsonNode playlinks = item.path("playlinks");
-                if (!playlinks.isObject() || playlinks.isEmpty()) continue;
-                List<String> urls = new ArrayList<>();
-                playlinks.fields().forEachRemaining(e -> {
-                    String v = sanitizeUrlValue(e.getValue().asText());
-                    if (v != null) urls.add(v);
-                });
-                if (!urls.isEmpty()) return urls;
+            // Last resort: take the first row with any playlinks. Exactly the
+            // mismatch strict mode exists to prevent, so it is disabled there.
+            if (!matchProperties.isStrictTitle()) {
+                for (JsonNode item : rows) {
+                    JsonNode playlinks = item.path("playlinks");
+                    if (!playlinks.isObject() || playlinks.isEmpty()) continue;
+                    List<String> urls = new ArrayList<>();
+                    playlinks.fields().forEachRemaining(e -> {
+                        String v = sanitizeUrlValue(e.getValue().asText());
+                        if (v != null) urls.add(v);
+                    });
+                    if (!urls.isEmpty()) return urls;
+                }
             }
             return Collections.emptyList();
         } catch (Exception e) {
@@ -530,7 +574,7 @@ public class DanmuAppService {
                 String t = target.path("title").asText("");
                 String extracted = extractSeasonFromTitle(t, name);
                 boolean seasonMatch = Objects.equals(extracted, expectedSeason);
-                if (t.contains(name.split(" ")[0]) && seasonMatch) {
+                if (titleMatches(t, name) && seasonMatch) {
                     targetId = item.path("target_id").asText(null);
                     if (targetId != null && !targetId.isEmpty()) break;
                 }
@@ -694,6 +738,22 @@ public class DanmuAppService {
         return v == null || v.isEmpty() ? null : v;
     }
 
+    /**
+     * Candidate-title check shared by the Douban and 360 selection loops. Loose
+     * mode keeps the historical contains-behavior; strict mode requires the
+     * query token to be a prefix, so searching 遮天 no longer lands on
+     * 古惑仔3之只手遮天.
+     */
+    boolean titleMatches(String candidateTitle, String queryName) {
+        if (candidateTitle == null || queryName == null) return false;
+        String token = queryName.split(" ")[0];
+        if (token.isEmpty()) return false;
+        if (matchProperties.isStrictTitle()) {
+            return candidateTitle.equals(token) || candidateTitle.startsWith(token);
+        }
+        return candidateTitle.contains(token);
+    }
+
     private String normalizeSeasonNumber(String seasonNumber) {
         if (seasonNumber == null || seasonNumber.isEmpty()) return "一";
         try {
@@ -771,9 +831,17 @@ public class DanmuAppService {
         }
     }
 
-    private int platformPriority(String url) {
+    int platformPriority(String url) {
         if (url == null) return 100;
         String u = url.toLowerCase();
+        List<String> order = matchProperties.getPlatformOrder();
+        if (order != null && !order.isEmpty()) {
+            for (int i = 0; i < order.size(); i++) {
+                if (matchesPlatformKey(u, order.get(i))) return i;
+            }
+            // Platforms not on the configured list rank behind all listed ones.
+            return order.size();
+        }
         if (u.contains("v.qq.com")) return 0;
         if (u.contains("iqiyi.com")) return 1;
         if (u.contains("bilibili.com")) return 2;
@@ -781,6 +849,22 @@ public class DanmuAppService {
         if (u.contains("mgtv.com")) return 4;
         if (u.contains("sohu.com")) return 5;
         return 10;
+    }
+
+    /**
+     * Maps a configured platform key to its domain. Unknown keys are treated as
+     * domain fragments so future sources (migu, ...) work without code changes.
+     */
+    private boolean matchesPlatformKey(String lowerUrl, String key) {
+        if (key == null) return false;
+        return switch (key.trim().toLowerCase()) {
+            case "qq", "tencent" -> lowerUrl.contains("v.qq.com");
+            case "iqiyi", "qiyi" -> lowerUrl.contains("iqiyi.com");
+            case "bilibili", "bili" -> lowerUrl.contains("bilibili.com");
+            case "mgtv", "mango" -> lowerUrl.contains("mgtv.com");
+            case "" -> false;
+            default -> lowerUrl.contains(key.trim().toLowerCase());
+        };
     }
 
     private String sanitizeStr(String s) {
