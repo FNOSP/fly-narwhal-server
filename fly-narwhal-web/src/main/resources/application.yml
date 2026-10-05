@@ -101,3 +101,8 @@ danmu:
     # Require candidate titles to equal/prefix the query token and disable the
     # "any first row" fallback (searching 遮天 must not land on 古惑仔3之只手遮天).
     strict-title: ${DANMU_MATCH_STRICT_TITLE:false}
+  source:
+    # Last-resort third-party danmu server with the dandanplay-compatible
+    # "?url=<play page>&ac=dm" contract (e.g. https://api.danmu.icu), queried
+    # only when every direct source returned nothing. Empty = disabled.
+    fallback-server: ${DANMU_SOURCE_FALLBACK_SERVER:}

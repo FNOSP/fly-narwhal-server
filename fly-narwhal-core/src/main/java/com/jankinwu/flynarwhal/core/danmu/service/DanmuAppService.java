@@ -8,6 +8,7 @@ import com.jankinwu.flynarwhal.core.danmu.repository.DanmuUrlRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.brotli.dec.BrotliInputStream;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.lang.Nullable;
@@ -64,6 +65,14 @@ public class DanmuAppService {
     @Nullable
     private final DanmuUrlRepository danmuUrlRepository;
 
+    /**
+     * Last-resort third-party danmu server using the dandanplay-compatible
+     * "?url=&lt;play page&gt;&amp;ac=dm" contract (e.g. https://api.danmu.icu).
+     * Queried only when the direct fetchers returned nothing. Empty = off.
+     */
+    @Value("${danmu.source.fallback-server:}")
+    private String fallbackServer = "";
+
     public Object getDanmu(
             String doubanId,
             String title,
@@ -86,6 +95,9 @@ public class DanmuAppService {
 
         if (sanitizedUrl != null && !sanitizedUrl.isEmpty()) {
             List<DanmuModel> list = danmuService.getDanmu(sanitizedUrl);
+            if (list.isEmpty()) {
+                list = new ArrayList<>(fetchFromFallbackServer(sanitizedUrl));
+            }
             list.sort(Comparator.comparingDouble(DanmuModel::getTime));
             if ("xml".equalsIgnoreCase(sanitizedType)) {
                 return DanmuXmlFormatter.toXml(list);
@@ -128,6 +140,21 @@ public class DanmuAppService {
                 TaskResult r = f.join();
                 if (r != null && r.data != null) {
                     allDanmuData.computeIfAbsent(r.key, k -> new ArrayList<>()).addAll(r.data);
+                }
+            }
+        }
+
+        // Every direct source came back empty: try the configured third-party
+        // fallback server against the candidate play URLs, first hit wins.
+        boolean allEmpty = allDanmuData.values().stream().allMatch(List::isEmpty);
+        if (!tasks.isEmpty() && allEmpty) {
+            Set<String> tried = new LinkedHashSet<>();
+            for (Task t : tasks) {
+                if (!tried.add(t.url)) continue;
+                List<DanmuModel> fb = fetchFromFallbackServer(t.url);
+                if (!fb.isEmpty()) {
+                    allDanmuData.computeIfAbsent(t.key, k -> new ArrayList<>()).addAll(fb);
+                    break;
                 }
             }
         }
@@ -200,6 +227,114 @@ public class DanmuAppService {
             }
         }
         return emojiData;
+    }
+
+    private List<DanmuModel> fetchFromFallbackServer(String playUrl) {
+        if (fallbackServer == null || fallbackServer.isBlank() || playUrl == null || playUrl.isEmpty()) {
+            return Collections.emptyList();
+        }
+        try {
+            String base = fallbackServer.trim();
+            String api = base + (base.contains("?") ? "&" : "?")
+                    + "url=" + URLEncoder.encode(playUrl, StandardCharsets.UTF_8) + "&ac=dm";
+            Map<String, String> headers = new HashMap<>();
+            headers.put(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+            String json = httpGetAsString(api, headers);
+            if (json == null || json.isEmpty()) return Collections.emptyList();
+            List<DanmuModel> list = parseFallbackDanmu(json);
+            log.info("Fallback danmu server returned {} entries for {}", list.size(), playUrl);
+            return list;
+        } catch (Exception e) {
+            log.warn("Fallback danmu server failed for {}: {}", playUrl, String.valueOf(e));
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * Parses third-party fallback payloads. Known shapes:
+     * <ul>
+     *   <li>bare array of {cid,p,m} — the api.danmu.icu / dandanplay style,
+     *       p = "time,mode,size,color,timestamp,pool,uid,danmuId";</li>
+     *   <li>{"danmuku":[{p,m}, ...]} — the same entries under a wrapper;</li>
+     *   <li>{"danmuku":[[time,"right|top|bottom",color,size,text], ...]} — the
+     *       dmku.hls.one tuple style.</li>
+     * </ul>
+     */
+    List<DanmuModel> parseFallbackDanmu(String json) throws Exception {
+        List<DanmuModel> out = new ArrayList<>();
+        JsonNode root = objectMapper.readTree(json);
+        JsonNode arr = root.isArray() ? root : root.path("danmuku");
+        if (!arr.isArray()) return out;
+        for (JsonNode item : arr) {
+            DanmuModel model = item.isArray() ? parseFallbackTuple(item) : parseFallbackObject(item);
+            if (model != null) {
+                out.add(model);
+            }
+        }
+        return out;
+    }
+
+    private DanmuModel parseFallbackObject(JsonNode item) {
+        String p = item.path("p").asText("");
+        String m = item.path("m").asText("");
+        if (p.isEmpty() || m.isEmpty()) return null;
+        String[] f = p.split(",");
+        DanmuModel model = new DanmuModel();
+        try {
+            model.setTime(Double.parseDouble(f[0]));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        model.setText(m);
+        if (f.length > 1) {
+            try {
+                model.setMode(Integer.parseInt(f[1]));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        if (f.length > 3) {
+            try {
+                model.setColor(String.format("#%06X", Integer.parseInt(f[3])));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return model;
+    }
+
+    private DanmuModel parseFallbackTuple(JsonNode item) {
+        if (item.size() < 5 || !item.get(0).isNumber()) return null;
+        DanmuModel model = new DanmuModel();
+        model.setTime(item.get(0).asDouble(0));
+        model.setMode(switch (item.get(1).asText("")) {
+            case "top" -> 5;
+            case "bottom" -> 4;
+            default -> 1;
+        });
+        model.setColor(expandHexColor(item.get(2).asText("")));
+        model.setText(item.get(4).asText(""));
+        if (model.getText().isEmpty()) return null;
+        return model;
+    }
+
+    /** "#fff" / "#ffffff" / "" → "#RRGGBB" (default white). */
+    static String expandHexColor(String raw) {
+        if (raw == null) return "#FFFFFF";
+        String v = raw.trim();
+        if (v.startsWith("#")) v = v.substring(1);
+        try {
+            if (v.length() == 3) {
+                int r = Integer.parseInt(v.substring(0, 1), 16) * 17;
+                int g = Integer.parseInt(v.substring(1, 2), 16) * 17;
+                int b = Integer.parseInt(v.substring(2, 3), 16) * 17;
+                return String.format("#%02X%02X%02X", r, g, b);
+            }
+            if (v.length() == 6) {
+                Integer.parseInt(v, 16);
+                return "#" + v.toUpperCase();
+            }
+        } catch (NumberFormatException ignored) {
+        }
+        return "#FFFFFF";
     }
 
     private TaskResult fetchDanmu(Task task) {
@@ -848,6 +983,7 @@ public class DanmuAppService {
         if (u.contains("youku.com")) return 3;
         if (u.contains("mgtv.com")) return 4;
         if (u.contains("sohu.com")) return 5;
+        if (u.contains("miguvideo.com") || u.contains("migu.cn")) return 6;
         return 10;
     }
 
