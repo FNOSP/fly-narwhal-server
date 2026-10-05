@@ -1,6 +1,7 @@
 package com.jankinwu.flynarwhal.web.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.jankinwu.flynarwhal.core.danmu.repository.DandanAccount;
 import com.jankinwu.flynarwhal.core.danmu.repository.DanmuSourceConfigProvider;
 import com.jankinwu.flynarwhal.web.entity.DanmuSourceConfig;
 import com.jankinwu.flynarwhal.web.mapper.DanmuSourceConfigMapper;
@@ -65,6 +66,20 @@ public class DanmuSourceConfigService implements DanmuSourceConfigProvider {
                 .collect(Collectors.toList());
     }
 
+    @Override
+    public DandanAccount getDandanAccount() {
+        DanmuSourceConfig row = findDandanAccountRow();
+        if (row == null || !Boolean.TRUE.equals(row.getEnabled())) {
+            return null;
+        }
+        String appId = row.getAppId() == null ? "" : row.getAppId().trim();
+        String appSecret = row.getAppSecret() == null ? "" : row.getAppSecret().trim();
+        if (appId.isEmpty() || appSecret.isEmpty()) {
+            return null;
+        }
+        return new DandanAccount(appId, appSecret);
+    }
+
     // ---- CRUD (settings API) ----
 
     /**
@@ -109,6 +124,43 @@ public class DanmuSourceConfigService implements DanmuSourceConfigProvider {
         row.setEnabled(!url.isEmpty());
         row.setUpdateTime(now);
         mapper.updateById(row);
+    }
+
+    /** The dandan account row for display (may be null when unconfigured). */
+    public DanmuSourceConfig getDandanAccountConfig() {
+        return findDandanAccountRow();
+    }
+
+    /**
+     * Upserts the single dandan account row. Blank credentials delete the row
+     * (the client clears both fields to turn the official channel off).
+     */
+    public void saveDandanAccount(String appId, String appSecret) {
+        String id = appId == null ? "" : appId.trim();
+        String secret = appSecret == null ? "" : appSecret.trim();
+        DanmuSourceConfig row = findDandanAccountRow();
+        LocalDateTime now = LocalDateTime.now();
+        if (id.isEmpty() || secret.isEmpty()) {
+            if (row != null) {
+                mapper.deleteById(row.getId());
+            }
+            return;
+        }
+        if (row == null) {
+            row = new DanmuSourceConfig();
+            row.setSourceType(DanmuSourceConfig.TYPE_DANDAN_ACCOUNT);
+            row.setEnabled(true);
+            row.setCreateTime(now);
+        }
+        row.setAppId(id);
+        row.setAppSecret(secret);
+        row.setEnabled(true);
+        row.setUpdateTime(now);
+        if (row.getId() == null) {
+            mapper.insert(row);
+        } else {
+            mapper.updateById(row);
+        }
     }
 
     public List<DanmuSourceConfig> listFallbackServers() {
@@ -159,6 +211,13 @@ public class DanmuSourceConfigService implements DanmuSourceConfigProvider {
     private DanmuSourceConfig findDandanRow() {
         List<DanmuSourceConfig> rows = mapper.selectList(new LambdaQueryWrapper<DanmuSourceConfig>()
                 .eq(DanmuSourceConfig::getSourceType, DanmuSourceConfig.TYPE_DANDAN_RELAY)
+                .orderByAsc(DanmuSourceConfig::getId));
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    private DanmuSourceConfig findDandanAccountRow() {
+        List<DanmuSourceConfig> rows = mapper.selectList(new LambdaQueryWrapper<DanmuSourceConfig>()
+                .eq(DanmuSourceConfig::getSourceType, DanmuSourceConfig.TYPE_DANDAN_ACCOUNT)
                 .orderByAsc(DanmuSourceConfig::getId));
         return rows.isEmpty() ? null : rows.get(0);
     }

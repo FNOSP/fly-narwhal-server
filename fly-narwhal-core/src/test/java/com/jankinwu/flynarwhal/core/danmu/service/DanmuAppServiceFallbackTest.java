@@ -107,6 +107,11 @@ class DanmuAppServiceFallbackTest {
             public List<String> getFallbackServers() {
                 return List.of("https://a.example", " ", "https://b.example");
             }
+
+            @Override
+            public com.jankinwu.flynarwhal.core.danmu.repository.DandanAccount getDandanAccount() {
+                return null;
+            }
         };
         DanmuAppService svc = new DanmuAppService(null, null, new ObjectMapper(),
                 new DanmuMatchProperties(), null, null, stub);

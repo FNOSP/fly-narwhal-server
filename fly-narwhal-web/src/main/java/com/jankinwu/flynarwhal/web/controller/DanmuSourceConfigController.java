@@ -42,7 +42,13 @@ public class DanmuSourceConfigController {
             DandanDto dandanDto = new DandanDto(
                     dandan.getUrl() == null ? "" : dandan.getUrl(),
                     Boolean.TRUE.equals(dandan.getEnabled()));
-            return Result.success(new SourceConfigResponse(dandanDto, fallbacks));
+            DanmuSourceConfig accountRow = danmuSourceConfigService.getDandanAccountConfig();
+            DandanAccountDto accountDto = accountRow == null
+                    ? new DandanAccountDto("", "")
+                    : new DandanAccountDto(
+                            accountRow.getAppId() == null ? "" : accountRow.getAppId(),
+                            accountRow.getAppSecret() == null ? "" : accountRow.getAppSecret());
+            return Result.success(new SourceConfigResponse(dandanDto, fallbacks, accountDto));
         } catch (Exception e) {
             log.error("Error reading danmu source config", e);
             return Result.error("Error: " + e.getMessage());
@@ -58,6 +64,19 @@ public class DanmuSourceConfigController {
             return Result.error(e.getMessage());
         } catch (Exception e) {
             log.error("Error saving dandan relay config", e);
+            return Result.error("Error: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/dandan-account")
+    public Result<Void> saveDandanAccount(@RequestBody DandanAccountRequest request) {
+        try {
+            danmuSourceConfigService.saveDandanAccount(request.getAppId(), request.getAppSecret());
+            return Result.success();
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("Error saving dandan account", e);
             return Result.error("Error: " + e.getMessage());
         }
     }
@@ -94,6 +113,16 @@ public class DanmuSourceConfigController {
         private final DandanDto dandan;
         @JsonProperty("fallback_servers")
         private final List<FallbackServerDto> fallbackServers;
+        @JsonProperty("dandan_account")
+        private final DandanAccountDto dandanAccount;
+    }
+
+    @Data
+    public static class DandanAccountDto {
+        @JsonProperty("app_id")
+        private final String appId;
+        @JsonProperty("app_secret")
+        private final String appSecret;
     }
 
     @Data
@@ -113,6 +142,14 @@ public class DanmuSourceConfigController {
     @Data
     public static class DandanRequest {
         private String url;
+    }
+
+    @Data
+    public static class DandanAccountRequest {
+        @JsonProperty("app_id")
+        private String appId;
+        @JsonProperty("app_secret")
+        private String appSecret;
     }
 
     @Data

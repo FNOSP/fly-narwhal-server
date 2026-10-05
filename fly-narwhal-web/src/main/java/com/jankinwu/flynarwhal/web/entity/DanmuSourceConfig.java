@@ -18,6 +18,8 @@ public class DanmuSourceConfig {
 
     public static final String TYPE_DANDAN_RELAY = "dandan_relay";
     public static final String TYPE_FALLBACK_SERVER = "fallback_server";
+    /** Single row holding the dandanplay open-network appId/appSecret. */
+    public static final String TYPE_DANDAN_ACCOUNT = "dandan_account";
 
     @TableId(type = IdType.AUTO)
     private Long id;
@@ -26,9 +28,14 @@ public class DanmuSourceConfig {
 
     private String name;
 
+    /** Nullable: the dandan_account row identifies by appId/appSecret instead. */
     private String url;
 
     private Boolean enabled;
+
+    private String appId;
+
+    private String appSecret;
 
     private LocalDateTime createTime;
 

@@ -20,4 +20,11 @@ public interface DanmuSourceConfigProvider {
 
     /** Enabled third-party fallback servers, in configured order. */
     List<String> getFallbackServers();
+
+    /**
+     * Dandanplay open-network credentials, or null when unconfigured. When
+     * complete, the dandan channel talks to the official API instead of the
+     * relay.
+     */
+    DandanAccount getDandanAccount();
 }
