@@ -33,6 +33,13 @@ public class DanmuSourceConfig {
 
     private Boolean enabled;
 
+    /**
+     * Search order between the two dandanplay channels: 0 = preferred, 1 =
+     * fallback. Null means "no explicit preference" — the service then applies
+     * the default official-first rule, which keeps pre-0.13.0 rows working.
+     */
+    private Integer priority;
+
     private String appId;
 
     private String appSecret;

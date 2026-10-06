@@ -634,34 +634,74 @@ public class DanmuAppService {
     }
 
     /**
-     * Dandanplay title search via the configured ddp relay. Returns at most one
-     * pseudo-URL ("dandan:{animeId}") and only on a confident title+season
-     * match — dandan is an auxiliary channel next to Douban/360, so it never
-     * guesses. The pseudo-URL flows through the regular pipeline:
-     * DandanDanmuFetcher expands it into per-episode links.
+     * Dandanplay title search. The two channels — the official open network and
+     * a third-party ddp relay — are tried in the priority order the client
+     * configured, and the first one that produces a confident title+season
+     * match wins. Dandan is an auxiliary channel next to Douban/360, so it
+     * never guesses. The returned pseudo-URL ("ddpoff:{id}" or "dandan:{id}")
+     * flows through the regular pipeline, where the matching fetcher expands it
+     * into per-episode links.
+     *
+     * <p>Credentials and settings are read per request, so client-side edits
+     * apply immediately.
      */
     private List<String> searchByDandan(String name, String tvNum) {
         if (name == null || name.isEmpty()) {
             return Collections.emptyList();
         }
-        // Official open API wins when the client configured credentials: its
-        // curated library also covers western live-action works that no relay
-        // carries. Credentials are read per request so client-side edits apply
-        // immediately.
-        DandanAccount account = danmuSourceConfigProvider == null
-                ? null : danmuSourceConfigProvider.getDandanAccount();
-        if (account != null && account.isComplete()) {
-            DandanPlayClient client = new DandanPlayClient(
-                    restTemplate, objectMapper, account.appId(), account.appSecret());
-            return searchDandanSource(name, tvNum, DandanPlayOfficialDanmuFetcher.SCHEME,
-                    client::searchAnime);
+        for (String source : dandanSourceOrder()) {
+            DandanPlayClient client = officialClient();
+            if (DanmuSourceConfigProvider.SOURCE_OFFICIAL.equals(source)) {
+                if (client == null) continue;
+                List<String> hits = searchDandanSource(name, tvNum,
+                        DandanPlayOfficialDanmuFetcher.SCHEME, client::searchAnime);
+                if (!hits.isEmpty()) {
+                    return hits;
+                }
+                continue;
+            }
+            String relay = effectiveDandanRelay();
+            if (relay.isEmpty()) continue;
+            List<String> hits = searchDandanSource(name, tvNum, DandanDanmuFetcher.SCHEME,
+                    keyword -> relaySearchAnime(relay, keyword));
+            if (!hits.isEmpty()) {
+                return hits;
+            }
         }
-        String relay = effectiveDandanRelay();
-        if (relay.isEmpty()) {
+        return Collections.emptyList();
+    }
+
+    /**
+     * The dandan channels to try, in order. Falls back to the static
+     * configuration when no provider is wired (older deployments, unit tests):
+     * official first when credentials are present in the DB-backed provider,
+     * otherwise whichever channel the static config supplies.
+     */
+    private List<String> dandanSourceOrder() {
+        if (danmuSourceConfigProvider != null) {
+            List<String> order = danmuSourceConfigProvider.getDandanSourceOrder();
+            if (order != null && !order.isEmpty()) {
+                return order;
+            }
             return Collections.emptyList();
         }
-        return searchDandanSource(name, tvNum, DandanDanmuFetcher.SCHEME,
-                keyword -> relaySearchAnime(relay, keyword));
+        String relay = effectiveDandanRelay();
+        List<String> order = new ArrayList<>(2);
+        order.add(DanmuSourceConfigProvider.SOURCE_OFFICIAL);
+        if (!relay.isEmpty()) {
+            order.add(DanmuSourceConfigProvider.SOURCE_RELAY);
+        }
+        return order;
+    }
+
+    /** Official client built from the current DB credentials, or null. */
+    private DandanPlayClient officialClient() {
+        DandanAccount account = danmuSourceConfigProvider == null
+                ? null : danmuSourceConfigProvider.getDandanAccount();
+        if (account == null || !account.isComplete()) {
+            return null;
+        }
+        return new DandanPlayClient(restTemplate, objectMapper, account.appId(), account.appSecret());
     }
 
     private List<JsonNode> relaySearchAnime(String relay, String keyword) {

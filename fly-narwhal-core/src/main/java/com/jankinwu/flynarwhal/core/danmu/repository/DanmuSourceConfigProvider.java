@@ -15,6 +15,12 @@ import java.util.List;
  */
 public interface DanmuSourceConfigProvider {
 
+    /** Source key for the dandanplay open-network channel. */
+    String SOURCE_OFFICIAL = "official";
+
+    /** Source key for the dandanplay ddp relay channel. */
+    String SOURCE_RELAY = "relay";
+
     /** Effective dandanplay ddp relay base URL; null/blank disables the source. */
     String getDandanRelayUrl();
 
@@ -27,4 +33,15 @@ public interface DanmuSourceConfigProvider {
      * relay.
      */
     DandanAccount getDandanAccount();
+
+    /**
+     * The dandan channels to query, in priority order — only the ones that are
+     * both enabled and usable (relay has an address, official has complete
+     * credentials). Each entry is {@link #SOURCE_OFFICIAL} or
+     * {@link #SOURCE_RELAY}; an empty list means the dandan channel is off.
+     *
+     * <p>Callers try the entries in order and stop at the first one that
+     * returns a match.
+     */
+    List<String> getDandanSourceOrder();
 }
