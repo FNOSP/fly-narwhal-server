@@ -112,6 +112,11 @@ class DanmuAppServiceFallbackTest {
             public com.jankinwu.flynarwhal.core.danmu.repository.DandanAccount getDandanAccount() {
                 return null;
             }
+
+            @Override
+            public List<String> getDandanSourceOrder() {
+                return List.of(DanmuSourceConfigProvider.SOURCE_RELAY);
+            }
         };
         DanmuAppService svc = new DanmuAppService(null, null, new ObjectMapper(),
                 new DanmuMatchProperties(), null, null, stub);

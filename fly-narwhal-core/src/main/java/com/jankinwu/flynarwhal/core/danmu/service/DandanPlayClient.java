@@ -115,6 +115,44 @@ public class DandanPlayClient {
     }
 
     /**
+     * Result of a credentials probe: unlike {@link #searchAnime}, the caller
+     * needs to know WHY it failed so the settings page can tell a rejected
+     * signature apart from an unreachable host.
+     */
+    public record ProbeOutcome(boolean ok, String detail) {}
+
+    /**
+     * Signs one cheap request and reports whether the official API accepted the
+     * credentials. A 2xx means the appId/appSecret pair is valid; anything else
+     * (401 for a bad signature, 5xx, or a connection failure) is reported with
+     * its status so the user can act on it.
+     */
+    public ProbeOutcome probe() {
+        String path = "/api/v2/search/anime?keyword=test";
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(HttpHeaders.USER_AGENT, "fly-narwhal-server");
+            headers.setAll(signatureHeaders(path));
+            var response = restTemplate.exchange(URI.create(BASE_URL + path),
+                    HttpMethod.GET, new HttpEntity<>(headers), String.class);
+            int status = response.getStatusCode().value();
+            if (response.getStatusCode().is2xxSuccessful()) {
+                return new ProbeOutcome(true, null);
+            }
+            String body = response.getBody();
+            String snippet = body == null ? "" : body.replaceAll("\\s+", " ").trim();
+            if (snippet.length() > 160) snippet = snippet.substring(0, 160);
+            String detail = "HTTP " + status + (snippet.isEmpty() ? "" : ": " + snippet);
+            if (status == 401 || status == 403) {
+                detail = "credentials rejected (" + detail + ")";
+            }
+            return new ProbeOutcome(false, detail);
+        } catch (Exception e) {
+            return new ProbeOutcome(false, String.valueOf(e.getMessage() == null ? e : e.getMessage()));
+        }
+    }
+
+    /**
      * App-level auth headers for one request path (path includes the query
      * string; the signature covers it verbatim).
      */
