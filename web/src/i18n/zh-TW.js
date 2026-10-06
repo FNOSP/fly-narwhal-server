@@ -61,7 +61,7 @@ export default {
             },
             {
                 title: 'Liquid Glass 視覺',
-                desc: '全新設計語言，Acrylic 毛玻璃質感搭配現代版面，整體更通透。',
+                desc: '全新設計語言，Liquid Glass 液態玻璃質感搭配現代版面，整體更通透。',
             },
             {
                 title: '全平台涵蓋',
@@ -77,7 +77,7 @@ export default {
         switchAria: '預覽圖切換',
         shots: [
             {
-                alt: '飛鯨影視登入頁，Liquid Glass 毛玻璃質感',
+                alt: '飛鯨影視登入頁，Liquid Glass 液態玻璃質感',
                 title: '登入',
                 desc: '支援飛牛 ID 與 NAS 登入，連線位址、連接埠與 HTTPS 安全存取都可直接設定。',
             },
@@ -396,7 +396,7 @@ export default {
         notes: {
             flutter: '跨平台 UI 框架',
             fluentUi: 'Windows Fluent Design 風格控制項',
-            liquidGlass: 'Liquid Glass 毛玻璃材質控制項',
+            liquidGlass: 'Liquid Glass 液態玻璃材質控制項',
             acrylic: '視窗壓克力 / 雲母透明效果',
             windowManager: '無邊框視窗與自繪標題列',
             canvasDanmaku: '彈幕算繪元件',

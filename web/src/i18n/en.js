@@ -58,7 +58,7 @@ export default {
             },
             {
                 title: 'Liquid Glass visuals',
-                desc: 'A new design language with acrylic frosted-glass textures and a modern layout for a more translucent feel.',
+                desc: 'A new design language with Liquid Glass textures and a modern layout for a more translucent feel.',
             },
             {
                 title: 'Every platform covered',
@@ -74,7 +74,7 @@ export default {
         switchAria: 'Switch preview image',
         shots: [
             {
-                alt: 'Fly Narwhal sign-in screen with a Liquid Glass frosted texture',
+                alt: 'Fly Narwhal sign-in screen with a Liquid Glass texture',
                 title: 'Sign in',
                 desc: 'Supports both fnOS ID and NAS sign-in, with the address, port and HTTPS access all configurable directly.',
             },
@@ -393,7 +393,7 @@ export default {
         notes: {
             flutter: 'Cross-platform UI framework',
             fluentUi: 'Windows Fluent Design-style controls',
-            liquidGlass: 'Liquid Glass frosted-material controls',
+            liquidGlass: 'Liquid Glass material controls',
             acrylic: 'Window acrylic / mica transparency effects',
             windowManager: 'Frameless windows and custom title bars',
             canvasDanmaku: 'Danmaku rendering component',
