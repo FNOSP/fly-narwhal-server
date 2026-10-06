@@ -505,8 +505,7 @@ public class FFmpegWrapper {
     }
 
     private boolean probeVp9(String path) {
-        String inputPath = toFfmpegInputPath(path);
-        List<String> command = List.of(FFMPEG_PATH, "-hide_banner", "-i", inputPath,
+        List<String> command = List.of(FFMPEG_PATH, "-hide_banner", "-i", path,
                 "-an", "-dn", "-sn", "-frames:v", "0", "-f", "null", "-");
         try {
             ProcessBuilder pb = new ProcessBuilder("bash", "-c", buildShellCommand(command));
