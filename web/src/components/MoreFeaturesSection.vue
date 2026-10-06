@@ -16,7 +16,7 @@ const layout = [
     { key: 'strm', span: 'span2' },
     { key: 'detail', span: 'span2' },
     { key: 'advanced', span: 'span2' },
-    { key: 'motion', span: 'span2' },
+    { key: 'audio', span: 'span2' },
 ]
 
 const items = computed(() =>

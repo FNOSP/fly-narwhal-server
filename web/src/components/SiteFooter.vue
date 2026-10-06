@@ -131,7 +131,7 @@ const copyright = computed(() => format(t.value.footer.copyright, { year }))
 .footer__top {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 24px 40px;
     /* Divider between the contributors row above and the brand/links block. */
@@ -167,7 +167,6 @@ const copyright = computed(() => format(t.value.footer.copyright, { year }))
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 11px 40px;
-    padding-top: 6px;
 }
 
 .footer__links a {

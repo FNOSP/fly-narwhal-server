@@ -1,39 +1,15 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { useScrollProgress } from '../composables/useParallax'
 import { useI18n } from '../composables/useI18n'
 
 const { t } = useI18n()
 
-// API endpoints are technical tokens and stay literal; tag/title/desc come
-// from the catalog by position.
-const endpoints = ['GET /api/danmu/get', 'POST /api/analysis/analyze', 'POST /api/config/auth-code']
-
-const root = ref(null)
-const { progress } = useScrollProgress(root, { start: 1, end: 0.15 })
-
-const codeLine = ref(0)
-let timer = 0
-
-const diagramY = () => `${(1 - progress.value) * 26}px`
-
-onMounted(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        codeLine.value = 99
-        return
-    }
-    timer = window.setInterval(() => {
-        codeLine.value = (codeLine.value + 1) % 5
-    }, 2200)
-})
-
-onBeforeUnmount(() => {
-    if (timer) clearInterval(timer)
-})
+// Bar widths are proportional to the measured RSS values (472 / 165 / 120 MB);
+// labels and numbers come from the catalog by position.
+const barWidths = ['100%', '35%', '25%']
 </script>
 
 <template>
-    <section id="server" ref="root" class="server">
+    <section id="server" class="server">
         <div class="shell">
             <div class="section-head server__head">
                 <p v-reveal class="eyebrow">{{ t.server.eyebrow }}</p>
@@ -43,54 +19,39 @@ onBeforeUnmount(() => {
                 </p>
             </div>
 
-            <div class="server__layout">
-                <div class="server__list">
-                    <article
-                        v-for="(c, i) in t.server.capabilities"
-                        :key="c.title"
-                        v-reveal="i * 100"
-                        class="cap"
-                    >
-                        <span class="cap__tag">{{ c.tag }}</span>
-                        <div class="cap__body">
-                            <h3 class="cap__title">{{ c.title }}</h3>
-                            <p class="cap__desc">{{ c.desc }}</p>
-                            <code class="cap__endpoint">{{ endpoints[i] }}</code>
-                        </div>
-                    </article>
-                </div>
-
-                <div class="server__diagram" :style="{ transform: `translateY(${diagramY()})` }">
-                    <div class="diagram">
-                        <div class="diagram__node">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="2" y="4" width="20" height="13" rx="2.4" /><path d="M8 21h8M12 17v4" />
-                            </svg>
-                            <span>{{ t.server.diagramClient }}</span>
-                            <small>{{ t.server.diagramClientSub }}</small>
-                        </div>
-
-                        <div class="diagram__flow">
-                            <span v-for="n in 3" :key="n" class="diagram__packet" :style="{ '--i': n }"></span>
-                        </div>
-
-                        <div class="diagram__node diagram__node--server">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="3" y="3" width="18" height="7" rx="2" /><rect x="3" y="14" width="18" height="7" rx="2" />
-                                <path d="M7 6.5h.01M7 17.5h.01" />
-                            </svg>
-                            <span>{{ t.server.diagramServer }}</span>
-                            <small>{{ t.server.diagramServerSub }}</small>
-                        </div>
-
-                        <ul class="diagram__log" aria-hidden="true">
-                            <li v-for="(step, i) in t.server.logSteps" :key="step" :class="{ 'is-on': codeLine === i }">
-                                <span class="diagram__log-dot"></span>{{ step }}
-                            </li>
-                        </ul>
+            <div v-reveal="120" class="server__funnel">
+                <div
+                    v-for="(m, i) in t.server.milestones"
+                    :key="m.label"
+                    v-reveal="i * 140"
+                    class="mile"
+                    :class="{ 'mile--now': i === t.server.milestones.length - 1 }"
+                    :style="{ '--w': barWidths[i] }"
+                >
+                    <div class="mile__row">
+                        <span class="mile__label">{{ m.label }}</span>
+                        <span class="mile__value">{{ m.value }}</span>
                     </div>
+                    <div class="mile__bar">
+                        <span class="mile__fill"></span>
+                    </div>
+                    <p class="mile__note">{{ m.note }}</p>
                 </div>
             </div>
+
+            <div class="server__measures">
+                <article
+                    v-for="(c, i) in t.server.measures"
+                    :key="c.title"
+                    v-reveal="(i % 3) * 100"
+                    class="measure"
+                >
+                    <h3 class="measure__title">{{ c.title }}</h3>
+                    <p class="measure__desc">{{ c.desc }}</p>
+                </article>
+            </div>
+
+            <p v-reveal class="server__footnote">{{ t.server.footnote }}</p>
         </div>
     </section>
 </template>
@@ -109,22 +70,84 @@ onBeforeUnmount(() => {
     margin: 16px auto 0;
 }
 
-.server__layout {
+.server__funnel {
+    max-width: 760px;
+    margin: clamp(40px, 5vw, 60px) auto 0;
     display: grid;
-    grid-template-columns: 1.05fr 0.95fr;
-    gap: clamp(32px, 4vw, 56px);
-    align-items: start;
+    gap: 26px;
+    padding: clamp(24px, 3.5vw, 40px);
+    border-radius: var(--radius-lg);
+    background: var(--grad-panel);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow-md);
 }
 
-.server__list {
+.mile__row {
     display: flex;
-    flex-direction: column;
+    align-items: baseline;
+    justify-content: space-between;
     gap: 16px;
+    margin-bottom: 10px;
 }
 
-.cap {
-    display: flex;
-    gap: 18px;
+.mile__label {
+    font-size: 14px;
+    font-weight: 650;
+    color: var(--ink-soft);
+}
+
+.mile__value {
+    font-size: clamp(20px, 2.6vw, 27px);
+    font-weight: 750;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+}
+
+.mile--now .mile__label,
+.mile--now .mile__value {
+    color: var(--brand);
+}
+
+.mile__bar {
+    height: 14px;
+    border-radius: 999px;
+    background: var(--field);
+    border: 1px solid var(--hairline);
+    overflow: hidden;
+}
+
+.mile__fill {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(0, 122, 255, 0.55), var(--brand));
+    transition: width 1.1s var(--ease);
+    transition-delay: var(--delay, 0ms);
+}
+
+.mile.is-revealed .mile__fill {
+    width: var(--w);
+}
+
+.mile--now .mile__fill {
+    background: linear-gradient(90deg, var(--brand), #6CB2FF);
+}
+
+.mile__note {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--ink-muted);
+}
+
+.server__measures {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: clamp(28px, 4vw, 44px);
+}
+
+.measure {
     padding: 24px 26px;
     border-radius: var(--radius-md);
     border: 1px solid var(--hairline);
@@ -132,178 +155,50 @@ onBeforeUnmount(() => {
     transition: box-shadow 0.35s var(--ease), border-color 0.35s var(--ease);
 }
 
-.cap:hover {
+.measure:hover {
     box-shadow: var(--shadow-md);
     border-color: rgba(0, 122, 255, 0.24);
 }
 
-.cap__tag {
-    flex-shrink: 0;
-    align-self: flex-start;
-    padding: 5px 11px;
-    border-radius: 8px;
-    background: var(--brand-tint);
-    color: var(--brand);
-    font-size: 12.5px;
-    font-weight: 650;
-}
-
-.cap__title {
-    font-size: 17px;
+.measure__title {
+    font-size: 16px;
     font-weight: 650;
     margin-bottom: 8px;
 }
 
-.cap__desc {
-    font-size: 14.5px;
+.measure__desc {
+    font-size: 14px;
     line-height: 1.68;
     color: var(--ink-muted);
-    margin-bottom: 12px;
 }
 
-.cap__endpoint {
-    display: inline-block;
-    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 12.5px;
-    color: var(--ink-soft);
-    background: var(--code-bg);
-    padding: 4px 9px;
-    border-radius: 7px;
-}
-
-.server__diagram {
-    position: sticky;
-    top: calc(var(--nav-h) + 32px);
-    transition: transform 0.15s linear;
-    will-change: transform;
-}
-
-.diagram {
-    padding: 30px 26px;
-    border-radius: var(--radius-lg);
-    background: var(--grad-panel);
-    border: 1px solid var(--hairline);
-    box-shadow: var(--shadow-md);
-}
-
-.diagram__node {
-    display: grid;
-    justify-items: center;
-    gap: 4px;
-    padding: 20px;
-    border-radius: var(--radius-md);
-    background: var(--surface-2);
-    border: 1px solid var(--hairline);
-}
-
-.diagram__node--server {
-    background: linear-gradient(180deg, rgba(0, 122, 255, 0.08), rgba(0, 122, 255, 0.03));
-    border-color: rgba(0, 122, 255, 0.22);
-}
-
-.diagram__node svg {
-    width: 26px;
-    height: 26px;
-    color: var(--brand);
-    margin-bottom: 6px;
-}
-
-.diagram__node span {
-    font-size: 15px;
-    font-weight: 650;
-}
-
-.diagram__node small {
-    font-size: 12px;
-    color: var(--ink-muted);
-}
-
-.diagram__flow {
-    display: flex;
-    justify-content: center;
-    gap: 7px;
-    padding: 14px 0;
-}
-
-.diagram__packet {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--brand);
-    opacity: 0.28;
-    animation: packet 1.8s var(--ease) infinite;
-    animation-delay: calc(var(--i) * 0.28s);
-}
-
-@keyframes packet {
-    0%,
-    100% {
-        opacity: 0.2;
-        transform: scale(0.8);
-    }
-    45% {
-        opacity: 1;
-        transform: scale(1.25);
-    }
-}
-
-.diagram__log {
-    list-style: none;
-    margin-top: 20px;
-    display: grid;
-    gap: 8px;
-}
-
-.diagram__log li {
-    display: flex;
-    align-items: center;
-    gap: 9px;
+.server__footnote {
+    margin-top: clamp(24px, 3vw, 36px);
+    text-align: center;
     font-size: 13px;
+    line-height: 1.7;
     color: var(--ink-muted);
-    transition: color 0.4s var(--ease);
-}
-
-.diagram__log li.is-on {
-    color: var(--ink);
-    font-weight: 600;
-}
-
-.diagram__log-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-    opacity: 0.45;
-    transition: opacity 0.4s var(--ease), transform 0.4s var(--ease);
-}
-
-.diagram__log li.is-on .diagram__log-dot {
-    opacity: 1;
-    transform: scale(1.4);
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .diagram__packet {
-        animation: none;
-        opacity: 0.6;
-    }
+    max-width: 62ch;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 @media (max-width: 900px) {
-    .server__layout {
-        grid-template-columns: 1fr;
-    }
-
-    .server__diagram {
-        position: static;
+    .server__measures {
+        grid-template-columns: repeat(2, 1fr);
     }
 }
 
 @media (max-width: 560px) {
-    .cap {
-        flex-direction: column;
-        gap: 12px;
-        padding: 20px;
+    .server__measures {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mile__fill {
+        transition: none;
+        width: var(--w);
     }
 }
 </style>
