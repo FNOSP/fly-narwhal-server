@@ -39,9 +39,10 @@ public class DanmuSourceConfigController {
                     .map(r -> new FallbackServerDto(r.getId(), r.getName(), r.getUrl(),
                             Boolean.TRUE.equals(r.getEnabled())))
                     .collect(Collectors.toList());
+            boolean dandanEnabled = Boolean.TRUE.equals(dandan.getEnabled());
             DandanDto dandanDto = new DandanDto(
-                    dandan.getUrl() == null ? "" : dandan.getUrl(),
-                    Boolean.TRUE.equals(dandan.getEnabled()));
+                    dandanEnabled && dandan.getUrl() != null ? dandan.getUrl() : "",
+                    dandanEnabled);
             DanmuSourceConfig accountRow = danmuSourceConfigService.getDandanAccountConfig();
             DandanAccountDto accountDto = accountRow == null
                     ? new DandanAccountDto("", "")
