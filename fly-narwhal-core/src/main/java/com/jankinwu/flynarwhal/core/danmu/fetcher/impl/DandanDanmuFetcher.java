@@ -4,11 +4,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.core.danmu.fetcher.AbstractDanmuFetcher;
 import com.jankinwu.flynarwhal.core.danmu.model.DanmuModel;
+import com.jankinwu.flynarwhal.core.danmu.repository.DanmuSourceConfigProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
@@ -40,21 +42,39 @@ public class DandanDanmuFetcher extends AbstractDanmuFetcher {
     private static final String UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
     private final ObjectMapper objectMapper;
-    private final String relayUrl;
+    /** Static config value; only consulted when no DB-backed provider is wired. */
+    private final String configuredRelayUrl;
+    @Nullable
+    private final DanmuSourceConfigProvider sourceConfigProvider;
 
     public DandanDanmuFetcher(
             RestTemplate restTemplate,
             ObjectMapper objectMapper,
             ExecutorService danmuFetchExecutor,
-            @Value("${danmu.source.dandan.relay-url:}") String relayUrl
+            @Value("${danmu.source.dandan.relay-url:}") String relayUrl,
+            @Nullable DanmuSourceConfigProvider sourceConfigProvider
     ) {
         super(restTemplate, danmuFetchExecutor);
         this.objectMapper = objectMapper;
-        this.relayUrl = relayUrl == null ? "" : relayUrl.trim();
+        this.configuredRelayUrl = relayUrl == null ? "" : relayUrl.trim();
+        this.sourceConfigProvider = sourceConfigProvider;
+    }
+
+    /**
+     * Effective relay URL: the DB-backed provider (runtime-editable from the
+     * client settings page) wins; the static yml/env value is the fallback for
+     * core-standalone wiring. Blank disables the source.
+     */
+    String effectiveRelayUrl() {
+        if (sourceConfigProvider != null) {
+            String v = sourceConfigProvider.getDandanRelayUrl();
+            return v == null ? "" : v.trim();
+        }
+        return configuredRelayUrl;
     }
 
     boolean isEnabled() {
-        return !relayUrl.isEmpty();
+        return !effectiveRelayUrl().isEmpty();
     }
 
     @Override
@@ -120,7 +140,7 @@ public class DandanDanmuFetcher extends AbstractDanmuFetcher {
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.set(HttpHeaders.USER_AGENT, UA);
-            String body = restTemplate.exchange(URI.create(buildRelayUrl(relayUrl, ddpPath)),
+            String body = restTemplate.exchange(URI.create(buildRelayUrl(effectiveRelayUrl(), ddpPath)),
                     HttpMethod.GET, new HttpEntity<>(headers), String.class).getBody();
             if (body == null || body.isBlank()) {
                 log.warn("Dandan relay returned an empty body for path {}", ddpPath);
@@ -151,7 +171,7 @@ public class DandanDanmuFetcher extends AbstractDanmuFetcher {
      * encrypted sensitive-word comments (undecryptable without the official
      * client key); they are dropped rather than shown as garbage.
      */
-    static DanmuModel toModel(String p, String m) {
+    public static DanmuModel toModel(String p, String m) {
         if (m == null || m.isEmpty() || p == null || p.isEmpty()) return null;
         for (int i = 0; i < m.length(); i++) {
             char c = m.charAt(i);

@@ -4,7 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.core.danmu.config.DanmuMatchProperties;
 import com.jankinwu.flynarwhal.core.danmu.fetcher.impl.DandanDanmuFetcher;
+import com.jankinwu.flynarwhal.core.danmu.fetcher.impl.DandanPlayOfficialDanmuFetcher;
 import com.jankinwu.flynarwhal.core.danmu.model.DanmuModel;
+import com.jankinwu.flynarwhal.core.danmu.repository.DandanAccount;
+import com.jankinwu.flynarwhal.core.danmu.repository.DanmuSourceConfigProvider;
 import com.jankinwu.flynarwhal.core.danmu.repository.DanmuUrlRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +35,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.function.Function;
 import java.util.zip.GZIPInputStream;
 
 @Service
@@ -65,18 +69,22 @@ public class DanmuAppService {
     private final ExecutorService danmuFetchExecutor;
     @Nullable
     private final DanmuUrlRepository danmuUrlRepository;
+    @Nullable
+    private final DanmuSourceConfigProvider danmuSourceConfigProvider;
 
     /**
-     * Last-resort third-party danmu server using the dandanplay-compatible
-     * "?url=&lt;play page&gt;&amp;ac=dm" contract (e.g. https://api.danmu.icu).
-     * Queried only when the direct fetchers returned nothing. Empty = off.
+     * Static fallback for the third-party danmu server ("?url=&lt;play page&gt;&amp;ac=dm"
+     * contract), used only when no {@link DanmuSourceConfigProvider} is wired
+     * (core-standalone tests). The DB-backed provider takes precedence and can
+     * carry several servers; empty means off.
      */
     @Value("${danmu.source.fallback-server:}")
     private String fallbackServer = "";
 
     /**
-     * Dandanplay ddp relay base URL (see DandanDanmuFetcher). Empty disables
-     * the dandan search channel; the pseudo-URL scheme is "dandan:{id}".
+     * Static fallback for the dandanplay ddp relay base URL, used only when no
+     * {@link DanmuSourceConfigProvider} is wired. Empty disables the dandan
+     * search channel.
      */
     @Value("${danmu.source.dandan.relay-url:}")
     private String dandanRelay = "";
@@ -153,15 +161,37 @@ public class DanmuAppService {
         }
 
         // Every direct source came back empty: try the configured third-party
-        // fallback server against the candidate play URLs, first hit wins.
+        // fallback servers, first hit wins. When the episode expansion itself
+        // produced no tasks (e.g. 360 found play pages the fetchers could not
+        // expand), a fresh search still yields the raw platform URLs the
+        // ?url= contract needs — without this, the exact case the fallback
+        // exists for was skipped entirely.
         boolean allEmpty = allDanmuData.values().stream().allMatch(List::isEmpty);
-        if (!tasks.isEmpty() && allEmpty) {
+        if (allEmpty) {
+            List<String> candidateUrls;
+            String fallbackKey;
+            if (!tasks.isEmpty()) {
+                candidateUrls = new ArrayList<>();
+                for (Task t : tasks) {
+                    candidateUrls.add(t.url);
+                }
+                fallbackKey = tasks.get(0).key;
+            } else {
+                candidateUrls = searchVideoData(sanitizedDoubanId, title, sanitizeStr(seasonNumber), season);
+                fallbackKey = episodeNumber != null && episodeNumber == 0
+                        ? WHOLE_WORK_KEY
+                        : (episodeNumber != null ? String.valueOf(episodeNumber) : "1");
+            }
             Set<String> tried = new LinkedHashSet<>();
-            for (Task t : tasks) {
-                if (!tried.add(t.url)) continue;
-                List<DanmuModel> fb = fetchFromFallbackServer(t.url);
+            for (String u : candidateUrls) {
+                // The ?url= contract only understands play pages: pseudo-URLs
+                // (dandan:/ddpoff:) and scheme links have nothing to query.
+                if (u == null || !(u.startsWith("http://") || u.startsWith("https://")) || !tried.add(u)) {
+                    continue;
+                }
+                List<DanmuModel> fb = fetchFromFallbackServer(u);
                 if (!fb.isEmpty()) {
-                    allDanmuData.computeIfAbsent(t.key, k -> new ArrayList<>()).addAll(fb);
+                    allDanmuData.computeIfAbsent(fallbackKey, k -> new ArrayList<>()).addAll(fb);
                     break;
                 }
             }
@@ -237,12 +267,54 @@ public class DanmuAppService {
         return emojiData;
     }
 
+    /**
+     * Effective dandan relay: DB-backed provider first, static config as the
+     * no-provider fallback. Blank disables the channel.
+     */
+    String effectiveDandanRelay() {
+        if (danmuSourceConfigProvider != null) {
+            String v = danmuSourceConfigProvider.getDandanRelayUrl();
+            return v == null ? "" : v.trim();
+        }
+        return dandanRelay == null ? "" : dandanRelay.trim();
+    }
+
+    /**
+     * Effective fallback servers in try order: DB-backed provider first,
+     * static config as the no-provider fallback.
+     */
+    List<String> effectiveFallbackServers() {
+        if (danmuSourceConfigProvider != null) {
+            List<String> servers = danmuSourceConfigProvider.getFallbackServers();
+            if (servers == null) return Collections.emptyList();
+            return servers.stream()
+                    .filter(s -> s != null && !s.isBlank())
+                    .map(String::trim)
+                    .collect(Collectors.toList());
+        }
+        if (fallbackServer == null || fallbackServer.isBlank()) return Collections.emptyList();
+        return List.of(fallbackServer.trim());
+    }
+
     private List<DanmuModel> fetchFromFallbackServer(String playUrl) {
-        if (fallbackServer == null || fallbackServer.isBlank() || playUrl == null || playUrl.isEmpty()) {
+        if (playUrl == null || playUrl.isEmpty()) {
             return Collections.emptyList();
         }
+        List<String> servers = effectiveFallbackServers();
+        for (int i = 0; i < servers.size(); i++) {
+            List<DanmuModel> list = requestFallbackServer(servers.get(i), playUrl);
+            if (!list.isEmpty()) {
+                if (servers.size() > 1) {
+                    log.info("Fallback danmu server #{} ({}) served {}", i + 1, servers.get(i), playUrl);
+                }
+                return list;
+            }
+        }
+        return Collections.emptyList();
+    }
+
+    private List<DanmuModel> requestFallbackServer(String base, String playUrl) {
         try {
-            String base = fallbackServer.trim();
             String api = base + (base.contains("?") ? "&" : "?")
                     + "url=" + URLEncoder.encode(playUrl, StandardCharsets.UTF_8) + "&ac=dm";
             Map<String, String> headers = new HashMap<>();
@@ -253,7 +325,7 @@ public class DanmuAppService {
             log.info("Fallback danmu server returned {} entries for {}", list.size(), playUrl);
             return list;
         } catch (Exception e) {
-            log.warn("Fallback danmu server failed for {}: {}", playUrl, String.valueOf(e));
+            log.warn("Fallback danmu server {} failed for {}: {}", base, playUrl, String.valueOf(e));
             return Collections.emptyList();
         }
     }
@@ -537,12 +609,16 @@ public class DanmuAppService {
     private List<String> searchVideoData(String doubanId, String name, String tvNum, boolean season) {
         if (doubanId != null && !doubanId.isEmpty()) {
             // The client knows the Douban subject id; skip the fuzzy title search
-            // and resolve the vendors straight from the detail endpoint.
-            List<String> direct = fetchVendorsByDoubanId(doubanId);
+            // and resolve the vendors straight from the detail endpoint. Only
+            // usable http(s) links count: vendors that convert to nothing (or to
+            // unresolvable scheme links) must not block the title search below.
+            List<String> direct = fetchVendorsByDoubanId(doubanId).stream()
+                    .filter(u -> u != null && (u.startsWith("http://") || u.startsWith("https://")))
+                    .collect(Collectors.toList());
             if (!direct.isEmpty()) {
                 return dedupeByDomain(direct);
             }
-            log.warn("douban_id={} resolved no vendors, falling back to title search title={}", doubanId, name);
+            log.warn("douban_id={} resolved no usable vendors, falling back to title search title={}", doubanId, name);
         }
         if (name == null || name.isEmpty()) return Collections.emptyList();
         String prepared = prepareSearchTitle(name);
@@ -558,27 +634,103 @@ public class DanmuAppService {
     }
 
     /**
-     * Dandanplay title search via the configured ddp relay. Returns at most one
-     * pseudo-URL ("dandan:{animeId}") and only on a confident title+season
-     * match — dandan is an auxiliary channel next to Douban/360, so it never
-     * guesses. The pseudo-URL flows through the regular pipeline:
-     * DandanDanmuFetcher expands it into per-episode links.
+     * Dandanplay title search. The two channels — the official open network and
+     * a third-party ddp relay — are tried in the priority order the client
+     * configured, and the first one that produces a confident title+season
+     * match wins. Dandan is an auxiliary channel next to Douban/360, so it
+     * never guesses. The returned pseudo-URL ("ddpoff:{id}" or "dandan:{id}")
+     * flows through the regular pipeline, where the matching fetcher expands it
+     * into per-episode links.
+     *
+     * <p>Credentials and settings are read per request, so client-side edits
+     * apply immediately.
      */
     private List<String> searchByDandan(String name, String tvNum) {
-        if (dandanRelay == null || dandanRelay.isBlank() || name == null || name.isEmpty()) {
+        if (name == null || name.isEmpty()) {
             return Collections.emptyList();
         }
+        for (String source : dandanSourceOrder()) {
+            DandanPlayClient client = officialClient();
+            if (DanmuSourceConfigProvider.SOURCE_OFFICIAL.equals(source)) {
+                if (client == null) continue;
+                List<String> hits = searchDandanSource(name, tvNum,
+                        DandanPlayOfficialDanmuFetcher.SCHEME, client::searchAnime);
+                if (!hits.isEmpty()) {
+                    return hits;
+                }
+                continue;
+            }
+            String relay = effectiveDandanRelay();
+            if (relay.isEmpty()) continue;
+            List<String> hits = searchDandanSource(name, tvNum, DandanDanmuFetcher.SCHEME,
+                    keyword -> relaySearchAnime(relay, keyword));
+            if (!hits.isEmpty()) {
+                return hits;
+            }
+        }
+        return Collections.emptyList();
+    }
+
+    /**
+     * The dandan channels to try, in order. Falls back to the static
+     * configuration when no provider is wired (older deployments, unit tests):
+     * official first when credentials are present in the DB-backed provider,
+     * otherwise whichever channel the static config supplies.
+     */
+    private List<String> dandanSourceOrder() {
+        if (danmuSourceConfigProvider != null) {
+            List<String> order = danmuSourceConfigProvider.getDandanSourceOrder();
+            if (order != null && !order.isEmpty()) {
+                return order;
+            }
+            return Collections.emptyList();
+        }
+        String relay = effectiveDandanRelay();
+        List<String> order = new ArrayList<>(2);
+        order.add(DanmuSourceConfigProvider.SOURCE_OFFICIAL);
+        if (!relay.isEmpty()) {
+            order.add(DanmuSourceConfigProvider.SOURCE_RELAY);
+        }
+        return order;
+    }
+
+    /** Official client built from the current DB credentials, or null. */
+    private DandanPlayClient officialClient() {
+        DandanAccount account = danmuSourceConfigProvider == null
+                ? null : danmuSourceConfigProvider.getDandanAccount();
+        if (account == null || !account.isComplete()) {
+            return null;
+        }
+        return new DandanPlayClient(restTemplate, objectMapper, account.appId(), account.appSecret());
+    }
+
+    private List<JsonNode> relaySearchAnime(String relay, String keyword) {
+        List<JsonNode> out = new ArrayList<>();
         try {
-            String ddpPath = "/v2/search/anime?keyword=" + URLEncoder.encode(name, StandardCharsets.UTF_8);
-            String api = dandanRelay.trim() + (dandanRelay.contains("?") ? "&" : "?")
+            String ddpPath = "/v2/search/anime?keyword=" + URLEncoder.encode(keyword, StandardCharsets.UTF_8);
+            String api = relay + (relay.contains("?") ? "&" : "?")
                     + "path=" + URLEncoder.encode(ddpPath, StandardCharsets.UTF_8);
             Map<String, String> headers = new HashMap<>();
             headers.put(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
             String json = httpGetAsString(api, headers);
-            if (json == null || json.isEmpty()) return Collections.emptyList();
-
+            if (json == null || json.isEmpty()) return out;
             JsonNode animes = objectMapper.readTree(json).path("animes");
-            if (!animes.isArray() || animes.isEmpty()) return Collections.emptyList();
+            if (animes.isArray()) {
+                for (JsonNode anime : animes) {
+                    out.add(anime);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Dandan relay search failed, keyword={} err={}", keyword, String.valueOf(e));
+        }
+        return out;
+    }
+
+    private List<String> searchDandanSource(String name, String tvNum, String scheme,
+                                            Function<String, List<JsonNode>> search) {
+        try {
+            List<JsonNode> animes = search.apply(name);
+            if (animes == null || animes.isEmpty()) return Collections.emptyList();
 
             String expectedSeason = (tvNum == null || tvNum.isEmpty()) ? "一" : tvNum;
             for (JsonNode anime : animes) {
@@ -588,7 +740,7 @@ public class DanmuAppService {
                 if (!titleMatches(animeTitle, name)) continue;
                 String extracted = extractSeasonFromTitle(animeTitle, name);
                 if (Objects.equals(extracted, expectedSeason)) {
-                    return List.of(DandanDanmuFetcher.SCHEME + animeId);
+                    return List.of(scheme + animeId);
                 }
             }
             return Collections.emptyList();
@@ -774,13 +926,22 @@ public class DanmuAppService {
     }
 
     /**
-     * Resolves the playable vendor URLs of one Douban TV subject. Shared by the
-     * title-search path and the direct douban_id path.
+     * Resolves the playable vendor URLs of one Douban subject. Shared by the
+     * title-search path and the direct douban_id path. Douban splits TV and
+     * movies into separate detail endpoints (/api/v2/tv vs /api/v2/movie), so
+     * when the TV endpoint yields nothing the movie endpoint gets a try — a
+     * film like 奥本海默 404s on the TV endpoint.
      */
     private List<String> fetchVendorsByDoubanId(String doubanId) {
         if (doubanId == null || doubanId.isEmpty()) return Collections.emptyList();
+        List<String> urls = fetchVendorsByDoubanId(doubanId, "tv");
+        if (!urls.isEmpty()) return urls;
+        return fetchVendorsByDoubanId(doubanId, "movie");
+    }
+
+    private List<String> fetchVendorsByDoubanId(String doubanId, String kind) {
         try {
-            String detailUrl = "https://frodo.douban.com/api/v2/tv/" + doubanId + "?apiKey=" + DOUBAN_API_KEY;
+            String detailUrl = "https://frodo.douban.com/api/v2/" + kind + "/" + doubanId + "?apiKey=" + DOUBAN_API_KEY;
             String detailBody = httpGetAsString(detailUrl, doubanWeixinHeaders());
             if (detailBody == null || detailBody.isEmpty()) return Collections.emptyList();
             JsonNode detailRoot = objectMapper.readTree(detailBody);
@@ -838,12 +999,17 @@ public class DanmuAppService {
             if (cid != null && vid != null) {
                 return "https://v.qq.com/x/cover/" + cid + "/" + vid + ".html";
             }
+            // A universal detail link (cid only) is not an episode page — no
+            // fetcher can resolve it, and keeping it would block the title
+            // search fallback below.
+            return "";
         }
         if ("iqiyi".equalsIgnoreCase(scheme)) {
             String tvid = firstQuery(query, "tvid");
             if (tvid != null) {
                 return "http://www.iqiyi.com?tvid=" + tvid;
             }
+            return "";
         }
         return uri;
     }

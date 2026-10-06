@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DanmuAppServiceMatchTest {
 
     private DanmuAppService serviceWith(DanmuMatchProperties props) {
-        return new DanmuAppService(null, null, new ObjectMapper(), props, null, null);
+        return new DanmuAppService(null, null, new ObjectMapper(), props, null, null, null);
     }
 
     private DanmuAppService defaultService() {
