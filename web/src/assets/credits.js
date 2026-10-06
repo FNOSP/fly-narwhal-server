@@ -37,6 +37,7 @@ export const creditGroups = [
         { name: 'Brotli', url: 'https://github.com/google/brotli', noteKey: 'brotli' },
         { name: 'intro-skipper', url: 'https://github.com/intro-skipper/intro-skipper', noteKey: 'introSkipper' },
         { name: 'fnos-tv', url: 'https://github.com/thshu/fnos-tv', noteKey: 'fnosTv' },
+        { name: 'danmu_api', url: 'https://github.com/huangxd-/danmu_api', noteKey: 'danmuApi' },
     ]},
     { groupKey: 'webFrontend', items: [
         { name: 'Vue', url: 'https://vuejs.org', noteKey: 'vue' },

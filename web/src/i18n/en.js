@@ -166,6 +166,86 @@ export default {
         ],
     },
 
+    danmu: {
+        eyebrow: 'Danmaku',
+        h2Line1: 'More sources,',
+        h2Line2: 'smarter matching, steadier fetching',
+        lede: 'Sources now cover nine platforms plus a third-party fallback, title matching is configurable, and every batch runs through a post-processing pipeline whose settings apply instantly.',
+        items: [
+            {
+                tag: 'Sources',
+                title: 'Nine platforms, plus a fallback',
+                desc: 'Added Migu Video, dandanplay (official service and public relay as two channels, each with its own switch and a preferred pick — the relay needs no platform credentials), and a dandanplay-compatible third-party fallback server.',
+            },
+            {
+                tag: 'Matching',
+                title: 'Configurable title matching',
+                desc: 'Custom title mappings, noise-word stripping before search, a strict title mode, and a per-platform search priority order.',
+            },
+            {
+                tag: 'Pipeline',
+                title: 'Danmaku post-processing',
+                desc: 'Before delivery, danmaku go through timeline offset, duplicate-text removal, blockword filtering, capped sampling, mode conversion and color remapping; settings apply instantly, and failures fall back to the raw results.',
+            },
+            {
+                tag: 'Cache',
+                title: 'Tiered caching',
+                desc: 'Empty results are never cached, sparse results expire after an hour, and full results are kept for 30 days — one failed or premature fetch no longer gets pinned as “no danmaku” for weeks.',
+            },
+            {
+                tag: 'Stability',
+                title: 'Steadier fetching',
+                desc: 'All platform sources share one bounded thread pool with a 60-second per-segment timeout, so a single stuck fetch can no longer drag down a whole episode; Youku tokens refresh and retry on expiry, and Sohu segments now follow the real duration.',
+            },
+            {
+                tag: 'Fixes',
+                title: 'A batch of fetch & display fixes',
+                desc: 'Fixed Bilibili segmented fetches, iQiyi parsing and episode resolution, Youku video IDs, Douban ID parsing, whole seasons sharing one episode’s danmaku, and wrong fallbacks to episode one — and danmaku no longer appear before playback starts.',
+            },
+        ],
+        platforms: ['Bilibili', 'iQiyi', 'Youku', 'Tencent', 'Mango TV', 'Sohu', 'Migu', 'dandanplay', 'Fallback'],
+    },
+
+    skip: {
+        eyebrow: 'Smart skip',
+        h2Line1: 'Intros, recaps, next-episode previews —',
+        h2Line2: 'all skippable',
+        lede: 'Skipping now extends beyond intros and outros to recaps, next-episode previews and mid-roll ads; replaced sources are re-analyzed automatically.',
+        caption: 'The in-player “Smart skip” panel: each category has its own switch, and an automatic skip can still be undone.',
+        items: [
+            {
+                tag: 'Detection',
+                title: 'More skippable segments',
+                desc: 'Recaps and next-episode previews joined the smart analysis, and a single episode can carry multiple mid-roll ad segments, so skip coverage reaches more sources.',
+            },
+            {
+                tag: 'Accuracy',
+                title: 'More accurate detection',
+                desc: 'Fewer false positives, plus a fix for the chapter-name regex that had never matched since the first release and was silently disabling intro/outro markers.',
+            },
+            {
+                tag: 'Re-analysis',
+                title: 'Auto re-analysis on replacement',
+                desc: 'Analysis records store the media file’s modification time, so a file replaced at the same path invalidates the old fingerprint and is re-analyzed automatically — no manual cleanup.',
+            },
+            {
+                tag: 'Cache',
+                title: 'Smarter fingerprint cache',
+                desc: 'Fingerprints are cached per analysis window and only rebuilt when window-affecting settings change; episodes with an unknown duration no longer waste an analysis run.',
+            },
+            {
+                tag: 'Snapping',
+                title: 'Reliable keyframe snapping',
+                desc: 'VP9 sources get a proper keyframe filter, scan logs no longer swallow keyframe output, and snap points are clipped back inside the search window.',
+            },
+            {
+                tag: 'Setup',
+                title: 'One-tap markers',
+                desc: 'During playback you can set the current position as the intro end or outro start with one tap; skip switches apply per item instantly, and the scan timeout is configurable.',
+            },
+        ],
+    },
+
     more: {
         eyebrow: 'More capabilities',
         h2Line1: 'Every detail,',
@@ -178,7 +258,7 @@ export default {
             { title: 'STRM direct playback', desc: 'Aligned with the fnOS media web flow: parse the STRM file and play straight from the cloud address.' },
             { title: 'Playback details', desc: 'Decoding method, dropped frames and buffer status are all visible in real time.' },
             { title: 'Advanced playback options', desc: 'Force H.264 and SDR tone mapping, as a fallback for older devices and unusual sources.' },
-            { title: 'Smooth transitions', desc: 'A slimmer, rebuilt animation pipeline makes page changes and playback interactions feel smoother.' },
+            { title: 'Audio passthrough', desc: 'With HDMI / S-PDIF passthrough on, compressed tracks like AC3, DTS and TrueHD are handed to your receiver as raw bitstreams, keeping the original surround staging; applies to direct-play original audio only, with transcoded audio falling back to local decoding.' },
         ],
         liveChannel: 'CCTV-8 Drama · 1080i',
     },
@@ -202,30 +282,22 @@ export default {
 
     server: {
         eyebrow: 'Server',
-        h2: 'The other half, beyond the client',
-        lede: 'The Fly Narwhal server ships as a GraalVM native binary and runs on your fnOS NAS, handling danmaku, intro/outro analysis and authorization. No Java installation required — unzip and run.',
-        capabilities: [
-            {
-                tag: 'Danmaku',
-                title: 'Fetch and cache',
-                desc: 'When a client requests danmaku, the server fetches it centrally and caches it in the database. Replaying the same series no longer re-hits the source, and cross-origin and rate-limit issues are avoided.',
-            },
-            {
-                tag: 'Analysis',
-                title: 'Intro/outro detection',
-                desc: 'The server uses ffmpeg to analyze each episode’s chapters and audio/video characteristics, computes the intro and outro ranges and writes them to the database; the client then skips them automatically during playback.',
-            },
-            {
-                tag: 'Auth',
-                title: 'Auth code',
-                desc: 'The client and server establish trust through a one-time-displayed auth code, paired with request signature verification, so the server cannot be called by unauthorized clients.',
-            },
+        h2: 'From 470 MB to 120 MB, with nothing cut',
+        lede: 'The server behind danmaku, intro/outro analysis and authorization has been slimmed down twice over: memory use is down to about a quarter of what it was, startup takes about 0.2 seconds, and no feature was removed.',
+        milestones: [
+            { label: 'Before', value: '≈ 472 MB', note: 'The pre-optimization baseline' },
+            { label: 'Native binary rebuild', value: '≈ 165 MB', note: 'Rebuilt as a native program, ~0.2 s startup' },
+            { label: 'After memory tuning · now', value: '≈ 120 MB', note: '≈120 MB covers the whole program including system components; the data area is capped at 64 MB and measured at ~24 MB' },
         ],
-        diagramClient: 'Client',
-        diagramServer: 'Fly Narwhal server',
-        diagramClientSub: 'Windows · macOS · Linux',
-        diagramServerSub: 'fnOS NAS · native binary',
-        logSteps: ['Fetch danmaku', 'ffmpeg analysis', 'Cache to DB', 'Signature check', 'Return result'],
+        measures: [
+            { title: 'Load on demand', desc: 'Program parts now load only when used, instead of being fully initialized at startup.' },
+            { title: 'Smaller database cache', desc: 'The database’s built-in cache cap was cut from 64 MB to 8 MB, so it no longer eats most of the memory.' },
+            { title: 'Fewer background threads', desc: 'Concurrent request threads were cut from 200 to 24 — plenty for a NAS — freeing the memory held by idle threads.' },
+            { title: 'A firm memory ceiling', desc: 'The program gets a 64 MB memory cap, and idle memory is handed back to the system instead of piling up.' },
+            { title: 'Lighter queries', desc: 'Analysis lookups no longer drag along ~50 KB of unused data; at 48-way concurrency the memory peak fell from 35 MB to 30.5 MB and memory cleanups halved.' },
+            { title: 'No Java required', desc: 'Releases are native executables, so the NAS no longer needs Java installed; both processor architectures are built separately.' },
+        ],
+        footnote: 'Measured on the same NAS with a 768-episode library: memory peaked at 35 MB under 24/48-way concurrency, never touching the 64 MB cap, with no memory cleanup while idle.',
     },
 
     platforms: {
@@ -417,6 +489,7 @@ export default {
             brotli: 'Response decompression',
             introSkipper: 'Jellyfin plugin that automatically detects and skips intros and outros',
             fnosTv: 'A web front end built on the fnOS media API; the danmaku feature is referenced from it',
+            danmuApi: 'A multi-platform danmaku aggregation service referenced for the server-side danmaku fetching',
             vue: 'Web UI framework',
             vite: 'Frontend build tool and dev server',
             vitePluginVue: 'Vue single-file component support for Vite',
