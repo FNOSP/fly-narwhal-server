@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>飞鲸影视 · 应用宣传海报（A 方案四联）</title>
+<style>
+    /* ============ 设计稿页壳 ============ */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro SC", "SF Pro Text", "PingFang SC",
+            "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        background: #E8E8ED;
+        padding: 48px 32px 96px;
+        -webkit-font-smoothing: antialiased;
+    }
+    .page-head { max-width: 1360px; margin: 0 auto 40px; }
+    .page-head h1 { font-size: 24px; letter-spacing: -0.02em; color: #1D1D1F; }
+    .page-head p { font-size: 14px; color: #86868B; margin-top: 8px; max-width: 760px; line-height: 1.6; }
+    .board {
+        max-width: 1360px; margin: 0 auto;
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+        gap: 40px; align-items: start;
+    }
+    .concept { display: flex; flex-direction: column; gap: 14px; }
+    .concept__label { font-size: 13px; font-weight: 650; color: #424245; letter-spacing: 0.04em; }
+    .concept__label small { display: block; font-weight: 400; color: #86868B; margin-top: 3px; letter-spacing: 0; }
+    /* 海报原尺寸 1920×1080 横幅（16:9），缩放到 460px 宽预览 */
+    .frame { width: 460px; height: 258.75px; overflow: hidden; border-radius: 12px;
+        box-shadow: 0 28px 70px rgba(0,0,0,0.22); }
+    .poster { width: 1920px; height: 1080px; transform: scale(0.2396); transform-origin: top left;
+        position: relative; overflow: hidden; }
+
+    /* ============ 共享的品牌元素（取自落地页） ============ */
+    .grad-text {
+        background: linear-gradient(94deg, #007AFF 8%, #5E5CE6 55%, #BF5AF2 98%);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .platforms { display: flex; align-items: center; gap: 30px; }
+    .platforms svg { fill: currentColor; }
+    .chip {
+        display: inline-flex; padding: 9px 22px; border-radius: 999px;
+        font-size: 23px; font-weight: 600;
+        background: rgba(0, 122, 255, 0.08); border: 1px solid rgba(0, 122, 255, 0.16); color: #0062CC;
+    }
+
+    /* ============ 海报通用结构（A 方案浅色主题 · 横幅左文右图） ============ */
+    .po {
+        background: linear-gradient(180deg, #FFFFFF 0%, #F5F5F7 55%, #EDF1F7 100%);
+        display: flex; align-items: center;
+        padding: 0 110px;
+    }
+    .po::before { /* hero glow */
+        content: ''; position: absolute; top: -18%; left: 62%; translate: -50% 0;
+        width: 1500px; height: 900px;
+        background: radial-gradient(circle at 50% 40%, rgba(0,122,255,0.17) 0%, rgba(0,122,255,0.07) 38%, transparent 68%);
+    }
+    .po::after { /* hero grid */
+        content: ''; position: absolute; inset: 0;
+        background-image: linear-gradient(rgba(0,0,0,0.028) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,0,0,0.028) 1px, transparent 1px);
+        background-size: 64px 64px;
+        mask-image: radial-gradient(circle at 64% 42%, #000 0%, transparent 70%);
+        -webkit-mask-image: radial-gradient(circle at 64% 42%, #000 0%, transparent 70%);
+    }
+    .po > * { position: relative; z-index: 1; }
+
+    .po .col { width: 850px; flex-shrink: 0; text-align: left; }
+
+    .po .pill {
+        display: inline-flex; align-items: center; gap: 12px;
+        padding: 11px 30px; border-radius: 999px;
+        border: 1px solid rgba(0,122,255,0.22); background: rgba(0,122,255,0.07);
+        color: #0062CC; font-size: 24px; font-weight: 650; letter-spacing: 0.03em;
+    }
+    .po .pill img { width: 40px; height: 40px; border-radius: 22%;
+        box-shadow: 0 4px 12px rgba(0,122,255,0.25); }
+    .po .title {
+        font-size: 96px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1;
+        color: #1D1D1F; margin-top: 34px;
+    }
+    .po .lede {
+        font-size: 28px; line-height: 1.62; color: #86868B;
+        max-width: 720px; margin-top: 24px;
+    }
+    .po .cta {
+        display: inline-flex; align-items: center; gap: 12px; margin-top: 40px;
+        background: #007AFF; color: #fff; font-size: 27px; font-weight: 600;
+        padding: 20px 46px; border-radius: 999px; box-shadow: 0 10px 28px rgba(0,122,255,0.36);
+    }
+    .po .chips { display: flex; flex-wrap: wrap; gap: 14px;
+        margin-top: 30px; max-width: 800px; }
+
+    /* 窗口截图卡 —— 与落地页 ScreenshotSection 同款 chrome */
+    .po .shot {
+        margin-left: 60px; flex: 1; max-width: 880px; border-radius: 18px; overflow: hidden;
+        background: #fff; border: 1px solid rgba(0,0,0,0.08);
+        box-shadow: 0 28px 70px rgba(0,0,0,0.14), 0 0 90px rgba(0,122,255,0.10);
+    }
+    .po .shot__chrome {
+        display: flex; align-items: center; gap: 9px; padding: 13px 16px;
+        background: #EDEDF0; border-bottom: 1px solid rgba(0,0,0,0.08);
+    }
+    .po .shot__dot { width: 13px; height: 13px; border-radius: 50%; background: rgba(0,0,0,0.16); }
+    .po .shot img { width: 100%; display: block; }
+
+    .po .foot {
+        position: absolute; left: 110px; right: 110px; bottom: 46px;
+        display: flex; align-items: center; justify-content: space-between;
+    }
+    .po .foot .platforms { color: #55555A; }
+    .po .foot .brand { font-size: 23px; color: #86868B; letter-spacing: 0.05em; }
+</style>
+</head>
+<body>
+    <header class="page-head">
+        <h1>飞鲸影视 · 应用宣传横幅 — A 方案四联（16:9）</h1>
+        <p>浅色 Hero 主题，左文右图：每页一张真实截图 + 一个核心卖点。画布 1920 × 1080 横幅。截图窗口边框与落地页同款。挑定后用 chrome-devtools 按原尺寸逐张导出 PNG。</p>
+    </header>
+
+    <div class="board" id="board"></div>
+
+    <script>
+    /* 平台图标（取自 web/src/assets/platforms.js） */
+    const PLATFORMS = `
+        <svg width="42" height="42" viewBox="0 0 24 24"><path d="M0 3.449L9.75 2.1V11.4H0V3.449zM0 12.6h9.75v9.3L0 20.551V12.6zM11.25 1.89l12.75-1.83V11.4H11.25V1.89zM11.25 12.6H24v11.25l-12.75-1.83V12.6z"/></svg>
+        <svg width="42" height="42" viewBox="0 0 1024 1024"><path d="M849.124134 704.896288c-1.040702 3.157923-17.300015 59.872622-57.250912 118.190843-34.577516 50.305733-70.331835 101.018741-126.801964 101.909018-55.532781 0.976234-73.303516-33.134655-136.707568-33.134655-63.323211 0-83.23061 32.244378-135.712915 34.110889-54.254671 2.220574-96.003518-54.951543-130.712017-105.011682-70.934562-102.549607-125.552507-290.600541-52.30118-416.625816 36.040844-63.055105 100.821243-103.135962 171.364903-104.230899 53.160757-1.004887 103.739712 36.012192 136.028093 36.012192 33.171494 0 94.357018-44.791136 158.90615-38.089503 27.02654 1.151219 102.622262 11.298324 151.328567 81.891102-3.832282 2.607384-90.452081 53.724599-89.487104 157.76107C739.079832 663.275355 847.952448 704.467523 849.124134 704.896288M633.69669 230.749408c29.107945-35.506678 48.235584-84.314291 43.202964-132.785236-41.560558 1.630127-92.196819 27.600615-122.291231 62.896492-26.609031 30.794353-50.062186 80.362282-43.521213 128.270409C557.264926 291.935955 604.745311 264.949324 633.69669 230.749408"/></svg>
+        <svg width="38" height="44" viewBox="0 0 448 512"><path d="M220.9 123.3c1 .5 1.8 1.7 3 1.7 1.1 0 2.8-.4 2.9-1.5 .2-1.4-1.9-2.3-3.2-2.9-1.7-.7-3.9-1-5.5-.1-.4 .2-.8 .7-.6 1.1 .3 1.3 2.3 1.1 3.4 1.7zM199 125c1.2 0 2-1.2 3-1.7 1.1-.6 3.1-.4 3.5-1.6 .2-.4-.2-.9-.6-1.1-1.6-.9-3.8-.6-5.5 .1-1.3 .6-3.4 1.5-3.2 2.9 .1 1 1.8 1.5 2.8 1.4zM420 403.8c-3.6-4-5.3-11.6-7.2-19.7-1.8-8.1-3.9-16.8-10.5-22.4-1.3-1.1-2.6-2.1-4-2.9-1.3-.8-2.7-1.5-4.1-2 9.2-27.3 5.6-54.5-3.7-79.1-11.4-30.1-31.3-56.4-46.5-74.4-17.1-21.5-33.7-41.9-33.4-72 .5-45.9 5.1-131.2-75.8-131.3-102.4-.2-76.8 103.4-77.9 135.2-1.7 23.4-6.4 41.8-22.5 64.7-18.9 22.5-45.5 58.8-58.1 96.7-6 17.9-8.8 36.1-6.2 53.3-6.5 5.8-11.4 14.7-16.6 20.2-4.2 4.3-10.3 5.9-17 8.3s-14 6-18.5 14.5c-2.1 3.9-2.8 8.1-2.8 12.4 0 3.9 .6 7.9 1.2 11.8 1.2 8.1 2.5 15.7 .8 20.8-5.2 14.4-5.9 24.4-2.2 31.7 3.8 7.3 11.4 10.5 20.1 12.3 17.3 3.6 40.8 2.7 59.3 12.5 19.8 10.4 39.9 14.1 55.9 10.4 11.6-2.6 21.1-9.6 25.9-20.2 12.5-.1 26.3-5.4 48.3-6.6 14.9-1.2 33.6 5.3 55.1 4.1 .6 2.3 1.4 4.6 2.5 6.7l0 .1c8.3 16.7 23.8 24.3 40.3 23 16.6-1.3 34.1-11 48.3-27.9 13.6-16.4 36-23.2 50.9-32.2 7.4-4.5 13.4-10.1 13.9-18.3 .4-8.2-4.4-17.3-15.5-29.7zM223.8 87.3c9.8-22.2 34.2-21.8 44-.4 6.5 14.2 3.6 30.9-4.3 40.4-1.6-.8-5.9-2.6-12.6-4.9 1.1-1.2 3.1-2.7 3.9-4.6 4.8-11.8-.2-27-9.1-27.3-7.3-.5-13.9 10.8-11.8 23-4.1-2-9.4-3.5-13-4.4-1-6.9-.3-14.6 2.9-21.8zM183.1 75.8c10.1 0 20.8 14.2 19.1 33.5-3.5 1-7.1 2.5-10.2 4.6 1.2-8.9-3.3-20.1-9.6-19.6-8.4 .7-9.8 21.2-1.8 28.1 1 .8 1.9-.2-5.9 5.5-15.6-14.6-10.5-52.1 8.4-52.1zm-13.6 60.7c6.2-4.6 13.6-10 14.1-10.5 4.7-4.4 13.5-14.2 27.9-14.2 7.1 0 15.6 2.3 25.9 8.9 6.3 4.1 11.3 4.4 22.6 9.3 8.4 3.5 13.7 9.7 10.5 18.2-2.6 7.1-11 14.4-22.7 18.1-11.1 3.6-19.8 16-38.2 14.9-3.9-.2-7-1-9.6-2.1-8-3.5-12.2-10.4-20-15-8.6-4.8-13.2-10.4-14.7-15.3-1.4-4.9 0-9 4.2-12.3zm3.3 334c-2.7 35.1-43.9 34.4-75.3 18-29.9-15.8-68.6-6.5-76.5-21.9-2.4-4.7-2.4-12.7 2.6-26.4l0-.2c2.4-7.6 .6-16-.6-23.9-1.2-7.8-1.8-15 .9-20 3.5-6.7 8.5-9.1 14.8-11.3 10.3-3.7 11.8-3.4 19.6-9.9 5.5-5.7 9.5-12.9 14.3-18 5.1-5.5 10-8.1 17.7-6.9 8.1 1.2 15.1 6.8 21.9 16l19.6 35.6c9.5 19.9 43.1 48.4 41 68.9zm-1.4-25.9c-4.1-6.6-9.6-13.6-14.4-19.6 7.1 0 14.2-2.2 16.7-8.9 2.3-6.2 0-14.9-7.4-24.9-13.5-18.2-38.3-32.5-38.3-32.5-13.5-8.4-21.1-18.7-24.6-29.9s-3-23.3-.3-35.2c5.2-22.9 18.6-45.2 27.2-59.2 2.3-1.7 .8 3.2-8.7 20.8-8.5 16.1-24.4 53.3-2.6 82.4 .6-20.7 5.5-41.8 13.8-61.5 12-27.4 37.3-74.9 39.3-112.7 1.1 .8 4.6 3.2 6.2 4.1 4.6 2.7 8.1 6.7 12.6 10.3 12.4 10 28.5 9.2 42.4 1.2 6.2-3.5 11.2-7.5 15.9-9 9.9-3.1 17.8-8.6 22.3-15 7.7 30.4 25.7 74.3 37.2 95.7 6.1 11.4 18.3 35.5 23.6 64.6 3.3-.1 7 .4 10.9 1.4 13.8-35.7-11.7-74.2-23.3-84.9-4.7-4.6-4.9-6.6-2.6-6.5 12.6 11.2 29.2 33.7 35.2 59 2.8 11.6 3.3 23.7 .4 35.7 16.4 6.8 35.9 17.9 30.7 34.8-2.2-.1-3.2 0-4.2 0 3.2-10.1-3.9-17.6-22.8-26.1-19.6-8.6-36-8.6-38.3 12.5-12.1 4.2-18.3 14.7-21.4 27.3-2.8 11.2-3.6 24.7-4.4 39.9-.5 7.7-3.6 18-6.8 29-32.1 22.9-76.7 32.9-114.3 7.2zm257.4-11.5c-.9 16.8-41.2 19.9-63.2 46.5-13.2 15.7-29.4 24.4-43.6 25.5s-26.5-4.8-33.7-19.3c-4.7-11.1-2.4-23.1 1.1-36.3 3.7-14.2 9.2-28.8 9.9-40.6 .8-15.2 1.7-28.5 4.2-38.7 2.6-10.3 6.6-17.2 13.7-21.1 .3-.2 .7-.3 1-.5 .8 13.2 7.3 26.6 18.8 29.5 12.6 3.3 30.7-7.5 38.4-16.3 9-.3 15.7-.9 22.6 5.1 9.9 8.5 7.1 30.3 17.1 41.6 10.6 11.6 14 19.5 13.7 24.6zM173.4 148.7c2 1.9 4.7 4.5 8 7.1 6.6 5.2 15.8 10.6 27.3 10.6 11.6 0 22.5-5.9 31.8-10.8 4.9-2.6 10.9-7 14.8-10.4s5.9-6.3 3.1-6.6-2.6 2.6-6 5.1c-4.4 3.2-9.7 7.4-13.9 9.8-7.4 4.2-19.5 10.2-29.9 10.2s-18.7-4.8-24.9-9.7c-3.1-2.5-5.7-5-7.7-6.9-1.5-1.4-1.9-4.6-4.3-4.9-1.4-.1-1.8 3.7 1.7 6.5z"/></svg>`;
+
+    /* 四张海报：卖点标题 + 截图 + 描述 + 能力标签 */
+    const POSTERS = [
+        {
+            label: '01 · 播放内核',
+            note: '主打画质：8K / HDR / 硬解直出',
+            title: ['影院级播放内核', '装进你的桌面'],
+            lede: 'mpv 同款播放内核，GPU 硬解直出屏幕，8K HDR 大片在你电脑上流畅播放。',
+            shot: '/img/screenshot-player-8k.jpg',
+            alt: '飞鲸影视播放 8K 高码率片源',
+            chips: ['8K 高码率', 'HDR / Dolby Vision', 'GPU 硬解', 'PGS 字幕'],
+        },
+        {
+            label: '02 · 智能跳过',
+            note: '主打省心：片头片尾自动跳过 + 弹幕',
+            title: ['片头片尾', '自动跳过'],
+            lede: '服务端逐集分析片头片尾区间，播放时自动跳过，追剧不再手动拖进度条。',
+            shot: '/img/screenshot-intro-skip.jpg',
+            alt: '飞鲸影视播放器，智能跳过配置面板与已自动跳过片头提示',
+            chips: ['片头片尾检测', '自动跳过', '弹幕同步', '接续播放'],
+        },
+        {
+            label: '03 · 媒体库',
+            note: '主打原生观感：打开就像原生应用',
+            title: ['打开的瞬间', '就是原生应用'],
+            lede: 'Flutter 原生重写：继续观看、分类浏览、文件夹视图，找片看片一气呵成。',
+            shot: '/img/screenshot-home.jpg',
+            alt: '飞鲸影视媒体库首页',
+            chips: ['继续观看', '分类浏览', '文件夹视图', 'Live TV'],
+        },
+        {
+            label: '04 · Liquid Glass',
+            note: '主打设计：全新视觉语言',
+            title: ['全新视觉语言', '通透到底'],
+            lede: 'Liquid Glass 液态玻璃质感配合现代布局，光影通透，每次交互都顺滑。',
+            shot: '/img/screenshot-login.jpg',
+            alt: '飞鲸影视登录页，Liquid Glass 液态玻璃质感',
+            chips: ['液态玻璃', '现代布局', '流畅过渡', '深浅主题'],
+        },
+    ];
+
+    const board = document.getElementById('board');
+    board.innerHTML = POSTERS.map(p => `
+        <div class="concept">
+            <div class="concept__label">${p.label}<small>${p.note}</small></div>
+            <div class="frame">
+                <div class="poster po">
+                    <div class="col">
+                        <div class="pill"><img src="/img/app-icon.png" alt="" />飞鲸影视 2.0 · 焕新出发</div>
+                        <h2 class="title">${p.title[0]}<br /><span class="grad-text">${p.title[1]}</span></h2>
+                        <p class="lede">${p.lede}</p>
+                        <div class="cta">⬇ 免费下载</div>
+                        <div class="chips">${p.chips.map(c => `<span class="chip">${c}</span>`).join('')}</div>
+                    </div>
+                    <figure class="shot">
+                        <div class="shot__chrome"><span class="shot__dot"></span><span class="shot__dot"></span><span class="shot__dot"></span></div>
+                        <img src="${p.shot}" alt="${p.alt}" />
+                    </figure>
+                    <div class="foot">
+                        <div class="platforms">${PLATFORMS}</div>
+                        <div class="brand">Windows · macOS · Linux&emsp;|&emsp;开源免费</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+    </script>
+</body>
+</html>
