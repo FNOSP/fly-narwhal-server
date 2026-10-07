@@ -25,6 +25,7 @@ export default {
             server: '服务端',
             changelog: '更新日志',
             faq: '常见问题',
+            guide: '使用说明',
         },
         getAuthCode: '获取授权码',
         download: '下载客户端',
