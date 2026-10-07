@@ -23,6 +23,7 @@ const links = [
     { href: '#server', key: 'server' },
     { href: '#changelog', key: 'changelog' },
     { href: '#faq', key: 'faq' },
+    { href: '#/guide', key: 'guide' },
 ]
 </script>
 

@@ -25,6 +25,7 @@ export default {
             server: 'Server',
             changelog: 'Changelog',
             faq: 'FAQ',
+            guide: 'User guide',
         },
         getAuthCode: 'Get auth code',
         download: 'Download',

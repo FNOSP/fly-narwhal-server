@@ -28,6 +28,7 @@ export default {
             server: '伺服器',
             changelog: '更新日誌',
             faq: '常見問題',
+            guide: '使用說明',
         },
         getAuthCode: '取得授權碼',
         download: '下載用戶端',
