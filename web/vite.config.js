@@ -5,7 +5,7 @@ export default defineConfig({
     plugins: [vue()],
     // The build output is served by Spring Boot from classpath:/static/ at the site
     // root, so asset URLs must be root-relative rather than module-relative.
-    base: '/',
+    base: './',
     server: {
         // Honor the PORT env injected by Claude Code's preview autoPort so the
         // Browser pane's proxy and the dev server agree on a port.
