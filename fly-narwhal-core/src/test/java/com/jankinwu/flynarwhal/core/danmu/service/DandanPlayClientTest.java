@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Pins the dandanplay open network signing contract
  * (base64(sha256(appId + timestamp + path + appSecret)) over the path
- * including its query string) so a server-side spec drift is caught here.
+ * EXCLUDING its query string) so a server-side spec drift is caught here.
  */
 class DandanPlayClientTest {
 
@@ -22,11 +22,35 @@ class DandanPlayClientTest {
     void signatureMatchesTheDocumentedFormula() {
         String appId = "test-app";
         String timestamp = "1700000000";
-        String path = "/api/v2/search/anime?keyword=Severance";
+        String path = "/api/v2/comment/123450001";
         String appSecret = "test-secret";
 
         String expected = base64(sha256(appId + timestamp + path + appSecret));
         assertEquals(expected, DandanPlayClient.sign(appId, timestamp, path, appSecret));
+    }
+
+    @Test
+    void signatureIgnoresTheQueryString() {
+        // The official spec signs the path only: a request to
+        // /api/v2/comment/123450001?withRelated=true is signed over
+        // /api/v2/comment/123450001.
+        assertEquals("/api/v2/comment/123450001",
+                DandanPlayClient.signaturePath("/api/v2/comment/123450001?withRelated=true&chConvert=0"));
+        assertEquals("/api/v2/search/anime",
+                DandanPlayClient.signaturePath("/api/v2/search/anime?keyword=Severance"));
+        assertEquals("/api/v2/bangumi/123",
+                DandanPlayClient.signaturePath("/api/v2/bangumi/123"));
+    }
+
+    @Test
+    void signatureHeadersSignThePathWithoutQuery() {
+        DandanPlayClient client = new DandanPlayClient(null, null, "my-app", "s3cret");
+        Map<String, String> headers =
+                client.signatureHeaders("/api/v2/search/anime?keyword=test");
+        assertEquals(
+                DandanPlayClient.sign("my-app", headers.get("X-Timestamp"),
+                        "/api/v2/search/anime", "s3cret"),
+                headers.get("X-Signature"));
     }
 
     @Test
