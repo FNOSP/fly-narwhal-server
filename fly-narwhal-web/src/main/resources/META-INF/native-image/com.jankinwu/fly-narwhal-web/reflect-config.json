@@ -62,6 +62,6 @@
   { "name": "com.jankinwu.flynarwhal.web.mapper.TvSeasonInfoMapper", "allDeclaredMethods": true, "allDeclaredConstructors": true },
   { "name": "com.jankinwu.flynarwhal.web.mapper.UserSmartSkipConfigMapper", "allDeclaredMethods": true, "allDeclaredConstructors": true },
   { "name": "com.jankinwu.flynarwhal.web.mapper.DanmuPlatformUrlMapper", "allDeclaredMethods": true, "allDeclaredConstructors": true },
-  { "name": "com.jankinwu.flynarwhal.web.mapper.DanmuSourceConfigMapper", "allDeclaredMethods": true, "allDeclaredConstructors": true }
+  { "name": "com.jankinwu.flynarwhal.web.mapper.DanmuSourceConfigMapper", "allDeclaredMethods": true, "allDeclaredConstructors": true },
   { "name": "com.jankinwu.flynarwhal.web.mapper.VideoConfigUrlMapper", "allDeclaredMethods": true, "allDeclaredConstructors": true }
 ]
