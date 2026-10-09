@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 
 @Slf4j
 @Component
@@ -21,8 +22,8 @@ public class MgtvDanmuFetcher extends AbstractDanmuFetcher {
     private static final String API_DANMAKU = "https://galaxy.bz.mgtv.com/rdbarrage";
     private final ObjectMapper objectMapper;
 
-    public MgtvDanmuFetcher(RestTemplate restTemplate, ObjectMapper objectMapper) {
-        super(restTemplate);
+    public MgtvDanmuFetcher(RestTemplate restTemplate, ObjectMapper objectMapper, ExecutorService danmuFetchExecutor) {
+        super(restTemplate, danmuFetchExecutor);
         this.objectMapper = objectMapper;
     }
 

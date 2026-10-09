@@ -15,6 +15,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.regex.Matcher;
@@ -26,8 +27,8 @@ public class BilibiliDanmuFetcher extends AbstractDanmuFetcher {
 
     private final ObjectMapper objectMapper;
 
-    public BilibiliDanmuFetcher(RestTemplate restTemplate, ObjectMapper objectMapper) {
-        super(restTemplate);
+    public BilibiliDanmuFetcher(RestTemplate restTemplate, ObjectMapper objectMapper, ExecutorService danmuFetchExecutor) {
+        super(restTemplate, danmuFetchExecutor);
         this.objectMapper = objectMapper;
     }
 

@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -17,9 +16,9 @@ public abstract class AbstractDanmuFetcher implements DanmuFetcher {
     protected final RestTemplate restTemplate;
     protected final ExecutorService executorService;
 
-    protected AbstractDanmuFetcher(RestTemplate restTemplate) {
+    protected AbstractDanmuFetcher(RestTemplate restTemplate, ExecutorService executorService) {
         this.restTemplate = restTemplate;
-        this.executorService = Executors.newFixedThreadPool(10);
+        this.executorService = executorService;
     }
 
     @Override

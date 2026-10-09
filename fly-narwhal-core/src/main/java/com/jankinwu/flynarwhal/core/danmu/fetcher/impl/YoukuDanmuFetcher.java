@@ -20,6 +20,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -34,8 +35,8 @@ public class YoukuDanmuFetcher extends AbstractDanmuFetcher {
     private static final String APP_KEY = "24679788";
     private static final String SECRET_KEY = "MkmC9SoIw6xCkSKHhJ7b5D2r51kBiREr";
 
-    public YoukuDanmuFetcher(RestTemplate restTemplate, ObjectMapper objectMapper) {
-        super(restTemplate);
+    public YoukuDanmuFetcher(RestTemplate restTemplate, ObjectMapper objectMapper, ExecutorService danmuFetchExecutor) {
+        super(restTemplate, danmuFetchExecutor);
         this.objectMapper = objectMapper;
     }
 
