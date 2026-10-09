@@ -28,7 +28,7 @@ import java.util.Map;
  * signature.
  *
  * <p>Signature: {@code base64(sha256(appId + timestamp + path + appSecret))}
- * over the path including query string, sent as {@code X-AppId},
+ * over the path EXCLUDING the query string, sent as {@code X-AppId},
  * {@code X-Timestamp}, {@code X-Signature}.
  */
 @Slf4j
@@ -153,16 +153,28 @@ public class DandanPlayClient {
     }
 
     /**
-     * App-level auth headers for one request path (path includes the query
-     * string; the signature covers it verbatim).
+     * App-level auth headers for one request path. The signature covers the
+     * path only — the query string stays on the request URL but must be
+     * stripped before signing, per the official spec.
      */
     Map<String, String> signatureHeaders(String path) {
         String timestamp = Long.toString(System.currentTimeMillis() / 1000);
         Map<String, String> headers = new HashMap<>();
         headers.put("X-AppId", appId.trim());
         headers.put("X-Timestamp", timestamp);
-        headers.put("X-Signature", sign(appId.trim(), timestamp, path, appSecret.trim()));
+        headers.put("X-Signature",
+                sign(appId.trim(), timestamp, signaturePath(path), appSecret.trim()));
         return headers;
+    }
+
+    /**
+     * The path part a signature is computed over: everything before the {@code ?}.
+     * The official spec signs {@code /api/v2/comment/123450001} for a request to
+     * {@code /api/v2/comment/123450001?withRelated=true}.
+     */
+    static String signaturePath(String path) {
+        int queryIndex = path.indexOf('?');
+        return queryIndex < 0 ? path : path.substring(0, queryIndex);
     }
 
     static String sign(String appId, String timestamp, String path, String appSecret) {
