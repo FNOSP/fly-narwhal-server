@@ -3,6 +3,7 @@ package com.jankinwu.flynarwhal.core.ffmpeg;
 import com.jankinwu.flynarwhal.core.data.BlackFrame;
 import com.jankinwu.flynarwhal.core.data.ChapterInfo;
 import com.jankinwu.flynarwhal.core.data.SmartSkipConfig;
+import com.jankinwu.flynarwhal.core.data.SpriteSheetResult;
 import com.jankinwu.flynarwhal.core.data.TimeRange;
 import lombok.extern.slf4j.Slf4j;
 import java.io.BufferedReader;
@@ -14,6 +15,9 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -575,6 +579,129 @@ public class FFmpegWrapper {
 
         awaitProcess(process, SmartSkipConfig.PROBE_TIMEOUT_SECONDS, "detectKeyframes", path);
         return keyframes;
+    }
+
+    /**
+     * Total thumbnail slots for a duration: one frame per interval, at least one
+     * for any positive duration. The fps filter emits exactly one frame per slot
+     * (duplicating the previous keyframe when a slot has none), so this count is
+     * what the client's floor(t/interval) hover mapping can rely on.
+     */
+    public static int computeFrameCount(double durationSeconds, int intervalSeconds) {
+        if (durationSeconds <= 0 || intervalSeconds <= 0) {
+            return 0;
+        }
+        return Math.max(1, (int) Math.ceil(durationSeconds / intervalSeconds));
+    }
+
+    /** Sheets needed to hold frameCount thumbnails at tileCols x tileRows per sheet. */
+    public static int computeSheetCount(int frameCount, int tileCols, int tileRows) {
+        int perSheet = tileCols * tileRows;
+        if (frameCount <= 0 || perSheet <= 0) {
+            return 0;
+        }
+        return (frameCount + perSheet - 1) / perSheet;
+    }
+
+    /**
+     * Generate trickplay sprite sheets: one keyframe-only thumbnail per interval,
+     * tiled into sheetCount JPEGs named 1.jpg..N.jpg under outDir.
+     *
+     * <p>Single ffmpeg pass — {@code -skip_frame nokey} keeps decode cost tiny and
+     * {@code fps=1/interval} makes the frame-to-slot mapping deterministic. VP9
+     * ignores -skip_frame nokey (upstream #1049), so VP9 sources prepend the
+     * packet-keyframe select like the other keyframe-only scans.
+     *
+     * @return the sheets actually produced plus the per-thumbnail size measured
+     *         from the first sheet
+     * @throws IOException when ffmpeg times out, exits non-zero, produces nothing,
+     *                     or the first sheet cannot be measured
+     */
+    public SpriteSheetResult generateSpriteSheets(String path, Path outDir, int intervalSeconds, int thumbWidth,
+                                                  int tileCols, int tileRows, int sheetCount, int qScale,
+                                                  boolean nice, int timeoutSeconds) throws IOException, InterruptedException {
+        logPathEncoding("ffmpeg.generateSpriteSheets.input", path);
+        String inputPath = toFfmpegInputPath(path);
+        Files.createDirectories(outDir);
+
+        String videoFilter = "fps=1/" + intervalSeconds
+                + ",scale=" + thumbWidth + ":-2"
+                + ",tile=" + tileCols + "x" + tileRows;
+        if (isVp9Video(path)) {
+            videoFilter = "select=eq(key\\,1)," + videoFilter;
+        }
+
+        List<String> command = new ArrayList<>();
+        if (nice) {
+            // Keep generation from starving concurrent playback/analysis on the NAS.
+            command.add("nice");
+            command.add("-n");
+            command.add("10");
+        }
+        command.add(FFMPEG_PATH);
+        command.add("-hide_banner");
+        command.add("-loglevel");
+        command.add("error");
+        command.add("-nostdin");
+        command.add("-skip_frame");
+        command.add("nokey");
+        command.add("-flags2");
+        command.add("+fast");
+        command.add("-i");
+        command.add(inputPath);
+        command.add("-an");
+        command.add("-sn");
+        command.add("-dn");
+        command.add("-vf");
+        command.add(videoFilter);
+        command.add("-frames:v");
+        command.add(String.valueOf(sheetCount));
+        command.add("-q:v");
+        command.add(String.valueOf(qScale));
+        command.add("-y");
+        command.add(outDir.resolve("%d.jpg").toString());
+
+        log.debug("Running command: {}", String.join(" ", command));
+
+        ProcessBuilder pb = new ProcessBuilder("bash", "-c", buildShellCommand(command));
+        applyUtf8Environment(pb);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null && output.length() < STDERR_MAX_CHARS) {
+                output.append(line).append('\n');
+            }
+        }
+
+        boolean finished = awaitProcess(process, timeoutSeconds, "generateSpriteSheets", path);
+        if (!finished) {
+            throw new IOException("sprite generation timed out after " + timeoutSeconds + "s");
+        }
+        int produced = countJpegSheets(outDir);
+        if (process.exitValue() != 0 || produced == 0) {
+            String tail = output.toString().trim();
+            throw new IOException("sprite generation failed (exit " + process.exitValue()
+                    + ", sheets " + produced + ")" + (tail.isEmpty() ? "" : ": " + tail));
+        }
+
+        int[] dims = JpegDimensions.read(outDir.resolve("1.jpg"));
+        if (dims == null) {
+            throw new IOException("cannot read dimensions of generated sprite sheet " + outDir.resolve("1.jpg"));
+        }
+        return new SpriteSheetResult(produced, dims[0] / tileCols, dims[1] / tileRows);
+    }
+
+    private int countJpegSheets(Path dir) throws IOException {
+        int count = 0;
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, "*.jpg")) {
+            for (Path ignored : stream) {
+                count++;
+            }
+        }
+        return count;
     }
 
     public List<ChapterInfo> getChapters(String path) throws IOException, InterruptedException {

@@ -57,6 +57,24 @@ fly-narwhal:
     # Clients below this version receive a 4001 code with an upgrade prompt;
     # clients sending no version header (legacy) are always allowed.
     min-version: ${FLY_NARWHAL_CLIENT_MIN_VERSION:2.4.0}
+  thumbnail:
+    # Trickplay sprite generation (per-movie, client-triggered). Sprites live
+    # under dir/<sha256(guid)>/g<generation>/1.jpg…; the actual layout of each
+    # task is persisted in THUMBNAIL_TASKS, so changing these only affects new
+    # generations.
+    dir: ${THUMBNAIL_DIR:./data/thumbnails}
+    # One keyframe-only thumbnail per interval (Jellyfin trickplay default: 10s).
+    interval-seconds: ${THUMBNAIL_INTERVAL_SECONDS:10}
+    # Thumbnail width in px; height follows the source aspect (scale=W:-2).
+    thumb-width: ${THUMBNAIL_WIDTH:320}
+    tile-cols: ${THUMBNAIL_TILE_COLS:10}
+    tile-rows: ${THUMBNAIL_TILE_ROWS:10}
+    # ffmpeg mjpeg qscale (lower = better; 4 ≈ JPEG quality 90 at a fraction of the size).
+    jpeg-qscale: ${THUMBNAIL_JPEG_QSCALE:4}
+    # Run ffmpeg under nice -n 10 so generation never starves playback/analysis.
+    nice: ${THUMBNAIL_NICE:true}
+    # 0 = auto: max(1800, duration/2) seconds.
+    timeout-seconds: ${THUMBNAIL_TIMEOUT_SECONDS:0}
 
 # 弹幕缓存配置
 danmu:
