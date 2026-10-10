@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -40,7 +41,7 @@ class ThumbnailControllerTest {
     void generateWrapsTriggerResult() {
         ThumbnailStatusResponse status = ThumbnailStatusResponse.builder()
                 .guid("g").status("PENDING").build();
-        when(service.trigger("g", "/movies/a.mkv")).thenReturn(status);
+        when(service.trigger("g", "/movies/a.mkv", false)).thenReturn(status);
 
         ThumbnailGenerateRequest request = new ThumbnailGenerateRequest();
         request.setGuid("g");
@@ -51,9 +52,26 @@ class ThumbnailControllerTest {
         assertEquals("PENDING", result.getData().getStatus());
     }
 
+    /** The client's 重新生成 sends force, and the controller must pass it through. */
+    @Test
+    void generatePassesForceThrough() {
+        ThumbnailStatusResponse status = ThumbnailStatusResponse.builder()
+                .guid("g").status("PENDING").build();
+        when(service.trigger("g", "/movies/a.mkv", true)).thenReturn(status);
+
+        ThumbnailGenerateRequest request = new ThumbnailGenerateRequest();
+        request.setGuid("g");
+        request.setFilePath("/movies/a.mkv");
+        request.setForce(true);
+        Result<ThumbnailStatusResponse> result = controller.generate(request);
+
+        assertTrue(result.isSuccess());
+        assertEquals("PENDING", result.getData().getStatus());
+    }
+
     @Test
     void generateReportsValidationErrorsAsErrorResult() {
-        when(service.trigger(anyString(), anyString()))
+        when(service.trigger(anyString(), anyString(), anyBoolean()))
                 .thenThrow(new IllegalArgumentException("guid is required"));
 
         ThumbnailGenerateRequest request = new ThumbnailGenerateRequest();

@@ -133,6 +133,19 @@ public class ThumbnailService {
      * and the check-then-enqueue must be atomic per guid.
      */
     public synchronized ThumbnailStatusResponse trigger(String guid, String filePath) {
+        return trigger(guid, filePath, false);
+    }
+
+    /**
+     * Enqueue sprite generation for one media file. Idempotent by default: an
+     * unfinished task is returned as-is, a COMPLETED task whose file is
+     * unchanged is not re-run. {@code force} drops the unchanged-file guard so
+     * an explicit "重新生成" always queues a fresh generation — without it the
+     * caller gets the old COMPLETED row back and no job ever runs.
+     * Synchronized because trigger rates are tiny (manual, per movie) and the
+     * check-then-enqueue must be atomic per guid.
+     */
+    public synchronized ThumbnailStatusResponse trigger(String guid, String filePath, boolean force) {
         if (guid == null || guid.isBlank()) {
             throw new IllegalArgumentException("guid is required");
         }
@@ -147,7 +160,7 @@ public class ThumbnailService {
         }
 
         Long mtime = readFileMtime(filePath);
-        if (existing != null && existing.getStatus() == ThumbnailStatus.COMPLETED
+        if (!force && existing != null && existing.getStatus() == ThumbnailStatus.COMPLETED
                 && isUnchanged(existing, mtime)) {
             return toResponse(existing, false);
         }

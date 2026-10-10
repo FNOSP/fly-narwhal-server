@@ -16,4 +16,13 @@ public class ThumbnailGenerateRequest {
     @JsonProperty("file_path")
     @JsonAlias("filePath")
     private String filePath;
+
+    /**
+     * Regenerate even when the media file is unchanged. Without this the
+     * request is a no-op for an already-completed task (the unchanged-file
+     * guard answers with the old row), which is the wrong answer for an
+     * explicit "重新生成" from the client.
+     */
+    @JsonProperty("force")
+    private boolean force;
 }

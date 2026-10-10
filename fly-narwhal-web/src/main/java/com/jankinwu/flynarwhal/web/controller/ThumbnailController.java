@@ -31,11 +31,12 @@ public class ThumbnailController {
 
     private final ThumbnailService thumbnailService;
 
-    /** Queue sprite generation for one media file; idempotent per guid. */
+    /** Queue sprite generation for one media file; idempotent per guid unless force is set. */
     @PostMapping("/generate")
     public Result<ThumbnailStatusResponse> generate(@RequestBody ThumbnailGenerateRequest request) {
         try {
-            return Result.success(thumbnailService.trigger(request.getGuid(), request.getFilePath()));
+            return Result.success(thumbnailService.trigger(
+                    request.getGuid(), request.getFilePath(), request.isForce()));
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
         } catch (Exception e) {

@@ -119,6 +119,31 @@ class ThumbnailServiceTest {
         verify(mapper).update(any(), any());
     }
 
+    /** An explicit 重新生成 must queue a job even though the file never changed. */
+    @Test
+    void forcedTriggerRequeuesACompletedUnchangedFile() throws Exception {
+        assumeTrue(FFmpegWrapper.isFfmpegAvailable(), "ffmpeg not available");
+        long mtime = Files.getLastModifiedTime(mediaFile).toMillis();
+        when(mapper.selectById("guid-1")).thenReturn(row(ThumbnailStatus.COMPLETED, mtime));
+
+        ThumbnailStatusResponse response = service.trigger("guid-1", mediaFile.toString(), true);
+
+        assertEquals(ThumbnailStatus.PENDING.name(), response.getStatus());
+        verify(mapper).update(any(), any());
+    }
+
+    /** A forced trigger still must not disturb a task that is already running. */
+    @Test
+    void forcedTriggerStillDedupesAnUnfinishedTask() throws Exception {
+        long mtime = Files.getLastModifiedTime(mediaFile).toMillis();
+        when(mapper.selectById("guid-1")).thenReturn(row(ThumbnailStatus.IN_PROGRESS, mtime));
+
+        ThumbnailStatusResponse response = service.trigger("guid-1", mediaFile.toString(), true);
+
+        assertEquals(ThumbnailStatus.IN_PROGRESS.name(), response.getStatus());
+        verify(mapper, never()).update(any(), any());
+    }
+
     @Test
     void triggerFailsFastWhenTheFileIsUnreachable() {
         assumeTrue(FFmpegWrapper.isFfmpegAvailable(), "ffmpeg not available");
