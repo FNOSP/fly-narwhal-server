@@ -102,6 +102,7 @@ public class BilibiliDanmuFetcher extends AbstractDanmuFetcher {
             }
             return map;
         } catch (Exception e) {
+            log.warn("Failed to resolve Bilibili episode urls for {}: {}", url, String.valueOf(e));
             return Map.of();
         }
     }
@@ -193,6 +194,9 @@ public class BilibiliDanmuFetcher extends AbstractDanmuFetcher {
                 list.add(model);
             }
         } catch (Exception e) {
+            // A 412 "request was banned" or a protobuf change lands here; without
+            // this log the episode just comes back empty with no trace.
+            log.warn("Failed to parse Bilibili danmu segment {}: {}", link, String.valueOf(e));
         }
         return list;
     }

@@ -13,8 +13,8 @@ import org.springframework.web.client.RestTemplate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ExecutorService;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -91,6 +91,7 @@ public class TencentDanmuFetcher extends AbstractDanmuFetcher {
             // different episode would silently receive episode 1's danmaku.
             return map;
         } catch (Exception e) {
+            log.warn("Failed to resolve Tencent episode urls for {}: {}", url, String.valueOf(e));
             return Map.of();
         }
     }

@@ -32,6 +32,7 @@ public class DanmuSseService {
 
     private final DanmuAppService danmuAppService;
     private final DanmuFileCache danmuFileCache;
+    private final DanmuPostProcessor danmuPostProcessor;
     private final ObjectMapper objectMapper;
 
     private final ConcurrentHashMap<String, CompletableFuture<String>> inFlight = new ConcurrentHashMap<>();
@@ -55,7 +56,10 @@ public class DanmuSseService {
 
         Optional<String> cached = danmuFileCache.read(requestKey);
         if (cached.isPresent()) {
-            SSE_EXECUTOR.execute(() -> sendAndComplete(emitter, cached.get(), requestedType));
+            // The cache holds the RAW payload; post-processing runs per request so
+            // config changes apply immediately without purging anything.
+            SSE_EXECUTOR.execute(() -> sendAndComplete(emitter,
+                    danmuPostProcessor.process(cached.get(), title, seasonNumber, episodeNumber), requestedType));
             return emitter;
         }
 
@@ -69,7 +73,8 @@ public class DanmuSseService {
                 completeWithError(emitter, ex);
                 return;
             }
-            sendAndComplete(emitter, canonicalJson, requestedType);
+            sendAndComplete(emitter,
+                    danmuPostProcessor.process(canonicalJson, title, seasonNumber, episodeNumber), requestedType);
         }, SSE_EXECUTOR);
 
         return emitter;
@@ -98,8 +103,36 @@ public class DanmuSseService {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-        danmuFileCache.write(requestKey, canonicalJson);
+        // The cache decides by count whether the result is worth persisting:
+        // empty results (a failed or too-early fetch) are dropped, sparse ones
+        // land in a short-lived tier. Never cache unconditionally here.
+        danmuFileCache.write(requestKey, canonicalJson, countDanmu(canonicalJson));
         return canonicalJson;
+    }
+
+    /**
+     * Counts danmu entries in the canonical JSON payload: an array is a single
+     * episode's list, an object maps episode keys to their lists.
+     */
+    private int countDanmu(String canonicalJson) {
+        try {
+            JsonNode root = objectMapper.readTree(canonicalJson);
+            if (root.isArray()) {
+                return root.size();
+            }
+            if (root.isObject()) {
+                int total = 0;
+                for (JsonNode v : root) {
+                    if (v != null && v.isArray()) {
+                        total += v.size();
+                    }
+                }
+                return total;
+            }
+        } catch (Exception e) {
+            log.debug("Failed to count danmu in canonical payload", e);
+        }
+        return 0;
     }
 
     private void sendAndComplete(SseEmitter emitter, String canonicalJson, String requestedType) {
