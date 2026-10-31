@@ -226,44 +226,67 @@ jobs:
             echo "tag=${TAG_NAME}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+
       - name: Generate Release Body
         if: steps.release_tag.outputs.tag != ''
         shell: bash
         run: |
           TAG_NAME="${{ steps.release_tag.outputs.tag }}"
+          VERSION="${TAG_NAME#v}"
 
-          # 在此处手动填写发布日志
-          NOTES=$(cat <<'RELEASE_NOTES'
-          ## 0.7.0-alpha
+          # 与客户端一致：直接解析根目录 CHANGELOG.md，截取与 tag 同名的节
+          # （标题形如 `## [X.Y.Z] - 日期`，`[X.Y.Z-alpha]` 也能匹配），整段作为更新日志。
+          # 跳过 [Unreleased]；节内为空视为还没有写更新日志。
+          # 用 python 自己的 heredoc，管道传给 python3，这样 YAML 块标量的缩进不会进入脚本。
+          set +e
+          NOTES=$(TAG_NAME="$TAG_NAME" VERSION="$VERSION" python3 - <<'PY'
+          import os, re, sys
 
-          ### 亮点
+          tag = os.environ["TAG_NAME"]
+          version = os.environ["VERSION"]
 
-          - **服务端改为 GraalVM 原生镜像**：发布物由 jar 改为原生二进制，目标机器不再需要安装 JVM。amd64 与 arm64 各自独立构建、分别发布。
-          - **新增 Smart-skip 片头片尾分析**：支持智能跳过片头、片尾与 Credits，并对检测逻辑做了上游对齐。
-          - **新增客户端版本校验**：服务端会校验客户端版本，低版本客户端将被拦截并提示升级。
+          try:
+              with open("CHANGELOG.md", encoding="utf-8") as f:
+                  text = f.read()
+          except OSError as e:
+              sys.exit(f"CHANGELOG.md not found: {e}")
 
-          ### 变更
-
-          - 发布产物为 tar.gz 压缩包，内含 `fly-narwhal-server`、`flynarwhal-authx` 与依赖的 `lib*.so`；必须整体解压后运行，单独取出可执行文件无法启动。
-          - 鉴权校验器（authx verifier）改为独立文件随包发布，不再内嵌进二进制。
-          - 随包提供 `SHA256SUMS` 校验和文件。
-
-          ### 修复
-
-          - 改善 FFmpeg 调用方式与路径处理。
-          - 修复自动更新器启动失败的问题。
-          - 修复配置读取与 AOT 日志写入 fnOS 应用目录的问题。
-
-          ### 说明
-
-          - 原生镜像仅支持 amd64 / arm64 两种架构。
-          - 本版本为 Alpha，功能尚未稳定，不建议用于正式环境。
-          RELEASE_NOTES
+          # Release: "v0.7.0-alpha", heading: "## [0.7.0-alpha] - 2026-10-11".
+          # Accept the tag with or without its leading "v".
+          heading = re.compile(r"^##\s+\[([^\]]+)\](.*)$", re.M)
+          wanted = {tag.lower(), version.lower()}
+          sections = []
+          for m in heading.finditer(text):
+              if m.group(1).strip().lower() not in wanted:
+                  continue
+              end = text.find("\n## ", m.end())
+              body = (text[m.end():] if end == -1 else text[m.end():end]).strip()
+              if body:
+                  sections.append(body)
+          if not sections:
+              sys.exit(f"CHANGELOG.md has no non-empty section for {tag}")
+          print(sections[0])
+          PY
           )
+          STATUS=$?
+          set -e
+          FALLBACK=false
+          if [ "$STATUS" -ne 0 ]; then
+            # 提醒但不阻断发布：更新日志应写在 CHANGELOG.md 里，没有就退回自动生成的说明。
+            echo "::warning::$NOTES"
+            NOTES=""
+            FALLBACK=true
+          fi
 
           # 如果是通过 GitHub 页面手动触发并输入了日志，则优先使用输入的内容
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_body }}" ]; then
             NOTES="${{ github.event.inputs.release_body }}"
+            FALLBACK=false
           fi
 
           WARNING=""
@@ -289,7 +312,7 @@ jobs:
             dist/native/fly-narwhal-server-linux-*
             dist/fpk/*.fpk
             dist/native/SHA256SUMS
-          generate_release_notes: false
+          generate_release_notes: ${{ env.FALLBACK == 'true' }}
           draft: false
           prerelease: ${{ contains(steps.release_tag.outputs.tag, '-') }}
         env:
