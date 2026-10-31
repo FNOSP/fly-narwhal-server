@@ -1,15 +1,21 @@
 #!/bin/bash
+# 配置变更：写入端口配置；端口/内存变化重启服务使其生效
 
-### 将用户输入的端口写入 server_port.conf 文件.
-CGI_PROXY_CONFIG_FILE="/var/apps/App.Native.flyNarwhalServer/target/ui/server_port.conf"
-# 读取环境变量（${变量:-} 避免变量未定义时报错）
-CGI_PROXY_PORT="${wizard_server_port:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_HOME="$(dirname "${SCRIPT_DIR}")"
+APPNAME="$(basename "${APP_HOME}")"
+APPDEST="${TRIM_APPDEST:-/var/apps/${APPNAME}/target}"
 
-# 检测环境变量 wizard_server_port 值不为空，则将值写入 server_port.conf 文件
-if [ -n "${CGI_PROXY_PORT}" ]; then
-    echo "export CGI_PROXY_PORT=${CGI_PROXY_PORT}" > "${CGI_PROXY_CONFIG_FILE}"
-    # 设置文件权限为 644
-    chmod 644 "${CGI_PROXY_CONFIG_FILE}"
+CGI_PROXY_CONFIG_FILE="${APPDEST}/ui/server_port.conf"
+CGI_PROXY_PORT="${wizard_server_port:-5365}"
+
+mkdir -p "$(dirname "${CGI_PROXY_CONFIG_FILE}")"
+echo "export CGI_PROXY_PORT=${CGI_PROXY_PORT}" > "${CGI_PROXY_CONFIG_FILE}"
+chmod 644 "${CGI_PROXY_CONFIG_FILE}"
+
+if [ -x "${APPDEST}/../cmd/main" ]; then
+    "${APPDEST}/../cmd/main" stop >/dev/null 2>&1
+    "${APPDEST}/../cmd/main" start >/dev/null 2>&1
 fi
 
 exit 0

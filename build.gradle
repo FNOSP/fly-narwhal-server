@@ -6,7 +6,7 @@ plugins {
 }
 
 ext {
-    baseVersion = '0.13.0'
+    baseVersion = '0.14.0'
     versionSuffix = ''.toString().trim()
     normalizedVersionSuffix = versionSuffix
         ? ((versionSuffix.startsWith('-') || versionSuffix.startsWith('+')) ? versionSuffix : "-${versionSuffix}")
@@ -52,13 +52,25 @@ tasks.register('buildWebUi') {
             logger.lifecycle('buildWebUi skipped by request')
             return false
         }
+        if (new File(webUiDist, 'index.html').exists()) {
+            // web/dist already holds a UI built elsewhere (e.g. on the Mac and uploaded to
+            // the x86 NAS, which has no npm). When web/public is absent from the source
+            // tree this is the intended input rather than a missing directory.
+            logger.lifecycle('buildWebUi skipped: using existing web/dist (present at build start)')
+            return false
+        }
         if (!new File(webUiDir, 'package.json').exists()) {
             throw new GradleException("Missing web/package.json — cannot build the landing page")
         }
         return true
     }
     inputs.dir(new File(webUiDir, 'src'))
-    inputs.dir(new File(webUiDir, 'public'))
+    // public/ is optional: see the onlyIf above. Declared conditionally so Gradle does not
+    // reject a source tree (e.g. a trimmed tarball) that ships prebuilt web/dist but no public/.
+    def webPublic = new File(webUiDir, 'public')
+    if (webPublic.exists()) {
+        inputs.dir(webPublic)
+    }
     inputs.file(new File(webUiDir, 'package.json'))
     inputs.file(new File(webUiDir, 'vite.config.js'))
     inputs.file(new File(webUiDir, 'index.html'))

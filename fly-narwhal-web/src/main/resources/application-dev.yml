@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:h2:file:/var/apps/App.Native.flyNarwhalServer-dev/shares/data/fly-narwhal;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CACHE_SIZE=8192
+    url: jdbc:h2:file:/var/apps/FlyNarwhalDev/shares/data/fly-narwhal;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CACHE_SIZE=8192
     driver-class-name: org.h2.Driver
     username: sa
     password: 123456
@@ -9,12 +9,14 @@ spring:
       mode: never
 
 fly-narwhal:
-  # Sibling of the release data dir so a local run never touches production files.
-  data-dir: ${FN_DATA_DIR:/var/apps/App.Native.flyNarwhalServer-dev/shares/data}
+  # Dev builds are installed as the separate fnOS app "FlyNarwhalDev", so every runtime file
+  # (auth_code, authx verifier, danmu cache) lives in that app's shared data folder next to
+  # its logs. Native images bake these paths at build time; FN_DATA_DIR cannot override them.
+  data-dir: ${FN_DATA_DIR:/var/apps/FlyNarwhalDev/shares/data}
 
 danmu:
   cache:
-    dir: ${DANMU_CACHE_DIR:/var/apps/App.Native.flyNarwhalServer-dev/shares/data/danmu-cache}
+    dir: ${DANMU_CACHE_DIR:/var/apps/FlyNarwhalDev/shares/data/danmu-cache}
 
 logging:
   level:

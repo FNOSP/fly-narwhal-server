@@ -1,7 +1,7 @@
 appname               = App.Native.flyNarwhalServer
-version               = 1.0.4
+version               = 2.0.2
 display_name          = 飞鲸影视
-desc                  = """<p><img src="https://club.fnnas.com/data/attachment/forum/202601/29/185633axyvlyuqp92yufuq.png" width="600"/></p><p><img src="https://img.shields.io/badge/fnOS_AppCenter-Java__Runtime-FF8000" alt=""> <img src="https://img.shields.io/badge/AppCenter_Release-True-21AF90" alt=""> <img src="https://img.shields.io/badge/AppName-FlyNarwhalServer-7C52F1" alt=""> <img src="https://img.shields.io/badge/Maintainer-Jankin--Wu-F6308E" alt=""> <img src="https://img.shields.io/badge/Distributor-MR__XIAOBO-F6308E" alt=""></p><h3></h3><p><strong>项目地址：<a href="https://github.com/FNOSP/FlyNarwhal" target="_blank" rel="noopener">FNOSP/FlyNarwhal</a></strong></p><p>　　飞鲸影视客户端是基于 KMP 技术开发的适用于飞牛影视的多平台桌面客户端，配合安装在 NAS 上的飞鲸影视服务端可实现智能片头/片尾跳过、视频弹幕自动检索和渲染等功能。</p>"""
+desc                  = """<p><img src="https://club.fnnas.com/data/attachment/forum/202601/29/185633axyvlyuqp92yufuq.png" width="600"/></p><p><img src="https://img.shields.io/badge/fnOS_AppCenter-GraalVM__Native-FF8000" alt=""> <img src="https://img.shields.io/badge/AppCenter_Release-True-21AF90" alt=""> <img src="https://img.shields.io/badge/AppName-FlyNarwhalServer-7C52F1" alt=""> <img src="https://img.shields.io/badge/Maintainer-Jankin--Wu-F6308E" alt=""> <img src="https://img.shields.io/badge/Distributor-MR__XIAOBO-F6308E" alt=""></p><h3></h3><p><strong>项目地址：<a href="https://github.com/FNOSP/FlyNarwhal" target="_blank" rel="noopener">FNOSP/FlyNarwhal</a></strong></p><p>　　飞鲸影视客户端是基于 KMP 技术开发的适用于飞牛影视的多平台桌面客户端，配合安装在 NAS 上的飞鲸影视服务端可实现智能片头/片尾跳过、视频弹幕自动检索和渲染等功能。</p>"""
 platform              = x86
 source                = thirdparty
 maintainer            = 友人A（Jankin-Wu）
@@ -10,5 +10,5 @@ distributor           = MR_XIAOBO
 distributor_url       = https://github.com/xiaobonet
 desktop_uidir         = ui
 desktop_applaunchname = App.Native.flyNarwhalServer.App
-install_dep_apps      = java-21-openjdk
 os_min_version        = 1.1.8
+changelog             = """<p>2.0.2</p><ul><li>服务端改用 GraalVM 原生镜像，不再依赖 Java 运行时，启动更快、内存占用大幅下降</li><li>安装时只需设置服务端口与内存上限</li><li>已有数据库与弹幕缓存自动沿用，无需迁移</li></ul>"""

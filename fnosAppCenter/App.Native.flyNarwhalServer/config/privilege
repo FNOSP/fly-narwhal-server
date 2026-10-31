@@ -2,5 +2,7 @@
     "defaults":
     {
         "run-as": "package"
-    }
+    },
+    "username": "App.Native.flyNarwhalServer",
+    "groupname": "App.Native.flyNarwhalServer"
 }

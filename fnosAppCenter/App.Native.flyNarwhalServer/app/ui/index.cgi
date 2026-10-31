@@ -12,6 +12,8 @@
 #    - URI_QUERY: foo=bar
 URI_PATH="${REQUEST_URI%%\?*}"  # 提取?前的路径部分
 URI_QUERY="${REQUEST_URI#*\?}"   # 提取?后的查询字符串（无则为空）
+# 剥掉系统前缀 /cgi/ThirdParty/<appname>（生产名与 -dev 名不同，不写死）
+URI_PATH="${URI_PATH#/cgi/ThirdParty/*/}"
 
 # 默认代理路径（未匹配到index.cgi时使用）
 REL_PATH="/"
@@ -40,7 +42,10 @@ if echo "$REL_PATH" | grep -q '\.\.'; then
 fi
 
 # 5. 读取代理端口配置文件
-PROXY_PORT_CONFIG_FILE="/var/apps/App.Native.flyNarwhalServer/target/ui/server_port.conf"
+#    不写死应用名：同一份包也以 -dev 名称安装（开发版），安装路径随之不同。
+#    本文件位于 /var/apps/<appname>/target/ui/index.cgi，按自身真实路径推出应用名。
+APPNAME="$(basename "$(dirname "$(dirname "$(readlink -f "$0")")")")"
+PROXY_PORT_CONFIG_FILE="/var/apps/${APPNAME}/target/ui/server_port.conf"
 if [ -f "${PROXY_PORT_CONFIG_FILE}" ]; then
     source "${PROXY_PORT_CONFIG_FILE}"
 else
@@ -54,11 +59,16 @@ if [ -n "$URI_QUERY" ] && [ "$URI_QUERY" != "$URI_PATH" ]; then
     PROXY_URL="${PROXY_URL}?${URI_QUERY}"
 fi
 
-# 7. 使用curl请求代理地址并转发响应
-if [ "$REL_PATH" = "/api/config/auth-code" ]; then
-    RESPONSE=$(curl -X POST -sSL --fail -i "$PROXY_URL")
+# 7. 透传请求并输出响应（-N 关闭缓冲，弹幕 SSE 才能边推边到）
+METHOD="${REQUEST_METHOD:-GET}"
+CONTENT_LEN="${CONTENT_LENGTH:-0}"
+CURL_ARGS=(-sSL -N --fail -i -X "${METHOD}")
+
+if [ "${CONTENT_LEN}" -gt 0 ] 2>/dev/null; then
+    CURL_ARGS+=(-H "Content-Type: ${CONTENT_TYPE:-application/json}" --data-binary @-)
+    RESPONSE=$(curl "${CURL_ARGS[@]}" "$PROXY_URL" < /dev/stdin)
 else
-    RESPONSE=$(curl -sSL --fail -i "$PROXY_URL")
+    RESPONSE=$(curl "${CURL_ARGS[@]}" "$PROXY_URL")
 fi
 CURL_EXIT_CODE=$?
 

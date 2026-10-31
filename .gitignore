@@ -51,6 +51,11 @@ out/
 /web/.vite/
 
 ### Runtime & local state — never commit ###
+# Native binaries dropped into the fnOS package by fnosAppCenter/build-fpk.sh.
+/fnosAppCenter/App.Native.flyNarwhalServer/app/server/
+# fnpack downloaded by build-fpk.sh, and the built .fpk files.
+/fnosAppCenter/.tools/
+/dist/fpk/
 # The auth code is shown exactly once and lives beside the server binary.
 /fly-narwhal-web/auth_code
 /fly-narwhal-web/data/

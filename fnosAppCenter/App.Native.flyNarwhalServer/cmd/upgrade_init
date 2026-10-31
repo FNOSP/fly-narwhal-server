@@ -1,5 +1,22 @@
 #!/bin/bash
+# 升级前：停止旧进程（旧版可能是 JVM 或更早的 native），释放端口
 
-### This script is called before the user upgrades the application.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_HOME="$(dirname "${SCRIPT_DIR}")"
+APPNAME="$(basename "${APP_HOME}")"
+APPDEST="${TRIM_APPDEST:-/var/apps/${APPNAME}/target}"
+
+if [ -x "${APPDEST}/../cmd/main" ]; then
+    "${APPDEST}/../cmd/main" stop >/dev/null 2>&1
+fi
+
+# 旧 JVM 版的 PID 文件同样在 var/ 下，用 java -jar 匹配兜底
+PKGVAR="${TRIM_PKGVAR:-/var/apps/${APPNAME}/var}"
+if [ -f "${PKGVAR}/app.pid" ]; then
+    pid=$(head -n 1 "${PKGVAR}/app.pid" | tr -d '[:space:]')
+    [ -n "${pid}" ] && kill -TERM "${pid}" 2>/dev/null
+    rm -f "${PKGVAR}/app.pid"
+fi
+pkill -f "fly-narwhal-server.jar" 2>/dev/null || true
 
 exit 0

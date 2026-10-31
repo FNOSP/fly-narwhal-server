@@ -140,6 +140,24 @@ jobs:
           echo "NAME=${NAME}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
+      - name: Build fnOS package (fpk)
+        run: |
+          set -euo pipefail
+          # build-fpk.sh downloads fnpack 1.2.3 for this host and packs app/server/
+          # from the native output. A Linux runner needs no root: fnpack's rpcbroker
+          # shortcut only applies on a real fnOS device.
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            PLATFORM=arm
+          else
+            PLATFORM=x86
+          fi
+          ./fnosAppCenter/build-fpk.sh \
+            --arch "${{ matrix.arch }}" \
+            --platform "${PLATFORM}" \
+            --bin-dir fly-narwhal-web/build/native/nativeCompile \
+            --authx "fly-narwhal-web/build/generated-resources/authx-verifier/native/authx/linux-${{ matrix.arch }}/flynarwhal-authx" \
+            --out-dir dist/fpk
+
       - name: Generate checksums
         run: |
           set -euo pipefail
@@ -153,6 +171,7 @@ jobs:
           retention-days: 7
           path: |
             dist/native/fly-narwhal-server-linux-*
+            dist/fpk/*.fpk
             dist/native/SHA256SUMS.*
 
       - name: Upload build reports (on failure)
@@ -181,6 +200,13 @@ jobs:
           pattern: native-*
           path: dist/native
           merge-multiple: true
+
+      - name: Collect fnOS packages
+        run: |
+          set -euo pipefail
+          mkdir -p dist/fpk
+          find dist/native -maxdepth 1 -name '*.fpk' -exec mv {} dist/fpk/ \;
+          ls -lh dist/fpk
 
       - name: Merge checksums
         run: |
@@ -261,6 +287,7 @@ jobs:
             ${{ env.RELEASE_BODY }}
           files: |
             dist/native/fly-narwhal-server-linux-*
+            dist/fpk/*.fpk
             dist/native/SHA256SUMS
           generate_release_notes: false
           draft: false
