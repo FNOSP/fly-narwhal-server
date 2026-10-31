@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useScrollProgress } from '../composables/useParallax'
 import { useI18n } from '../composables/useI18n'
+import appIcon from '../assets/img/app-icon.png'
 
 defineProps({
     versionLabel: { type: String, default: '' },
@@ -34,7 +35,7 @@ const glowScale = computed(() => 1 + progress.value * 0.35)
             class="hero__content shell"
             :style="{ transform: `translate3d(0, ${contentY}, 0)`, opacity: contentOpacity }"
         >
-            <img class="hero__mark" src="/img/app-icon.png" :alt="t.hero.iconAlt" width="512" height="512" />
+            <img class="hero__mark" :src="appIcon" :alt="t.hero.iconAlt" width="512" height="512" />
 
             <p class="hero__brand">{{ t.hero.brand }}</p>
 

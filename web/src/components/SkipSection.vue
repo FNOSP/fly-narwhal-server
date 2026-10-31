@@ -1,5 +1,6 @@
 <script setup>
 import { useI18n } from '../composables/useI18n'
+import skipShot from '../assets/img/screenshot-intro-skip.jpg'
 
 const { t } = useI18n()
 </script>
@@ -19,7 +20,7 @@ const { t } = useI18n()
 
             <figure v-reveal="120" class="skip__figure">
                 <img
-                    src="/img/screenshot-intro-skip.jpg"
+                    :src="skipShot"
                     alt="智能跳过配置"
                     width="2000"
                     height="1124"

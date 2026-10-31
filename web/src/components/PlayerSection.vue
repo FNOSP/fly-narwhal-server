@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useScrollProgress } from '../composables/useParallax'
 import { useI18n } from '../composables/useI18n'
+import demoVideo from '../assets/video/8k-60fps-demo.mp4'
 
 const { t } = useI18n()
 
@@ -52,7 +53,7 @@ const compareBad = [true, false]
                     </div>
                     <video
                         class="player__video"
-                        src="/video/8k-60fps-demo.mp4"
+                        :src="demoVideo"
                         autoplay
                         loop
                         muted

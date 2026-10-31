@@ -3,8 +3,8 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
     plugins: [vue()],
-    // The build output is served by Spring Boot from classpath:/static/ at the site
-    // root, so asset URLs must be root-relative rather than module-relative.
+    // The build output is served by Spring Boot from classpath:/static/ and may sit
+    // under a context path, so every emitted asset URL must be relative.
     base: './',
     server: {
         // Honor the PORT env injected by Claude Code's preview autoPort so the

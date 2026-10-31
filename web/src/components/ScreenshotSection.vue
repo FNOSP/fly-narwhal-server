@@ -2,18 +2,17 @@
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useScrollProgress } from '../composables/useParallax'
 import { useI18n } from '../composables/useI18n'
+import shotLogin from '../assets/img/screenshot-login.jpg'
+import shotHome from '../assets/img/screenshot-home.jpg'
+import shotPlayer from '../assets/img/screenshot-player.jpg'
+import shotPlayer8k from '../assets/img/screenshot-player-8k.jpg'
 
 const { t } = useI18n()
 
 // Sourced from the client repo's README on master (img/*.png), resized to 1800px
 // wide and re-encoded as JPEG — the originals are 3600×2250 and ~7MB each.
 // Paths are fixed; alt/title/desc come from the catalog by position.
-const shotSrcs = [
-    '/img/screenshot-login.jpg',
-    '/img/screenshot-home.jpg',
-    '/img/screenshot-player.jpg',
-    '/img/screenshot-player-8k.jpg',
-]
+const shotSrcs = [shotLogin, shotHome, shotPlayer, shotPlayer8k]
 
 const shots = computed(() => t.value.screenshots.shots.map((s, i) => ({ ...s, src: shotSrcs[i] })))
 
