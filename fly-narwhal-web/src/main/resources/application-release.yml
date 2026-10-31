@@ -7,3 +7,11 @@ spring:
   sql:
     init:
       mode: never
+
+fly-narwhal:
+  # Base directory for runtime data files (auth_code, authx verifier, danmu cache).
+  data-dir: ${FN_DATA_DIR:/var/apps/App.Native.flyNarwhalServer/shares/data}
+
+danmu:
+  cache:
+    dir: ${DANMU_CACHE_DIR:/var/apps/App.Native.flyNarwhalServer/shares/data/danmu-cache}

@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicReference;
 @Slf4j
 final class ExternalAuthxVerifier {
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(2);
+    private static final String DEFAULT_DATA_DIR = "/var/apps/App.Native.flyNarwhalServer/shares/data";
     private static volatile Path extractedPath;
     private static volatile boolean attempted;
     private static volatile VerifierPool pool;
@@ -200,7 +201,7 @@ final class ExternalAuthxVerifier {
             return;
         }
 
-        Path temp = new File("/var/apps/App.Native.flyNarwhalServer/shares/data/flynarwhal-authx" + binarySuffix()).toPath();
+        Path temp = new File(resolveDataDir(), "flynarwhal-authx" + binarySuffix()).toPath();
         try (InputStream in = ExternalAuthxVerifier.class.getClassLoader().getResourceAsStream(resourcePath)) {
             if (in == null) {
                 log.warn("authx verifier resource {} is not readable (missing from the native image?)", resourcePath);
@@ -321,6 +322,14 @@ final class ExternalAuthxVerifier {
 
         String fileName = "flynarwhal-authx" + binarySuffix();
         return "native/authx/" + osPart + "-" + archPart + "/" + fileName;
+    }
+
+    // Read at use time (not injected) because this class is static. Native images return
+    // the default: system properties are fixed at build time, so the FN_DATA_DIR environment
+    // variable never overrides fly-narwhal.data-dir there (same as the H2 URL).
+    private static String resolveDataDir() {
+        String dir = System.getProperty("fly-narwhal.data-dir");
+        return dir == null || dir.isBlank() ? DEFAULT_DATA_DIR : dir.trim();
     }
 
     private static String binarySuffix() {

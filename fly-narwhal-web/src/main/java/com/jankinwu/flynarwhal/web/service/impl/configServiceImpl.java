@@ -6,6 +6,7 @@ import com.jankinwu.flynarwhal.web.mapper.DbVersionMapper;
 import com.jankinwu.flynarwhal.web.service.ConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StreamUtils;
 import org.springframework.web.client.RestTemplate;
@@ -31,6 +32,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class configServiceImpl implements ConfigService {
 
     private final DbVersionMapper dbVersionMapper;
+    @Value("${fly-narwhal.data-dir}")
+    private String dataDir;
     private final ExecutorService updateExecutor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean updateInProgress = new AtomicBoolean(false);
 
@@ -189,7 +192,7 @@ public class configServiceImpl implements ConfigService {
                 return null;
             }
             
-            File tempDir = new File("/var/apps/App.Native.flyNarwhalServer/target/server");
+            File tempDir = new File(dataDir).getParentFile();
 //            Files.createDirectories(tempDir.toPath());
             File tempUpdater = new File(tempDir, "updater-" + System.currentTimeMillis());
             tempUpdater.deleteOnExit();

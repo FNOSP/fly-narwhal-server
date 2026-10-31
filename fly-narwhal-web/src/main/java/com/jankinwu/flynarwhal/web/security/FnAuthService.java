@@ -32,7 +32,7 @@ public class FnAuthService {
     private static final String FN_API_KEY = "NDzZTVxnRKP8Z0jXg1VAMonaG8akvh";
     private static final Duration AUTHX_TTL = Duration.ofMinutes(5);
     private static final String DEFAULT_API_SECRET = "16CCEB3D-AB42-077D-36A1-F355324E4237";
-    private static final String AUTH_CODE_FILE = "/var/apps/App.Native.flyNarwhalServer/shares/data/auth_code";
+    private static final String AUTH_CODE_FILE_NAME = "auth_code";
     private static final String AUTH_CODE_DELIM = "|";
     private static final String AUTH_CODE_PREFIX = "FN1";
     private static final String AUTH_CODE_PREFIX_DELIM = "_";
@@ -46,14 +46,15 @@ public class FnAuthService {
     @Autowired
     public FnAuthService(FnAuthConfigService fnAuthConfigService,
                          ObjectMapper objectMapper,
-                         @Value("${fly-narwhal.api-secret:}") String apiSecret) {
+                         @Value("${fly-narwhal.api-secret:}") String apiSecret,
+                         @Value("${fly-narwhal.data-dir}") String dataDir) {
 
         if (apiSecret == null || apiSecret.isBlank()) {
             this.apiSecret = DEFAULT_API_SECRET;
         } else {
             this.apiSecret = apiSecret.trim();
         }
-        this.authCodeFilePath = Paths.get(AUTH_CODE_FILE);
+        this.authCodeFilePath = Paths.get(dataDir, AUTH_CODE_FILE_NAME);
     }
 
     FnAuthService(FnAuthConfigService fnAuthConfigService,
@@ -65,7 +66,7 @@ public class FnAuthService {
         } else {
             this.apiSecret = apiSecret.trim();
         }
-        this.authCodeFilePath = authCodeFilePath == null ? Paths.get(AUTH_CODE_FILE) : authCodeFilePath;
+        this.authCodeFilePath = authCodeFilePath == null ? Paths.get(System.getProperty("user.dir"), "data", AUTH_CODE_FILE_NAME) : authCodeFilePath;
     }
 
     @PostConstruct
