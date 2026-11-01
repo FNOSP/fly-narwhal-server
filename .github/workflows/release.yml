@@ -207,6 +207,8 @@ jobs:
       - name: Collect release files
         run: |
           set -euo pipefail
+          echo "--- dist tree as downloaded ---"
+          find dist -type f | sort
           mkdir -p dist/release
           for src in dist/native dist/fpk; do
             [ -d "$src" ] || { echo "no $src, skipping"; continue; }
