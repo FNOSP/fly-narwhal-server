@@ -19,11 +19,6 @@ TOOLS_DIR="${SCRIPT_DIR}/.tools"
 FNPACK_VERSION="1.2.3"
 FNPACK_BASE_URL="https://static2.fnnas.com/fnpack"
 
-# 官方只为 x86_64 和 macOS 提供 fnpack 二进制，没有 linux-arm64。但这个工具
-# 只是把目录打成 tar.gz（fpk 本身与架构无关），所以当目标平台缺 fnpack 时，
-# 回退到仓库内置的 1.2.3 arm64 构建用它打包。
-VENDORED_FNPACK="${SCRIPT_DIR}/fnpack-1.2.3"
-
 case "$(uname -s)" in
   Darwin) OS=darwin ;;
   Linux) OS=linux ;;
@@ -101,15 +96,16 @@ resolve_fnpack() {
     echo "${FNPACK_BIN}"
     return
   fi
+  # 各平台二进制随仓库一起提供，构建机不需要联网下载。
+  local vendored="${SCRIPT_DIR}/fnpack-${FNPACK_VERSION}-${OS}-${HOST_ARCH}"
+  if [ -x "${vendored}" ]; then
+    echo "${vendored}"
+    return
+  fi
   local cached="${TOOLS_DIR}/fnpack-${FNPACK_VERSION}-${OS}-${HOST_ARCH}"
   if [ ! -x "${cached}" ]; then
     local url="${FNPACK_BASE_URL}/fnpack-${FNPACK_VERSION}-${OS}-${HOST_ARCH}"
     mkdir -p "${TOOLS_DIR}"
-    if [ "${OS}" = linux ] && [ "${HOST_ARCH}" = arm64 ] && [ -x "${VENDORED_FNPACK}" ]; then
-      echo "fnpack ${FNPACK_VERSION}: ${url} is not published upstream, using vendored ${VENDORED_FNPACK}" >&2
-      echo "${VENDORED_FNPACK}"
-      return
-    fi
     echo "downloading fnpack ${FNPACK_VERSION}: ${url}" >&2
     curl -fsSL -o "${cached}" "${url}"
     chmod +x "${cached}"
