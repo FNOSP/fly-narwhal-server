@@ -14,7 +14,6 @@ APPNAME="$(basename "${APP_HOME}")"
 APPDEST="${TRIM_APPDEST:-${APP_HOME}/target}"
 SERVER_DIR="${APPDEST}/server"
 BIN="${SERVER_DIR}/fly-narwhal-server"
-VERIFIER="${SERVER_DIR}/flynarwhal-authx"
 PORT_CONF="${APPDEST}/ui/server_port.conf"
 
 PKGVAR="${TRIM_PKGVAR:-${APP_HOME}/var}"
@@ -79,7 +78,6 @@ start_process() {
         log_msg "ERROR: server binary missing or not executable: ${BIN}"
         return 1
     fi
-    [ -x "${VERIFIER}" ] || chmod +x "${VERIFIER}" 2>/dev/null
 
     local port max_heap
     port=$(read_port)
@@ -96,6 +94,8 @@ start_process() {
     local data_dir="${APP_HOME}/shares/data"
     mkdir -p "${data_dir}"
 
+    # 开发版不打包外置 authx 验证器（构建未设 FLY_NARWHAL_BUILD_AUTHX_VERIFIER，
+    # 镜像内走内置验证路径），所以不传 -Dfly-narwhal.external-authx.bin。
     # 二进制从自身目录 dlopen lib*.so，并以进程 CWD 解析相对路径，所以必须 cd 到 server 目录
     (
         cd "${SERVER_DIR}" || exit 1
@@ -103,7 +103,6 @@ start_process() {
             -XX:MaxHeapSize="${max_heap}" \
             -XX:MaxHeapFree=8388608 \
             -XX:StackSize=524288 \
-            -Dfly-narwhal.external-authx.bin="${VERIFIER}" \
             -Dfly-narwhal.data-dir="${data_dir}" \
             -Ddanmu.cache.dir="${data_dir}/danmu-cache" \
             -DFN_DB_URL="jdbc:h2:file:${data_dir}/fly-narwhal;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CACHE_SIZE=8192" \

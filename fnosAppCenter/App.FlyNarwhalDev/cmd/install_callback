@@ -1,5 +1,5 @@
 #!/bin/bash
-# 安装完成：写入端口配置、补齐运行目录、确保 verifier 可执行
+# 安装完成：写入端口配置、补齐运行目录
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_HOME="$(dirname "${SCRIPT_DIR}")"
@@ -16,7 +16,6 @@ mkdir -p "${PKGVAR}" "${APP_ROOT}/shares/data" "${APP_ROOT}/shares/logs" "$(dirn
 echo "export CGI_PROXY_PORT=${CGI_PROXY_PORT}" > "${CGI_PROXY_CONFIG_FILE}"
 chmod 644 "${CGI_PROXY_CONFIG_FILE}"
 
-[ -f "${APPDEST}/server/flynarwhal-authx" ] && chmod +x "${APPDEST}/server/flynarwhal-authx"
 [ -f "${APPDEST}/server/fly-narwhal-server" ] && chmod +x "${APPDEST}/server/fly-narwhal-server"
 
 exit 0
