@@ -328,6 +328,8 @@ jobs:
       # action-gh-release 2.6.x 的 glob 在本仓库的 runner 上一个文件都匹配不到
       # （绝对路径、逐个文件名都一样），发布出过三次不带安装包的 Release。
       # 直接用 gh CLI，文件列表来自上一步的 find 结果。
+      # 不用 `gh release edit`：仓库里有个早期失败的 draft 占着 v2.0.0 tag，
+      # edit 会改到 draft 上并打出 untagged 地址，用 API 按 id 更新真正的 Release。
       - name: Create Release
         if: steps.release_tag.outputs.tag != ''
         shell: bash
@@ -338,15 +340,23 @@ jobs:
           RELEASE_BODY: ${{ env.RELEASE_BODY }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes "$RELEASE_BODY"
-          else
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
-              --title "$TAG" --notes "$RELEASE_BODY" \
-              $([[ "$TAG" == *-* ]] && echo --prerelease)
-          fi
+          # 清掉占着同一个 tag 的残留 draft，否则正式 Release 建不出来。
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$TAG\" and .draft) | .id" |
+            while read -r id; do
+              echo "deleting stale draft release $id"
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+            done
+
+          PRE=""
+          case "$TAG" in *-*) PRE="--prerelease";; esac
+          # shellcheck disable=SC2086
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --title "$TAG" --notes "$RELEASE_BODY" --latest $PRE
+
           mapfile -t files < <(printf '%s\n' "$FILES" | sed '/^$/d')
           echo "uploading ${#files[@]} file(s)"
+          ls -l "${files[@]}"
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"
 
       - name: Verify release assets
@@ -357,6 +367,6 @@ jobs:
           TAG: ${{ steps.release_tag.outputs.tag }}
         run: |
           set -euo pipefail
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
-            --jq '.assets[] | "\(.name) \(.size)"'
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,assets \
+            --jq '"draft=\(.isDraft)", (.assets[] | "\(.name) \(.size)")'
           test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')" -eq 5
