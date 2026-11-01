@@ -316,11 +316,23 @@ jobs:
           body: |
             ${{ env.RELEASE_BODY }}
           files: |
-            dist/release/fly-narwhal-server-linux-*
-            dist/release/*.fpk
-            dist/release/SHA256SUMS
+            ${{ github.workspace }}/dist/release/fly-narwhal-server-linux-*
+            ${{ github.workspace }}/dist/release/*.fpk
+            ${{ github.workspace }}/dist/release/SHA256SUMS
           generate_release_notes: ${{ env.FALLBACK == 'true' }}
           draft: false
           prerelease: ${{ contains(steps.release_tag.outputs.tag, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 放在最后：动作里的 glob 以进程工作目录为根，换到 dist/release 再列文件名，
+      # 不再依赖它解析相对仓库根目录的路径。
+      - name: Verify release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "pwd=$(pwd)"
+          ls -la dist/release
+          test "$(find dist/release -maxdepth 1 -name '*.fpk' | wc -l)" -eq 2
+          test "$(find dist/release -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 2
+          test -f dist/release/SHA256SUMS
