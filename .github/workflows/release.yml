@@ -220,6 +220,23 @@ jobs:
           rm -f SHA256SUMS.amd64 SHA256SUMS.arm64
           cat SHA256SUMS
 
+      # 把文件逐个列出来交给发布步骤，两边都不涉及通配符。
+      - name: List release files
+        id: release_files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist/release
+          ls -lh
+          {
+            echo "list<<EOF"
+            find "$PWD" -maxdepth 1 -type f \
+              \( -name 'fly-narwhal-server-linux-*.tar.gz' \
+                 -o -name '*.fpk' -o -name 'SHA256SUMS' \) | sort
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "count=$(find "$PWD" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.fpk' -o -name 'SHA256SUMS' \) | wc -l)" >> "$GITHUB_OUTPUT"
+
       - name: Prepare Release Tag
         id: release_tag
         run: |
@@ -315,24 +332,26 @@ jobs:
           tag_name: ${{ steps.release_tag.outputs.tag }}
           body: |
             ${{ env.RELEASE_BODY }}
+          # 不能用通配符：action-gh-release 2.6.x 内置 glob 13 的 sync 对含通配符的
+          # 模式一律返回空（本地用同一版本可复现），发布出过不带任何安装包的 Release。
           files: |
-            ${{ github.workspace }}/dist/release/fly-narwhal-server-linux-*
-            ${{ github.workspace }}/dist/release/*.fpk
-            ${{ github.workspace }}/dist/release/SHA256SUMS
+            ${{ steps.release_files.outputs.list }}
           generate_release_notes: ${{ env.FALLBACK == 'true' }}
           draft: false
           prerelease: ${{ contains(steps.release_tag.outputs.tag, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 放在最后：动作里的 glob 以进程工作目录为根，换到 dist/release 再列文件名，
-      # 不再依赖它解析相对仓库根目录的路径。
+      # 发布后核对 GitHub 上实际挂载的资产数，避免又出现“发布成功但没附包”。
       - name: Verify release assets
+        if: steps.release_tag.outputs.tag != ''
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          echo "pwd=$(pwd)"
-          ls -la dist/release
-          test "$(find dist/release -maxdepth 1 -name '*.fpk' | wc -l)" -eq 2
-          test "$(find dist/release -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 2
-          test -f dist/release/SHA256SUMS
+          test "${{ steps.release_files.outputs.count }}" -eq 5
+          sleep 5
+          gh release view "${{ steps.release_tag.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[] | "\(.name) \(.size)"'
+          test "$(gh release view "${{ steps.release_tag.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')" -eq 5
