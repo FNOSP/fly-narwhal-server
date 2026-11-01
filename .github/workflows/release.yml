@@ -194,35 +194,38 @@ jobs:
       contents: write
 
     steps:
+      # 产物放在 workspace 之外：后面的 Checkout code 会清空工作目录
+      # （即使 clean: false，稀疏检出也会 Deleting the contents）。
       - name: Download native artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: native-*
-          path: dist/native
+          path: ${{ runner.temp }}/release/raw
           merge-multiple: true
 
       # artifact 解压后的目录结构随 upload-artifact 的公共祖先推断而变（见过
-      # dist/native/、dist/fpk/、dist/native/fpk/ 三种），所以按文件名在整个 dist 下
-      # 递归查找，不假设任何子目录。收集后必须正好 5 个文件。
+      # dist/native/、dist/fpk/、dist/native/fpk/ 三种），所以按文件名在整个目录下
+      # 递归查找，不假设任何子目录。收集后应为 6 个：2 fpk + 2 tar.gz + 2 份
+      # 分架构校验和；合并后是 5 个。
       - name: Collect release files
         run: |
           set -euo pipefail
-          echo "--- dist tree as downloaded ---"
-          find dist -type f -printf '%p  %s\n' | sort -k2 -n || true
-          mkdir -p dist/release
-          find dist -mindepth 2 -type f -not -path 'dist/release/*' \
-            \( -name 'fly-narwhal-server-linux-*.tar.gz' \
-               -o -name 'SHA256SUMS.*' -o -name '*.fpk' \) -exec mv {} dist/release/ \;
+          RAW="$RUNNER_TEMP/release/raw"
+          OUT="$RUNNER_TEMP/release/files"
+          echo "--- downloaded tree ---"
+          find "$RAW" -type f -printf '%p  %s\n' | sort -k2 -n || true
+          mkdir -p "$OUT"
+          find "$RAW" -type f \( -name 'fly-narwhal-server-linux-*.tar.gz' \
+            -o -name 'SHA256SUMS.*' -o -name '*.fpk' \) -exec mv {} "$OUT"/ \;
           echo "--- collected ---"
-          ls -lh dist/release
-          # 此处应为 6 个：2 fpk + 2 tar.gz + 2 份分架构校验和；合并后才是 5 个。
-          n=$(find dist/release -maxdepth 1 -type f | wc -l)
+          ls -lh "$OUT"
+          n=$(find "$OUT" -maxdepth 1 -type f | wc -l | tr -d ' ')
           test "$n" -eq 6 || { echo "::error::expected 6 files, collected $n"; exit 1; }
 
       - name: Merge checksums
         run: |
           set -euo pipefail
-          cd dist/release
+          cd "$RUNNER_TEMP/release/files"
           cat SHA256SUMS.* > SHA256SUMS
           rm -f SHA256SUMS.amd64 SHA256SUMS.arm64
           cat SHA256SUMS
@@ -233,7 +236,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd dist/release
+          cd "$RUNNER_TEMP/release/files"
           ls -lh
           {
             echo "list<<EOF"
@@ -242,7 +245,7 @@ jobs:
                  -o -name '*.fpk' -o -name 'SHA256SUMS' \) | sort
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
-          echo "count=$(find "$PWD" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.fpk' -o -name 'SHA256SUMS' \) | wc -l)" >> "$GITHUB_OUTPUT"
+          echo "count=$(find "$PWD" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.fpk' -o -name 'SHA256SUMS' \) | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
 
       - name: Prepare Release Tag
         id: release_tag
