@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { useI18n } from './useI18n'
+import { apiBase } from './useApiBase'
 
 /**
  * Auth-code retrieval. The endpoint returns the code exactly once: a later call
@@ -33,7 +34,7 @@ export function useAuthCode() {
 
     async function request() {
         try {
-            const response = await fetch('/api/config/auth-code', { method: 'POST' })
+            const response = await fetch(`${apiBase()}/api/config/auth-code`, { method: 'POST' })
             const result = await response.json()
             if (result.code === 200) {
                 if (result.data === 'exists') {

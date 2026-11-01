@@ -60,19 +60,29 @@ if [ -n "$URI_QUERY" ] && [ "$URI_QUERY" != "$URI_PATH" ]; then
 fi
 
 # 7. 透传请求并输出响应（-N 关闭缓冲，弹幕 SSE 才能边推边到）
+#    响应直接写到 stdout，不经过 shell 变量：command substitution 会丢弃 NUL 字节
+#    并重解释换行，PNG/JPG/MP4 经它往返后长度对不上声明的 Content-Length，浏览器
+#    会以 net::ERR_CONTENT_LENGTH_MISMATCH 丢掉整个文件。
+#    唯一例外是 4xx/5xx：curl --fail 会丢掉错误响应体，这时只补一段纯文本提示，
+#    否则用户看到的是一片空白。
 METHOD="${REQUEST_METHOD:-GET}"
 CONTENT_LEN="${CONTENT_LENGTH:-0}"
-CURL_ARGS=(-sSL -N --fail -i -X "${METHOD}")
+CURL_ARGS=(-sS -N --fail -i -X "${METHOD}")
 
 if [ "${CONTENT_LEN}" -gt 0 ] 2>/dev/null; then
     CURL_ARGS+=(-H "Content-Type: ${CONTENT_TYPE:-application/json}" --data-binary @-)
-    RESPONSE=$(curl "${CURL_ARGS[@]}" "$PROXY_URL" < /dev/stdin)
+    PROXY_BODY="$(cat /dev/stdin)"
+    if [ -n "${PROXY_BODY}" ]; then
+        printf '%s' "${PROXY_BODY}" | curl "${CURL_ARGS[@]}" "$PROXY_URL"
+    else
+        curl "${CURL_ARGS[@]}" "$PROXY_URL"
+    fi
 else
-    RESPONSE=$(curl "${CURL_ARGS[@]}" "$PROXY_URL")
+    curl "${CURL_ARGS[@]}" "$PROXY_URL"
 fi
 CURL_EXIT_CODE=$?
 
-# 8. 处理curl请求失败的情况
+# 8. 处理curl请求失败的情况：流式的响应头已经写出去的部分保持原样，只补一条说明
 if [ $CURL_EXIT_CODE -ne 0 ]; then
     case $CURL_EXIT_CODE in
         6)  # 无法解析localhost（极少发生）
@@ -95,8 +105,5 @@ if [ $CURL_EXIT_CODE -ne 0 ]; then
     echo "Content-Type: text/plain; charset=utf-8"
     echo ""
     echo "$ERROR_MSG"
-    exit 0
 fi
-
-# 9. 输出代理响应（包含HTTP头+内容，符合CGI规范）
-echo "$RESPONSE"
+exit 0
