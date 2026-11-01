@@ -201,14 +201,13 @@ jobs:
           path: dist/native
           merge-multiple: true
 
-      # upload-artifact strips the common leading directory (dist/native/), so
-      # archives come down as the bare file names while the fpk keeps dist/fpk/.
-      # Flatten both instead of assuming either layout.
+      # upload-artifact 会把上传时写的路径原样保留：tar.gz / SHA256SUMS.* 落在
+      # dist/native/，而 fpk 落在 dist/fpk/。两处都要收。
       - name: Collect release files
         run: |
           set -euo pipefail
           mkdir -p dist/release
-          find dist/native -type f \( -name 'fly-narwhal-server-linux-*.tar.gz' \
+          find dist/native dist/fpk -type f \( -name 'fly-narwhal-server-linux-*.tar.gz' \
             -o -name 'SHA256SUMS.*' -o -name '*.fpk' \) -exec mv {} dist/release/ \;
           ls -lh dist/release
 
