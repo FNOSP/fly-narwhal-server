@@ -325,33 +325,38 @@ jobs:
             echo "EOF"
           } >> $GITHUB_ENV
 
+      # action-gh-release 2.6.x 的 glob 在本仓库的 runner 上一个文件都匹配不到
+      # （绝对路径、逐个文件名都一样），发布出过三次不带安装包的 Release。
+      # 直接用 gh CLI，文件列表来自上一步的 find 结果。
       - name: Create Release
-        uses: softprops/action-gh-release@v2
         if: steps.release_tag.outputs.tag != ''
-        with:
-          tag_name: ${{ steps.release_tag.outputs.tag }}
-          body: |
-            ${{ env.RELEASE_BODY }}
-          # 不能用通配符：action-gh-release 2.6.x 内置 glob 13 的 sync 对含通配符的
-          # 模式一律返回空（本地用同一版本可复现），发布出过不带任何安装包的 Release。
-          files: |
-            ${{ steps.release_files.outputs.list }}
-          generate_release_notes: ${{ env.FALLBACK == 'true' }}
-          draft: false
-          prerelease: ${{ contains(steps.release_tag.outputs.tag, '-') }}
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release_tag.outputs.tag }}
+          FILES: ${{ steps.release_files.outputs.list }}
+          RELEASE_BODY: ${{ env.RELEASE_BODY }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes "$RELEASE_BODY"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG" --notes "$RELEASE_BODY" \
+              $([[ "$TAG" == *-* ]] && echo --prerelease)
+          fi
+          mapfile -t files < <(printf '%s\n' "$FILES" | sed '/^$/d')
+          echo "uploading ${#files[@]} file(s)"
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"
 
-      # 发布后核对 GitHub 上实际挂载的资产数，避免又出现“发布成功但没附包”。
       - name: Verify release assets
         if: steps.release_tag.outputs.tag != ''
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release_tag.outputs.tag }}
         run: |
           set -euo pipefail
-          test "${{ steps.release_files.outputs.count }}" -eq 5
-          sleep 5
-          gh release view "${{ steps.release_tag.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --json assets \
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
             --jq '.assets[] | "\(.name) \(.size)"'
-          test "$(gh release view "${{ steps.release_tag.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')" -eq 5
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')" -eq 5
