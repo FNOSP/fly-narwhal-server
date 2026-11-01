@@ -1,0 +1,187 @@
+#!/bin/bash
+# 飞鲸影视服务端（GraalVM 原生镜像）生命周期脚本 —— 开发版 FlyNarwhalDev
+
+# 核心：显式设置字符编码为UTF-8（解决非交互式Shell编码缺失）
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export LC_CTYPE=C.UTF-8
+
+# 应用根目录 / 应用名都取自脚本自身位置（cmd/ 的上一级），不依赖 TRIM_APPNAME。
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_HOME="$(dirname "${SCRIPT_DIR}")"
+APPNAME="$(basename "${APP_HOME}")"
+# TRIM_APPDEST 在应用中心调用时提供；手动执行时按脚本自身位置推断
+APPDEST="${TRIM_APPDEST:-${APP_HOME}/target}"
+SERVER_DIR="${APPDEST}/server"
+BIN="${SERVER_DIR}/fly-narwhal-server"
+VERIFIER="${SERVER_DIR}/flynarwhal-authx"
+PORT_CONF="${APPDEST}/ui/server_port.conf"
+
+PKGVAR="${TRIM_PKGVAR:-${APP_HOME}/var}"
+LOG_FILE="${PKGVAR}/info.log"
+STDOUT_LOG="${PKGVAR}/stdout.log"
+PID_FILE="${PKGVAR}/app.pid"
+
+# 数据与日志目录：都按实际安装名（APPNAME）取，不写死包名，dev 包安装在
+# /var/apps/FlyNarwhalDev 下。数据目录还会在 start_process 里以运行期属性显式传入。
+export FLY_NARWHAL_LOG_DIR="${APP_HOME}/shares/logs"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+read_port() {
+    local port=""
+    if [ -n "${wizard_server_port:-}" ]; then
+        port="${wizard_server_port}"
+    elif [ -f "${PORT_CONF}" ]; then
+        # server_port.conf 内容为：export CGI_PROXY_PORT=5367
+        port="$(sed -n 's/^export CGI_PROXY_PORT=//p' "${PORT_CONF}" | tail -n 1 | tr -d '[:space:]')"
+    fi
+    echo "${port:-5367}"
+}
+
+read_max_heap() {
+    # wizard_max_memory 单位 MB；native 镜像的 -XX:MaxHeapSize 单位是字节
+    local mb="${wizard_max_memory:-}"
+    case "${mb}" in
+        ''|*[!0-9]*) mb=256 ;;
+    esac
+    echo $((mb * 1024 * 1024))
+}
+
+check_process() {
+    local pid=$1
+    [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null
+}
+
+status() {
+    if [ -f "${PID_FILE}" ]; then
+        local pid
+        pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+        if check_process "${pid}"; then
+            return 0
+        fi
+        # 进程已退出：清理过期 PID 文件
+        rm -f "${PID_FILE}"
+    fi
+    # PID 文件缺失时，按可执行文件名兜底判断
+    pgrep -f "${BIN}" >/dev/null 2>&1
+}
+
+start_process() {
+    if status; then
+        log_msg "already running"
+        return 0
+    fi
+
+    if [ ! -x "${BIN}" ]; then
+        log_msg "ERROR: server binary missing or not executable: ${BIN}"
+        return 1
+    fi
+    [ -x "${VERIFIER}" ] || chmod +x "${VERIFIER}" 2>/dev/null
+
+    local port max_heap
+    port=$(read_port)
+    max_heap=$(read_max_heap)
+
+    mkdir -p "${PKGVAR}" "${APP_HOME}/shares/logs" "${APP_HOME}/shares/data"
+    : >> "${STDOUT_LOG}"
+
+    log_msg "Starting native server: port=${port} max_heap=${max_heap}"
+
+    # native 镜像按先找到的那份 profile 文档解析数据目录，构建机上有 HOME/data 时
+    # 会落到 ../data（相对 server 目录）；数据目录与 H2 URL 只能在运行期改，
+    # 所以这里显式指回本应用的 shares/data。
+    local data_dir="${APP_HOME}/shares/data"
+    mkdir -p "${data_dir}"
+
+    # 二进制从自身目录 dlopen lib*.so，并以进程 CWD 解析相对路径，所以必须 cd 到 server 目录
+    (
+        cd "${SERVER_DIR}" || exit 1
+        setsid nohup "${BIN}" \
+            -XX:MaxHeapSize="${max_heap}" \
+            -XX:MaxHeapFree=8388608 \
+            -XX:StackSize=524288 \
+            -Dfly-narwhal.external-authx.bin="${VERIFIER}" \
+            -Dfly-narwhal.data-dir="${data_dir}" \
+            -Ddanmu.cache.dir="${data_dir}/danmu-cache" \
+            -DFN_DB_URL="jdbc:h2:file:${data_dir}/fly-narwhal;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CACHE_SIZE=8192" \
+            --server.port="${port}" \
+            >> "${STDOUT_LOG}" 2>&1 < /dev/null &
+        echo $! > "${PID_FILE}"
+    )
+
+    local pid
+    pid=$(head -n 1 "${PID_FILE}" 2>/dev/null | tr -d '[:space:]')
+    log_msg "pid = ${pid}"
+
+    # 等待端口就绪（迁移脚本在绑定端口前执行，失败时进程会立即退出）
+    local count=0
+    while [ ${count} -lt 15 ]; do
+        if ! check_process "${pid}"; then
+            log_msg "ERROR: process exited during startup, see ${STDOUT_LOG} and ${FLY_NARWHAL_LOG_DIR}"
+            return 1
+        fi
+        if curl -s -o /dev/null "http://127.0.0.1:${port}/" 2>/dev/null; then
+            log_msg "server is up on port ${port}"
+            return 0
+        fi
+        sleep 1
+        count=$((count + 1))
+    done
+
+    log_msg "WARN: server not answering after ${count}s on port ${port}, still running (pid ${pid})"
+    return 0
+}
+
+stop_process() {
+    log_msg "Stopping process ..."
+
+    if [ -r "${PID_FILE}" ]; then
+        local pid count=0
+        pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+
+        if check_process "${pid}"; then
+            log_msg "send TERM signal to PID:${pid}"
+            kill -TERM "${pid}" >> "${LOG_FILE}" 2>&1
+
+            while check_process "${pid}" && [ ${count} -lt 10 ]; do
+                sleep 1
+                count=$((count + 1))
+            done
+
+            if check_process "${pid}"; then
+                log_msg "send KILL signal to PID:${pid}"
+                kill -KILL "${pid}" 2>/dev/null
+                sleep 1
+            fi
+        fi
+        rm -f "${PID_FILE}"
+    fi
+
+    # 兜底：结束后仍有同路径进程（例如 PID 文件丢失）
+    pkill -f "${BIN}" 2>/dev/null || true
+    return 0
+}
+
+case $1 in
+start)
+    start_process
+    exit $?
+    ;;
+stop)
+    stop_process
+    exit 0
+    ;;
+status)
+    if status; then
+        exit 0
+    else
+        exit 3
+    fi
+    ;;
+*)
+    exit 1
+    ;;
+esac

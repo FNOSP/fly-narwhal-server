@@ -1,0 +1,12 @@
+{
+    ".url": {
+        "FlyNarwhalDev.App": {
+            "title": "飞鲸影视（开发版）",
+            "icon": "images/icon_{0}.png",
+            "type": "iframe",
+            "protocol": "",
+            "url": "/cgi/ThirdParty/FlyNarwhalDev/index.cgi/",
+            "allUsers": false
+        }
+    }
+}

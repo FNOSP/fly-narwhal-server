@@ -1,0 +1,28 @@
+{
+    "data-share":
+    {
+        "shares":
+        [
+            {
+                "name": "FlyNarwhalDev/logs",
+                "permission":
+                {
+                    "rw":
+                    [
+                        "FlyNarwhalDev"
+                    ]
+                }
+            },
+            {
+                "name": "FlyNarwhalDev/data",
+                "permission":
+                {
+                    "rw":
+                    [
+                        "FlyNarwhalDev"
+                    ]
+                }
+            }
+        ]
+    }
+}

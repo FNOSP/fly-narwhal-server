@@ -8,6 +8,7 @@
 #
 # 产物：<out-dir>/<appname>.<arch>.<version>.fpk（版本号取自 manifest）
 # --package 指定其它应用目录（例如从生产包复制出的 -dev 包），默认 App.Native.flyNarwhalServer
+# 开发版（应用名 FlyNarwhalDev，可与正式版同时安装）请直接用 build-fpk-dev.sh。
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -17,6 +18,11 @@ TOOLS_DIR="${SCRIPT_DIR}/.tools"
 
 FNPACK_VERSION="1.2.3"
 FNPACK_BASE_URL="https://static2.fnnas.com/fnpack"
+
+# 官方只为 x86_64 和 macOS 提供 fnpack 二进制，没有 linux-arm64。但这个工具
+# 只是把目录打成 tar.gz（fpk 本身与架构无关），所以当目标平台缺 fnpack 时，
+# 回退到仓库内置的 1.2.3 arm64 构建用它打包。
+VENDORED_FNPACK="${SCRIPT_DIR}/fnpack-1.2.3"
 
 case "$(uname -s)" in
   Darwin) OS=darwin ;;
@@ -97,8 +103,13 @@ resolve_fnpack() {
   fi
   local cached="${TOOLS_DIR}/fnpack-${FNPACK_VERSION}-${OS}-${HOST_ARCH}"
   if [ ! -x "${cached}" ]; then
-    mkdir -p "${TOOLS_DIR}"
     local url="${FNPACK_BASE_URL}/fnpack-${FNPACK_VERSION}-${OS}-${HOST_ARCH}"
+    mkdir -p "${TOOLS_DIR}"
+    if [ "${OS}" = linux ] && [ "${HOST_ARCH}" = arm64 ] && [ -x "${VENDORED_FNPACK}" ]; then
+      echo "fnpack ${FNPACK_VERSION}: ${url} is not published upstream, using vendored ${VENDORED_FNPACK}" >&2
+      echo "${VENDORED_FNPACK}"
+      return
+    fi
     echo "downloading fnpack ${FNPACK_VERSION}: ${url}" >&2
     curl -fsSL -o "${cached}" "${url}"
     chmod +x "${cached}"

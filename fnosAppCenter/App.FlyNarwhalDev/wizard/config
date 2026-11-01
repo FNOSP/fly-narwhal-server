@@ -1,0 +1,37 @@
+[
+  {
+    "stepTitle": "配置运行环境参数",
+    "items": [
+      {
+        "type": "text",
+        "field": "wizard_max_memory",
+        "label": "内存上限（MB）",
+        "rules": [
+          {
+            "required": true,
+            "message": "请输入内存上限"
+          },
+          {
+            "pattern": "^([6-9]\\d|[1-9]\\d{2,}|5\\d|51)$",
+            "message": "内存上限必须不小于 50 MB"
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_server_port",
+        "label": "应用服务端口",
+        "rules": [
+          {
+            "required": true,
+            "message": "请输入端口号"
+          },
+          {
+            "pattern": "^(102[4-9]|10[3-9]\\d|1[1-9]\\d{2}|[2-9]\\d{3}|[1-5]\\d{4}|6[0-4]\\d{3}|65[0-4]\\d{2}|655[0-2]\\d|6553[0-5])$",
+            "message": "端口号必须在 1024 到 65535 之间"
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,17 @@
+#!/bin/bash
+# 升级后：清理旧版残留（旧 jar、备份二进制），保留 shares/data 中的数据库与弹幕缓存
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_HOME="$(dirname "${SCRIPT_DIR}")"
+APPNAME="$(basename "${APP_HOME}")"
+APPDEST="${TRIM_APPDEST:-/var/apps/${APPNAME}/target}"
+
+rm -f "${APPDEST}/server/fly-narwhal-server.jar"
+
+# fnpack 安装会整体覆盖 target，这里只兜底清理可能遗留的备份文件
+find "${APPDEST}/server" -maxdepth 1 \( -name '*.bak' -o -name '*.jar' \) -delete 2>/dev/null
+
+[ -f "${APPDEST}/server/flynarwhal-authx" ] && chmod +x "${APPDEST}/server/flynarwhal-authx"
+[ -f "${APPDEST}/server/fly-narwhal-server" ] && chmod +x "${APPDEST}/server/fly-narwhal-server"
+
+exit 0

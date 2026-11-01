@@ -1,0 +1,22 @@
+#!/bin/bash
+# 安装完成：写入端口配置、补齐运行目录、确保 verifier 可执行
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_HOME="$(dirname "${SCRIPT_DIR}")"
+APPNAME="$(basename "${APP_HOME}")"
+APPDEST="${TRIM_APPDEST:-/var/apps/${APPNAME}/target}"
+PKGVAR="${TRIM_PKGVAR:-/var/apps/${APPNAME}/var}"
+APP_ROOT="${APP_HOME}"
+
+CGI_PROXY_CONFIG_FILE="${APPDEST}/ui/server_port.conf"
+CGI_PROXY_PORT="${wizard_server_port:-5367}"
+
+mkdir -p "${PKGVAR}" "${APP_ROOT}/shares/data" "${APP_ROOT}/shares/logs" "$(dirname "${CGI_PROXY_CONFIG_FILE}")"
+
+echo "export CGI_PROXY_PORT=${CGI_PROXY_PORT}" > "${CGI_PROXY_CONFIG_FILE}"
+chmod 644 "${CGI_PROXY_CONFIG_FILE}"
+
+[ -f "${APPDEST}/server/flynarwhal-authx" ] && chmod +x "${APPDEST}/server/flynarwhal-authx"
+[ -f "${APPDEST}/server/fly-narwhal-server" ] && chmod +x "${APPDEST}/server/fly-narwhal-server"
+
+exit 0
