@@ -105,6 +105,13 @@ resolve_fnpack() {
   local cached="${TOOLS_DIR}/fnpack-${FNPACK_VERSION}-${OS}-${HOST_ARCH}"
   if [ ! -x "${cached}" ]; then
     local url="${FNPACK_BASE_URL}/fnpack-${FNPACK_VERSION}-${OS}-${HOST_ARCH}"
+    if [ "${OS}" = linux ] && [ "${HOST_ARCH}" = arm64 ]; then
+      # 文档列了这个文件名，但 static2 上一直没有真正的 arm64 二进制。
+      # 仓库也不再放一份改名的旧版本顶替，需要时用 --fnpack 指定。
+      echo "fnpack ${FNPACK_VERSION} for ${OS}-${HOST_ARCH} is not available (${url} returns 404)" >&2
+      echo "pass --fnpack <file> to use another fnpack binary" >&2
+      exit 1
+    fi
     mkdir -p "${TOOLS_DIR}"
     echo "downloading fnpack ${FNPACK_VERSION}: ${url}" >&2
     curl -fsSL -o "${cached}" "${url}"
