@@ -46,17 +46,12 @@ def execOps = project.services.get(ExecOperations)
 tasks.register('buildWebUi') {
     group = 'build'
     description = 'Builds the Vue landing page with Vite into web/dist.'
-    // Skip with -PskipWebUi or FLY_NARWHAL_SKIP_WEB_UI=1 when iterating on Java only.
+    // Always rebuilds: a stale web/dist would otherwise be silently embedded in the binary.
+    // Skip with -PskipWebUi or FLY_NARWHAL_SKIP_WEB_UI=1 when iterating on Java only, or on a
+    // machine without npm (the x86 NAS) that already has web/dist uploaded from elsewhere.
     onlyIf {
         if (project.hasProperty('skipWebUi') || '1' == System.getenv('FLY_NARWHAL_SKIP_WEB_UI')) {
             logger.lifecycle('buildWebUi skipped by request')
-            return false
-        }
-        if (new File(webUiDist, 'index.html').exists()) {
-            // web/dist already holds a UI built elsewhere (e.g. on the Mac and uploaded to
-            // the x86 NAS, which has no npm). When web/public is absent from the source
-            // tree this is the intended input rather than a missing directory.
-            logger.lifecycle('buildWebUi skipped: using existing web/dist (present at build start)')
             return false
         }
         if (!new File(webUiDir, 'package.json').exists()) {
@@ -65,8 +60,8 @@ tasks.register('buildWebUi') {
         return true
     }
     inputs.dir(new File(webUiDir, 'src'))
-    // public/ is optional: see the onlyIf above. Declared conditionally so Gradle does not
-    // reject a source tree (e.g. a trimmed tarball) that ships prebuilt web/dist but no public/.
+    // public/ is optional: declared conditionally so Gradle does not reject a source tree
+    // (e.g. a trimmed tarball) that ships a prebuilt web/dist but no public/.
     def webPublic = new File(webUiDir, 'public')
     if (webPublic.exists()) {
         inputs.dir(webPublic)
