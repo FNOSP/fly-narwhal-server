@@ -14,7 +14,10 @@ fi
 PKGVAR="${TRIM_PKGVAR:-/var/apps/${APPNAME}/var}"
 if [ -f "${PKGVAR}/app.pid" ]; then
     pid=$(head -n 1 "${PKGVAR}/app.pid" | tr -d '[:space:]')
-    [ -n "${pid}" ] && kill -TERM "${pid}" 2>/dev/null
+    # 只结束确实是本应用的进程：PID 可能已被系统复用给别的进程
+    if [ -n "${pid}" ] && ps -p "${pid}" -o args= 2>/dev/null | grep -q "fly-narwhal"; then
+        kill -TERM "${pid}" 2>/dev/null
+    fi
     rm -f "${PKGVAR}/app.pid"
 fi
 pkill -f "fly-narwhal-server.jar" 2>/dev/null || true

@@ -6,7 +6,7 @@ plugins {
 }
 
 ext {
-    baseVersion = '0.14.0'
+    baseVersion = '2.0.0'
     versionSuffix = ''.toString().trim()
     normalizedVersionSuffix = versionSuffix
         ? ((versionSuffix.startsWith('-') || versionSuffix.startsWith('+')) ? versionSuffix : "-${versionSuffix}")
