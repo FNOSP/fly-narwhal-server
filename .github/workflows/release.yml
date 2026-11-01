@@ -201,15 +201,21 @@ jobs:
           path: dist/native
           merge-multiple: true
 
-      # upload-artifact 会把上传时写的路径原样保留：tar.gz / SHA256SUMS.* 落在
-      # dist/native/，而 fpk 落在 dist/fpk/。两处都要收。
+      # upload-artifact 只保留相对公共祖先（这里是 dist/）的路径，所以 tar.gz /
+      # SHA256SUMS.* 落在 dist/native/，fpk 落在 dist/fpk/。两个目录分别处理，
+      # 某个目录不存在时也不影响另一个。
       - name: Collect release files
         run: |
           set -euo pipefail
           mkdir -p dist/release
-          find dist/native dist/fpk -type f \( -name 'fly-narwhal-server-linux-*.tar.gz' \
-            -o -name 'SHA256SUMS.*' -o -name '*.fpk' \) -exec mv {} dist/release/ \;
+          for src in dist/native dist/fpk; do
+            [ -d "$src" ] || { echo "no $src, skipping"; continue; }
+            find "$src" -maxdepth 1 -type f \( -name 'fly-narwhal-server-linux-*.tar.gz' \
+              -o -name 'SHA256SUMS.*' -o -name '*.fpk' \) -exec mv {} dist/release/ \;
+          done
           ls -lh dist/release
+          test "$(find dist/release -maxdepth 1 -type f | wc -l)" -eq 5 || {
+            echo "::error::expected 5 files in dist/release"; exit 1; }
 
       - name: Merge checksums
         run: |
