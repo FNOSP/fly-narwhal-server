@@ -201,23 +201,23 @@ jobs:
           path: dist/native
           merge-multiple: true
 
-      # upload-artifact 只保留相对公共祖先（这里是 dist/）的路径，所以 tar.gz /
-      # SHA256SUMS.* 落在 dist/native/，fpk 落在 dist/fpk/。两个目录分别处理，
-      # 某个目录不存在时也不影响另一个。
+      # artifact 解压后的目录结构随 upload-artifact 的公共祖先推断而变（见过
+      # dist/native/、dist/fpk/、dist/native/fpk/ 三种），所以按文件名在整个 dist 下
+      # 递归查找，不假设任何子目录。收集后必须正好 5 个文件。
       - name: Collect release files
         run: |
           set -euo pipefail
           echo "--- dist tree as downloaded ---"
-          find dist -type f | sort
+          find dist -type f -printf '%p  %s\n' | sort -k2 -n || true
           mkdir -p dist/release
-          for src in dist/native dist/fpk; do
-            [ -d "$src" ] || { echo "no $src, skipping"; continue; }
-            find "$src" -maxdepth 1 -type f \( -name 'fly-narwhal-server-linux-*.tar.gz' \
-              -o -name 'SHA256SUMS.*' -o -name '*.fpk' \) -exec mv {} dist/release/ \;
-          done
+          find dist -mindepth 2 -type f -not -path 'dist/release/*' \
+            \( -name 'fly-narwhal-server-linux-*.tar.gz' \
+               -o -name 'SHA256SUMS.*' -o -name '*.fpk' \) -exec mv {} dist/release/ \;
+          echo "--- collected ---"
           ls -lh dist/release
-          test "$(find dist/release -maxdepth 1 -type f | wc -l)" -eq 5 || {
-            echo "::error::expected 5 files in dist/release"; exit 1; }
+          # 此处应为 6 个：2 fpk + 2 tar.gz + 2 份分架构校验和；合并后才是 5 个。
+          n=$(find dist/release -maxdepth 1 -type f | wc -l)
+          test "$n" -eq 6 || { echo "::error::expected 6 files, collected $n"; exit 1; }
 
       - name: Merge checksums
         run: |
