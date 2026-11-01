@@ -201,17 +201,21 @@ jobs:
           path: dist/native
           merge-multiple: true
 
-      - name: Collect fnOS packages
+      # upload-artifact strips the common leading directory (dist/native/), so
+      # archives come down as the bare file names while the fpk keeps dist/fpk/.
+      # Flatten both instead of assuming either layout.
+      - name: Collect release files
         run: |
           set -euo pipefail
-          mkdir -p dist/fpk
-          find dist/native -maxdepth 1 -name '*.fpk' -exec mv {} dist/fpk/ \;
-          ls -lh dist/fpk
+          mkdir -p dist/release
+          find dist/native -type f \( -name 'fly-narwhal-server-linux-*.tar.gz' \
+            -o -name 'SHA256SUMS.*' -o -name '*.fpk' \) -exec mv {} dist/release/ \;
+          ls -lh dist/release
 
       - name: Merge checksums
         run: |
           set -euo pipefail
-          cd dist/native
+          cd dist/release
           cat SHA256SUMS.* > SHA256SUMS
           rm -f SHA256SUMS.amd64 SHA256SUMS.arm64
           cat SHA256SUMS
@@ -309,9 +313,9 @@ jobs:
           body: |
             ${{ env.RELEASE_BODY }}
           files: |
-            dist/native/fly-narwhal-server-linux-*
-            dist/fpk/*.fpk
-            dist/native/SHA256SUMS
+            dist/release/fly-narwhal-server-linux-*
+            dist/release/*.fpk
+            dist/release/SHA256SUMS
           generate_release_notes: ${{ env.FALLBACK == 'true' }}
           draft: false
           prerelease: ${{ contains(steps.release_tag.outputs.tag, '-') }}
