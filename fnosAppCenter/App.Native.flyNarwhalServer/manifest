@@ -1,14 +1,14 @@
 appname               = App.Native.flyNarwhalServer
-version               = 2.0.2
+version               = 2.0.0
 display_name          = 飞鲸影视
-desc                  = """<p><img src="https://club.fnnas.com/data/attachment/forum/202601/29/185633axyvlyuqp92yufuq.png" width="600"/></p><p><img src="https://img.shields.io/badge/fnOS_AppCenter-GraalVM__Native-FF8000" alt=""> <img src="https://img.shields.io/badge/AppCenter_Release-True-21AF90" alt=""> <img src="https://img.shields.io/badge/AppName-FlyNarwhalServer-7C52F1" alt=""> <img src="https://img.shields.io/badge/Maintainer-Jankin--Wu-F6308E" alt=""> <img src="https://img.shields.io/badge/Distributor-MR__XIAOBO-F6308E" alt=""></p><h3></h3><p><strong>项目地址：<a href="https://github.com/FNOSP/FlyNarwhal" target="_blank" rel="noopener">FNOSP/FlyNarwhal</a></strong></p><p>　　飞鲸影视客户端是基于 KMP 技术开发的适用于飞牛影视的多平台桌面客户端，配合安装在 NAS 上的飞鲸影视服务端可实现智能片头/片尾跳过、视频弹幕自动检索和渲染等功能。</p>"""
+desc                  = """</p><p><img src="https://img.shields.io/badge/fnOS_AppCenter-GraalVM__Native-FF8000" alt=""> <img src="https://img.shields.io/badge/AppCenter_Release-True-21AF90" alt=""> <img src="https://img.shields.io/badge/AppName-FlyNarwhalServer-7C52F1" alt=""> <img src="https://img.shields.io/badge/Maintainer-Jankin--Wu-F6308E" alt=""> <img src="https://img.shields.io/badge/Distributor-MR__XIAOBO-F6308E" alt=""></p><h3></h3><p><strong>项目地址：<a href="https://github.com/FNOSP/FlyNarwhal" target="_blank" rel="noopener">FNOSP/FlyNarwhal</a></strong></p><p>　　飞鲸影视客户端是基于 KMP 技术开发的适用于飞牛影视的多平台桌面客户端，配合安装在 NAS 上的飞鲸影视服务端可实现智能片头/片尾跳过、视频弹幕自动检索和渲染等功能。</p>"""
 platform              = x86
 source                = thirdparty
 maintainer            = 友人A（Jankin-Wu）
 maintainer_url        = https://github.com/Jankin-Wu
-distributor           = MR_XIAOBO
-distributor_url       = https://github.com/xiaobonet
+distributor           = 友人A（Jankin-Wu）
+distributor_url       = https://github.com/Jankin-Wu
 desktop_uidir         = ui
 desktop_applaunchname = App.Native.flyNarwhalServer.App
 os_min_version        = 1.1.8
-changelog             = """<p>2.0.2</p><ul><li>服务端改用 GraalVM 原生镜像，不再依赖 Java 运行时，启动更快、内存占用大幅下降</li><li>安装时只需设置服务端口与内存上限</li><li>已有数据库与弹幕缓存自动沿用，无需迁移</li></ul>"""
+changelog             = """<h3>2.0.0</h3><h4>新增</h4><ul><li><strong>不再依赖 Java 环境</strong>：安装包换成原生程序，启动更快，内存占用更低。</li><li><strong>增强片头片尾跳过</strong>：增加前情提要、下集预告和广告的识别，识别参数可在客户端设置里调整；优化片头/片尾识别，减少误判。</li><li><strong>更多弹幕源</strong>：新增咪咕视频，新增弹弹play 和第三方兜底弹幕源（可在客户端中配置）。</li><li><strong>弹幕匹配更聪明</strong>：可以自定义标题对应关系、过滤搜索噪声词、开启严格标题匹配、调整各平台优先级。</li><li><strong>弹幕发送前增加后处理流程</strong>：支持时间轴偏移、去重、屏蔽词过滤、限量、模式转换、颜色替换，改完即刻生效，不用清缓存，需依赖后续客户端更新。</li><li><strong>官网更新</strong>：全新落地页，下载区域自动按当前系统架构推荐安装包，可查看客户端/服务端的更新日志，新增版本时间线页和开源致谢页，支持简体中文/繁体中文/英文和亮/暗主题。</li></ul><h4>变更</h4><ul><li><strong>换文件自动重分析</strong>：同一路径下的视频被替换后，旧的片头/片尾识别结果会自动失效并重新分析。</li><li><strong>无时长的剧集不再空跑</strong>：读不到时长的剧集直接标记失败，等下次重试。</li><li><strong>弹幕缓存分级</strong>：没搜到不写缓存；结果很少只留 1 小时，结果完整保留 30 天，"搜不到"不会一直卡着。</li><li><strong>弹幕抓取更稳</strong>：所有弹幕源共用一个线程池，单个源卡住不再拖垮整集；优酷自动续期，搜狐分段更准。</li></ul><h4>修复</h4><ul><li><strong>弹幕拉取</strong>：修复 Bilibili 分段弹幕失败、爱奇艺解析和剧集定位错误、优酷视频 ID 提取出错、豆瓣 ID 解析绕路、整季错用同一集弹幕等问题。</li><li><strong>章节标题解析</strong>：修复片头/片尾标记读取不到、静默失效的问题。</li><li><strong>关键帧吸附</strong>：修复开启「吸附到关键帧」后完全不生效的问题，现在片尾能准确停在关键帧上，跳过时不卡顿。</li></ul>"""

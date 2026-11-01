@@ -8,9 +8,9 @@ spring:
     # image's heap small on a low-concurrency NAS deployment.
     lazy-initialization: true
   datasource:
-    # CACHE_SIZE caps H2's in-memory page cache (KB). The embedded default of
-    # 64MB is far more than this workload needs.
-    url: jdbc:h2:file:/var/apps/App.Native.flyNarwhalServer/shares/data/fly-narwhal;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CACHE_SIZE=8192
+    # url is set in application-<profile>.yml only. When it was set here, it described the
+    # production H2 file for every profile: native images bake these values at build time, and
+    # the AOT pass resolves this file before application-dev.yml is applied.
     driver-class-name: org.h2.Driver
     username: sa
     password: 123456
