@@ -235,6 +235,9 @@ jobs:
         with:
           sparse-checkout: CHANGELOG.md
           sparse-checkout-cone-mode: false
+          # checkout runs `git clean -ffdx` by default, which deletes the
+          # artifacts downloaded in the previous step.
+          clean: false
 
       - name: Generate Release Body
         if: steps.release_tag.outputs.tag != ''
