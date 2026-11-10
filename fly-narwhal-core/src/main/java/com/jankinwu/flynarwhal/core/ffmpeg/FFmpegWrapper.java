@@ -620,8 +620,6 @@ public class FFmpegWrapper {
     public SpriteSheetResult generateSpriteSheets(String path, Path outDir, int intervalSeconds, int thumbWidth,
                                                   int tileCols, int tileRows, int sheetCount, int qScale,
                                                   boolean nice, int timeoutSeconds) throws IOException, InterruptedException {
-        logPathEncoding("ffmpeg.generateSpriteSheets.input", path);
-        String inputPath = toFfmpegInputPath(path);
         Files.createDirectories(outDir);
 
         String videoFilter = "fps=1/" + intervalSeconds
@@ -648,7 +646,7 @@ public class FFmpegWrapper {
         command.add("-flags2");
         command.add("+fast");
         command.add("-i");
-        command.add(inputPath);
+        command.add(path);
         command.add("-an");
         command.add("-sn");
         command.add("-dn");

@@ -9,8 +9,10 @@ spring:
       mode: never
 
 fly-narwhal:
-  # Base directory for runtime data files (auth_code, authx verifier, danmu cache).
+  # Base directory for runtime data files (auth_code, authx verifier, danmu cache, thumbnails).
   data-dir: ${FN_DATA_DIR:/var/apps/App.Native.flyNarwhalServer/shares/data}
+  thumbnail:
+    dir: ${THUMBNAIL_DIR:/var/apps/App.Native.flyNarwhalServer/shares/data/thumbnails}
 
 danmu:
   cache:

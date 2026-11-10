@@ -62,7 +62,7 @@ fly-narwhal:
     # under dir/<sha256(guid)>/g<generation>/1.jpg…; the actual layout of each
     # task is persisted in THUMBNAIL_TASKS, so changing these only affects new
     # generations.
-    dir: ${THUMBNAIL_DIR:./data/thumbnails}
+    dir: ${THUMBNAIL_DIR:/var/apps/App.Native.flyNarwhalServer/shares/data/thumbnails}
     # One keyframe-only thumbnail per interval (Jellyfin trickplay default: 10s).
     interval-seconds: ${THUMBNAIL_INTERVAL_SECONDS:10}
     # Thumbnail width in px; height follows the source aspect (scale=W:-2).

@@ -165,3 +165,28 @@ ALTER TABLE EPISODE_SEGMENTS ADD COLUMN IF NOT EXISTS intro_fp_window_hash VARCH
     ALTER TABLE EPISODE_SEGMENTS ADD COLUMN IF NOT EXISTS credit_fp_window_hash VARCHAR(16);
 COMMENT ON COLUMN EPISODE_SEGMENTS.intro_fp_window_hash IS '片头/前情指纹生成时的窗口哈希，窗口配置变化后指纹失效';
 COMMENT ON COLUMN EPISODE_SEGMENTS.credit_fp_window_hash IS '片尾指纹生成时的窗口哈希，窗口配置变化后指纹失效';
+
+-- 0.14.0: trickplay sprite tasks, one row per media guid, independent of the
+-- smart-skip tables. The layout columns persist what the generator produced,
+-- so config changes never invalidate sprites already on disk.
+CREATE TABLE IF NOT EXISTS THUMBNAIL_TASKS (
+    GUID          VARCHAR(64)    PRIMARY KEY,
+    FILE_PATH     VARCHAR(4096)  NOT NULL,
+    FILE_MTIME    BIGINT,
+    DURATION_MS   BIGINT,
+    STATUS        VARCHAR(32)    NOT NULL,
+    INTERVAL_MS   INT,
+    THUMB_WIDTH   INT,
+    THUMB_HEIGHT  INT,
+    TILE_COLS     INT,
+    TILE_ROWS     INT,
+    SHEET_COUNT   INT,
+    GENERATION    INT            NOT NULL DEFAULT 0,
+    ERROR_MESSAGE VARCHAR(2048),
+    CREATE_TIME   TIMESTAMP      DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_TIME   TIMESTAMP
+);
+COMMENT ON TABLE THUMBNAIL_TASKS IS '进度条缩略图(trickplay)生成任务表,每个媒体guid一行';
+COMMENT ON COLUMN THUMBNAIL_TASKS.status IS 'PENDING/IN_PROGRESS/COMPLETED/FAILED(ThumbnailStatus枚举名)';
+COMMENT ON COLUMN THUMBNAIL_TASKS.generation IS '每次成功生成+1;sprite文件目录与客户端缓存都按generation寻址';
+COMMENT ON COLUMN THUMBNAIL_TASKS.file_mtime IS '生成时媒体文件的mtime(epoch毫秒);不一致说明文件被替换(stale)';

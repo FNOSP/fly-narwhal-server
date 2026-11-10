@@ -10,9 +10,11 @@ spring:
 
 fly-narwhal:
   # Dev builds are installed as the separate fnOS app "FlyNarwhalDev", so every runtime file
-  # (auth_code, authx verifier, danmu cache) lives in that app's shared data folder next to
+  # (auth_code, authx verifier, danmu cache, thumbnails) lives in that app's shared data folder next to
   # its logs. Native images bake these paths at build time; FN_DATA_DIR cannot override them.
   data-dir: ${FN_DATA_DIR:/var/apps/FlyNarwhalDev/shares/data}
+  thumbnail:
+    dir: ${THUMBNAIL_DIR:/var/apps/FlyNarwhalDev/shares/data/thumbnails}
 
 danmu:
   cache:
