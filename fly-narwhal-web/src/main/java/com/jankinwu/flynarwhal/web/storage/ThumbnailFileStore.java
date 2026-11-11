@@ -118,7 +118,28 @@ public class ThumbnailFileStore {
         }
     }
 
-    static String sha256Hex(String value) {
+    /**
+     * Re-key a whole guid directory onto another guid (same base dir, so the
+     * move stays on one filesystem). Used when a scan-generated task is adopted
+     * by a real client guid. A missing source is a no-op; an existing target is
+     * replaced.
+     */
+    public void adoptDirectory(String fromGuid, String toGuid) throws IOException {
+        Path source = guidDir(fromGuid);
+        Path target = guidDir(toGuid);
+        if (!Files.exists(source)) {
+            return;
+        }
+        deleteRecursively(target);
+        Files.createDirectories(target.getParent());
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(source, target);
+        }
+    }
+
+    public static String sha256Hex(String value) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));

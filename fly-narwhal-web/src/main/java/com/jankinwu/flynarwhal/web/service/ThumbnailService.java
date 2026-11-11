@@ -1,5 +1,6 @@
 package com.jankinwu.flynarwhal.web.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.jankinwu.flynarwhal.core.data.SpriteSheetResult;
 import com.jankinwu.flynarwhal.core.data.ThumbnailStatus;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
@@ -40,6 +42,13 @@ public class ThumbnailService {
     private static final int ERROR_MESSAGE_MAX_CHARS = 2000;
     /** Auto timeout floor/derivation: keyframe-only decode runs several times realtime even on an ARM NAS. */
     private static final int AUTO_TIMEOUT_FLOOR_SECONDS = 1800;
+
+    /**
+     * Prefix of the synthetic guid the scheduled scan keys tasks by (the server
+     * never knows a disk file's media-server guid). Real client requests for the
+     * same file path adopt the scan row instead of regenerating.
+     */
+    public static final String SCAN_GUID_PREFIX = "scan:";
 
     private final ThumbnailTaskMapper thumbnailTaskMapper;
     private final ThumbnailFileStore fileStore;
@@ -152,47 +161,128 @@ public class ThumbnailService {
         if (filePath == null || filePath.isBlank()) {
             throw new IllegalArgumentException("filePath is required");
         }
+        String normalizedPath = normalizePath(filePath);
 
         ThumbnailTask existing = thumbnailTaskMapper.selectById(guid);
+        if (existing == null) {
+            Reconciliation reconciliation = reconcileByPath(guid, normalizedPath, force);
+            if (reconciliation.immediate() != null) {
+                return reconciliation.immediate();
+            }
+            existing = reconciliation.row();
+        }
         if (existing != null && (existing.getStatus() == ThumbnailStatus.PENDING
                 || existing.getStatus() == ThumbnailStatus.IN_PROGRESS)) {
             return toResponse(existing, false);
         }
 
-        Long mtime = readFileMtime(filePath);
+        Long mtime = readFileMtime(normalizedPath);
         if (!force && existing != null && existing.getStatus() == ThumbnailStatus.COMPLETED
                 && isUnchanged(existing, mtime)) {
             return toResponse(existing, false);
         }
 
         if (!FFmpegWrapper.isFfmpegAvailable()) {
-            return markFailed(existing, guid, filePath, "ffmpeg is not available on the server");
+            return markFailed(existing, guid, normalizedPath, "ffmpeg is not available on the server");
         }
         if (mtime == null) {
-            return markFailed(existing, guid, filePath, "media file not found or unreadable: " + filePath);
+            return markFailed(existing, guid, normalizedPath, "media file not found or unreadable: " + normalizedPath);
         }
 
-        ThumbnailTask row = upsertPending(existing, guid, filePath);
-        jobQueue.addLast(new ThumbnailJob(guid, filePath));
-        log.info("Thumbnail generation queued for {} ({})", guid, filePath);
+        ThumbnailTask row = upsertPending(existing, guid, normalizedPath);
+        jobQueue.addLast(new ThumbnailJob(guid, normalizedPath));
+        log.info("Thumbnail generation queued for {} ({})", guid, normalizedPath);
         return toResponse(row, false);
+    }
+
+    /**
+     * Cross-guid reconciliation for a guid with no row of its own, keyed by the
+     * normalized file path. Returns either the row the caller should continue
+     * with, or an immediate response to return as-is.
+     *
+     * <ul>
+     * <li>Scan trigger, real-guid row exists → delegate to that guid so the
+     *     scan never creates a parallel scan row for an already-known file.</li>
+     * <li>Real trigger, scan row COMPLETED/FAILED → adopt it now (re-key row +
+     *     move sprite dir) and continue under the real guid.</li>
+     * <li>Real trigger, scan row PENDING/IN_PROGRESS → record the claim
+     *     (ADOPT_GUID, first wins) and answer with the scan row's progress,
+     *     re-labelled to the real guid; runJob completes the adoption.</li>
+     * </ul>
+     */
+    private Reconciliation reconcileByPath(String guid, String normalizedPath, boolean force) {
+        ThumbnailTask byPath = findByPath(normalizedPath);
+        if (byPath == null) {
+            return Reconciliation.NONE;
+        }
+        if (isScanGuid(guid) && !isScanGuid(byPath.getGuid())) {
+            // The file already has a task under its real client guid; work on that one.
+            return new Reconciliation(null, trigger(byPath.getGuid(), normalizedPath, force));
+        }
+        if (!isScanGuid(guid) && isScanGuid(byPath.getGuid())) {
+            if (byPath.getStatus() == ThumbnailStatus.COMPLETED || byPath.getStatus() == ThumbnailStatus.FAILED) {
+                adoptNow(byPath, guid);
+                return new Reconciliation(thumbnailTaskMapper.selectById(guid), null);
+            }
+            claimForAdoption(byPath, guid);
+            ThumbnailStatusResponse response = toResponse(byPath, staleOf(byPath));
+            response.setGuid(guid);
+            return new Reconciliation(null, response);
+        }
+        return Reconciliation.NONE;
+    }
+
+    /** Outcome of {@link #reconcileByPath}: continue with {@code row}, or return {@code immediate}. */
+    private record Reconciliation(ThumbnailTask row, ThumbnailStatusResponse immediate) {
+        static final Reconciliation NONE = new Reconciliation(null, null);
     }
 
     /** Current task state; NONE when the guid was never triggered. */
     public ThumbnailStatusResponse getStatus(String guid) {
+        return getStatus(guid, null);
+    }
+
+    /**
+     * Current task state with optional path-based reconciliation: when the guid
+     * has no row but a scheduled-scan task exists for {@code filePath}, the scan
+     * task is adopted onto (or claimed for) this guid so playback finds sprites
+     * a scan generated before the client ever requested them. Synchronized
+     * because adoption mutates rows and moves sprite directories.
+     */
+    public synchronized ThumbnailStatusResponse getStatus(String guid, String filePath) {
         if (guid == null || guid.isBlank()) {
             throw new IllegalArgumentException("guid is required");
         }
         ThumbnailTask row = thumbnailTaskMapper.selectById(guid);
         if (row == null) {
+            ThumbnailTask claiming = findFirstByAdoptGuid(guid);
+            if (claiming != null) {
+                if (claiming.getStatus() == ThumbnailStatus.COMPLETED
+                        || claiming.getStatus() == ThumbnailStatus.FAILED) {
+                    // The claimed run finished (or its finishAdoption never ran); complete the
+                    // adoption here so sprites resolve under the real guid.
+                    return adoptNow(claiming, guid);
+                }
+                ThumbnailStatusResponse response = toResponse(claiming, false);
+                response.setGuid(guid);
+                return response;
+            }
+            if (filePath != null && !filePath.isBlank()) {
+                ThumbnailTask byPath = findByPath(normalizePath(filePath));
+                if (byPath != null && isScanGuid(byPath.getGuid())) {
+                    if (byPath.getStatus() == ThumbnailStatus.COMPLETED
+                            || byPath.getStatus() == ThumbnailStatus.FAILED) {
+                        return adoptNow(byPath, guid);
+                    }
+                    claimForAdoption(byPath, guid);
+                    ThumbnailStatusResponse response = toResponse(byPath, false);
+                    response.setGuid(guid);
+                    return response;
+                }
+            }
             return ThumbnailStatusResponse.none(guid);
         }
-        boolean stale = false;
-        if (row.getStatus() == ThumbnailStatus.COMPLETED && row.getFileMtime() != null) {
-            Long current = readFileMtime(row.getFilePath());
-            stale = current != null && !current.equals(row.getFileMtime());
-        }
-        return toResponse(row, stale);
+        return toResponse(row, staleOf(row));
     }
 
     /** Sprite bytes for a completed generation; empty on any mismatch (controller maps to 404). */
@@ -244,6 +334,7 @@ public class ThumbnailService {
 
             markCompleted(guid, mtime, (long) (durationSec * 1000), result, generation);
             fileStore.purgeOtherGenerations(guid, generation);
+            finishAdoption(guid);
             log.info("Thumbnail generation finished for {} in {}ms: {} sheet(s), {}x{} thumbs",
                     guid, System.currentTimeMillis() - startedAt,
                     result.sheetCount(), result.thumbWidth(), result.thumbHeight());
@@ -251,7 +342,170 @@ public class ThumbnailService {
             log.error("Thumbnail generation failed for {}", guid, e);
             fileStore.deleteRecursively(tmpDir);
             markFailed(thumbnailTaskMapper.selectById(guid), guid, job.filePath(), describe(e));
+            finishAdoption(guid);
         }
+    }
+
+    /** Complete a delayed claim: a scan row that finished while a real guid was waiting on it. */
+    private void finishAdoption(String guid) {
+        try {
+            ThumbnailTask row = thumbnailTaskMapper.selectById(guid);
+            if (row != null && row.getAdoptGuid() != null && !row.getAdoptGuid().isBlank()) {
+                adoptNow(row, row.getAdoptGuid());
+            }
+        } catch (Exception e) {
+            log.warn("Adoption after finishing {} failed: {}", guid, e.getMessage());
+        }
+    }
+
+    /**
+     * Re-key a finished scan row onto a real client guid: copy the row, delete
+     * the scan row and move its sprite directory. Falls back to regenerating
+     * under the real guid when the directory move fails. Idempotent: bails out
+     * when the scan row is already gone or the real guid already has a row.
+     */
+    private synchronized ThumbnailStatusResponse adoptNow(ThumbnailTask scanRow, String realGuid) {
+        ThumbnailTask current = thumbnailTaskMapper.selectById(scanRow.getGuid());
+        if (current == null) {
+            ThumbnailTask already = thumbnailTaskMapper.selectById(realGuid);
+            return already != null ? toResponse(already, staleOf(already)) : ThumbnailStatusResponse.none(realGuid);
+        }
+        ThumbnailTask existingReal = thumbnailTaskMapper.selectById(realGuid);
+        if (existingReal != null) {
+            thumbnailTaskMapper.deleteById(current.getGuid());
+            fileStore.deleteRecursively(fileStore.guidDir(current.getGuid()));
+            return toResponse(existingReal, staleOf(existingReal));
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        ThumbnailTask row = new ThumbnailTask();
+        row.setGuid(realGuid);
+        row.setFilePath(current.getFilePath());
+        row.setFileMtime(current.getFileMtime());
+        row.setDurationMs(current.getDurationMs());
+        row.setStatus(current.getStatus());
+        row.setIntervalMs(current.getIntervalMs());
+        row.setThumbWidth(current.getThumbWidth());
+        row.setThumbHeight(current.getThumbHeight());
+        row.setTileCols(current.getTileCols());
+        row.setTileRows(current.getTileRows());
+        row.setSheetCount(current.getSheetCount());
+        row.setGeneration(current.getGeneration());
+        row.setErrorMessage(current.getErrorMessage());
+        row.setCreateTime(now);
+        row.setUpdateTime(now);
+        thumbnailTaskMapper.insert(row);
+        thumbnailTaskMapper.deleteById(current.getGuid());
+
+        try {
+            fileStore.adoptDirectory(current.getGuid(), realGuid);
+        } catch (Exception e) {
+            log.warn("Could not move sprite dir from {} to {}; regenerating under the real guid",
+                    current.getGuid(), realGuid, e);
+            if (row.getStatus() == ThumbnailStatus.COMPLETED) {
+                UpdateWrapper<ThumbnailTask> reset = new UpdateWrapper<>();
+                reset.eq("guid", realGuid)
+                        .set("status", ThumbnailStatus.PENDING.name())
+                        .set("error_message", null)
+                        .set("update_time", now);
+                thumbnailTaskMapper.update(null, reset);
+                row.setStatus(ThumbnailStatus.PENDING);
+                jobQueue.addLast(new ThumbnailJob(realGuid, row.getFilePath()));
+            }
+        }
+        log.info("Adopted scan thumbnail task {} onto guid {}", current.getGuid(), realGuid);
+        return toResponse(row, staleOf(row));
+    }
+
+    /** Record a real guid's claim on a running scan row; the first claim wins. */
+    private void claimForAdoption(ThumbnailTask scanRow, String realGuid) {
+        if (scanRow.getAdoptGuid() != null && !scanRow.getAdoptGuid().isBlank()) {
+            return;
+        }
+        UpdateWrapper<ThumbnailTask> update = new UpdateWrapper<>();
+        update.eq("guid", scanRow.getGuid())
+                .isNull("adopt_guid")
+                .set("adopt_guid", realGuid)
+                .set("update_time", LocalDateTime.now());
+        thumbnailTaskMapper.update(null, update);
+    }
+
+    /** Task row for a normalized file path; real-guid rows win over scan rows, then most recent. */
+    private ThumbnailTask findByPath(String normalizedPath) {
+        if (normalizedPath == null || normalizedPath.isBlank()) {
+            return null;
+        }
+        List<ThumbnailTask> rows = thumbnailTaskMapper.selectList(
+                new QueryWrapper<ThumbnailTask>().eq("file_path", normalizedPath));
+        ThumbnailTask best = null;
+        for (ThumbnailTask row : rows) {
+            if (best == null || prefersRow(row, best)) {
+                best = row;
+            }
+        }
+        return best;
+    }
+
+    private ThumbnailTask findFirstByAdoptGuid(String guid) {
+        List<ThumbnailTask> rows = thumbnailTaskMapper.selectList(
+                new QueryWrapper<ThumbnailTask>().eq("adopt_guid", guid));
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    private static boolean prefersRow(ThumbnailTask candidate, ThumbnailTask existing) {
+        boolean candidateScan = isScanGuid(candidate.getGuid());
+        boolean existingScan = isScanGuid(existing.getGuid());
+        if (candidateScan != existingScan) {
+            return !candidateScan;
+        }
+        if (candidate.getUpdateTime() == null) {
+            return false;
+        }
+        if (existing.getUpdateTime() == null) {
+            return true;
+        }
+        return candidate.getUpdateTime().isAfter(existing.getUpdateTime());
+    }
+
+    /** COMPLETED but the file's current mtime differs from the recorded one. */
+    private boolean staleOf(ThumbnailTask row) {
+        if (row.getStatus() != ThumbnailStatus.COMPLETED || row.getFileMtime() == null) {
+            return false;
+        }
+        Long current = readFileMtime(row.getFilePath());
+        return current != null && !current.equals(row.getFileMtime());
+    }
+
+    /** True for tasks the scheduled scan created under a synthetic guid. */
+    public static boolean isScanGuid(String guid) {
+        return guid != null && guid.startsWith(SCAN_GUID_PREFIX);
+    }
+
+    /**
+     * Canonical form of a media path (file: URIs resolved, . and .. collapsed)
+     * so scan results, client requests and stored rows compare equal.
+     */
+    public static String normalizePath(String path) {
+        if (path == null) {
+            return null;
+        }
+        String trimmed = path.trim();
+        if (trimmed.isEmpty()) {
+            return trimmed;
+        }
+        try {
+            Path resolved = trimmed.startsWith("file:")
+                    ? Path.of(java.net.URI.create(trimmed))
+                    : Path.of(trimmed);
+            return resolved.normalize().toString();
+        } catch (Exception e) {
+            return trimmed;
+        }
+    }
+
+    /** Deterministic guid for a scanned file: same path always maps to the same task row. */
+    public static String syntheticGuid(String path) {
+        return SCAN_GUID_PREFIX + ThumbnailFileStore.sha256Hex(normalizePath(path)).substring(0, 40);
     }
 
     private String describe(Exception e) {

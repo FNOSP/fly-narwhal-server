@@ -46,6 +46,12 @@ public class ThumbnailTask {
 
     private String errorMessage;
 
+    /**
+     * Real media guid waiting to claim this scan-created row (set on scan rows
+     * only, first request wins). Cleared when the row is adopted and re-keyed.
+     */
+    private String adoptGuid;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

@@ -4,6 +4,7 @@
   { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.DanmuSourceConfigMapper" ] },
   { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.DbVersionMapper" ] },
   { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.EpisodeSegmentMapper" ] },
+  { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.ThumbnailScanConfigMapper" ] },
   { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.ThumbnailTaskMapper" ] },
   { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.TvSeasonInfoMapper" ] },
   { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.UserSmartSkipConfigMapper" ] }

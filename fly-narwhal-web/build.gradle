@@ -15,6 +15,10 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-aop'
     implementation 'com.baomidou:mybatis-plus-spring-boot3-starter:3.5.9'
+    // Quartz-dialect cron parsing/validation/next-execution for the scheduled thumbnail
+    // scan. Parser + ExecutionTime only (pure computation, no reflection, no i18n
+    // CronDescriptor) so the native image needs no extra configuration.
+    implementation 'com.cronutils:cron-utils:9.2.1'
     implementation 'org.mapstruct:mapstruct:1.5.5.Final'
     runtimeOnly 'com.h2database:h2'
     compileOnly 'org.projectlombok:lombok'

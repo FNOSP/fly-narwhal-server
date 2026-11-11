@@ -85,12 +85,25 @@ class ThumbnailControllerTest {
 
     @Test
     void statusReturnsNoneEnvelopeForUnknownGuid() {
-        when(service.getStatus("unknown")).thenReturn(ThumbnailStatusResponse.none("unknown"));
+        when(service.getStatus("unknown", null)).thenReturn(ThumbnailStatusResponse.none("unknown"));
 
-        Result<ThumbnailStatusResponse> result = controller.status("unknown");
+        Result<ThumbnailStatusResponse> result = controller.status("unknown", null);
 
         assertTrue(result.isSuccess());
         assertEquals(ThumbnailStatusResponse.STATUS_NONE, result.getData().getStatus());
+    }
+
+    /** The optional file_path lets playback adopt scan-generated sprites; it must pass through. */
+    @Test
+    void statusPassesOptionalFilePathThrough() {
+        ThumbnailStatusResponse adopted = ThumbnailStatusResponse.builder()
+                .guid("real").status("COMPLETED").build();
+        when(service.getStatus("real", "/movies/a.mkv")).thenReturn(adopted);
+
+        Result<ThumbnailStatusResponse> result = controller.status("real", "/movies/a.mkv");
+
+        assertTrue(result.isSuccess());
+        assertEquals("COMPLETED", result.getData().getStatus());
     }
 
     @Test

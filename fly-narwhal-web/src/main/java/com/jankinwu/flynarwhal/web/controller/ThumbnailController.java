@@ -45,11 +45,17 @@ public class ThumbnailController {
         }
     }
 
-    /** Polled by the client while a task is unfinished; NONE for unknown guids. */
+    /**
+     * Polled by the client while a task is unfinished; NONE for unknown guids.
+     * The optional file_path lets the server match a scheduled-scan task by path
+     * and adopt it onto the real guid, so a video whose sprites were generated
+     * by a scan serves previews on first play.
+     */
     @GetMapping("/status")
-    public Result<ThumbnailStatusResponse> status(@RequestParam String guid) {
+    public Result<ThumbnailStatusResponse> status(@RequestParam String guid,
+                                                  @RequestParam(name = "file_path", required = false) String filePath) {
         try {
-            return Result.success(thumbnailService.getStatus(guid));
+            return Result.success(thumbnailService.getStatus(guid, filePath));
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
         } catch (Exception e) {

@@ -15,8 +15,6 @@ import java.util.regex.Pattern;
 public class MediaFileScanner {
 
     private static final Pattern EPISODE_PATTERN = Pattern.compile("[Ss]\\d+[Ee](\\d+)");
-    // Simple extension check, can be expanded
-    private static final List<String> VIDEO_EXTENSIONS = List.of(".mkv", ".mp4", ".avi", ".mov", ".webm");
 
     public List<QueuedEpisode> getEpisodeQueue(String seasonGuid, String folderPath, List<EpisodeDetailRequest> requestEpisodes) {
         List<QueuedEpisode> episodes = new ArrayList<>();
@@ -28,14 +26,13 @@ public class MediaFileScanner {
             episode.setEpisodeGuid(requestEpisode.getGuid());
             episodes.add(episode);
         }
-        
+
         episodes.sort(Comparator.comparingInt(QueuedEpisode::getEpisodeNumber));
         return episodes;
     }
 
     private boolean isVideoFile(File file) {
-        String name = file.getName().toLowerCase();
-        return VIDEO_EXTENSIONS.stream().anyMatch(name::endsWith);
+        return VideoFileTypes.isVideoFile(file.getName());
     }
 
     private int parseEpisodeIndex(String filename) {
