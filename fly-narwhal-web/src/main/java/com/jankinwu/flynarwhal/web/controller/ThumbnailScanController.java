@@ -71,16 +71,28 @@ public class ThumbnailScanController {
      * gate manual runs.
      */
     @PostMapping("/trigger")
-    public Result<ThumbnailScanConfigResponse> triggerScan() {
+    public Result<ThumbnailScanConfigResponse> triggerScan(@RequestBody(required = false) ThumbnailScanConfigRequest request) {
         try {
             ThumbnailScanConfig row = configService.getOrCreate();
             List<String> dirs = configService.readDirs(row);
             if (dirs.isEmpty()) {
                 return Result.error("no scan directories configured");
             }
+            // Without a save first, the dialog's unsaved draft would be scanned instead of the
+            // visible directories, so the client may send the list it is showing.
+            List<String> requested = request == null ? List.of() : ThumbnailScanConfigService.normalizeDirs(request.getDirs());
+            List<String> unknown = requested.stream().filter(dir -> !dirs.contains(dir)).toList();
+            if (!unknown.isEmpty()) {
+                return Result.error("scan directories are not saved: " + String.join(", ", unknown));
+            }
+            List<String> scanDirs = requested.isEmpty() ? dirs : requested;
             ThumbnailScanWorker.EnqueueResult result = worker.enqueue(
-                    new ThumbnailScanWorker.ScanRequest(ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, dirs));
+                    new ThumbnailScanWorker.ScanRequest(ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, scanDirs));
             log.info("Manual thumbnail scan requested: {}", result);
+            if (result == ThumbnailScanWorker.EnqueueResult.ALREADY_QUEUED) {
+                // Answering with the snapshot's own state would tell the client nothing is happening.
+                return Result.error("scan is already running");
+            }
             return Result.success(configService.toResponse(row));
         } catch (Exception e) {
             log.error("Error triggering thumbnail scan", e);

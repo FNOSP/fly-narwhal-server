@@ -186,11 +186,12 @@ public class ThumbnailScanConfigService {
                 .lastScannedCount(row.getLastScannedCount())
                 .lastQueuedCount(row.getLastQueuedCount())
                 .lastError(row.getLastError())
+                .lastInaccessibleDirs(worker.inaccessibleDirs())
                 .build();
     }
 
     /** Trim, drop blanks, canonicalize and dedupe directory paths, preserving order. */
-    static List<String> normalizeDirs(List<String> dirs) {
+    public static List<String> normalizeDirs(List<String> dirs) {
         if (dirs == null || dirs.isEmpty()) {
             return List.of();
         }

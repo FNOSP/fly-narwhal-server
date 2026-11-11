@@ -10,6 +10,7 @@ import com.jankinwu.flynarwhal.web.service.ThumbnailScanConfigService;
 import com.jankinwu.flynarwhal.web.service.ThumbnailScanWorker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 
@@ -92,7 +93,7 @@ class ThumbnailScanControllerTest {
         when(configService.getOrCreate()).thenReturn(row);
         when(configService.readDirs(row)).thenReturn(List.of());
 
-        Result<ThumbnailScanConfigResponse> result = controller.triggerScan();
+        Result<ThumbnailScanConfigResponse> result = controller.triggerScan(null);
 
         assertFalse(result.isSuccess());
         verify(worker, never()).enqueue(any());
@@ -106,10 +107,55 @@ class ThumbnailScanControllerTest {
         when(worker.enqueue(any())).thenReturn(ThumbnailScanWorker.EnqueueResult.ENQUEUED);
         when(configService.toResponse(row)).thenReturn(response());
 
-        Result<ThumbnailScanConfigResponse> result = controller.triggerScan();
+        Result<ThumbnailScanConfigResponse> result = controller.triggerScan(null);
 
         assertTrue(result.isSuccess());
         verify(worker).enqueue(any(ThumbnailScanWorker.ScanRequest.class));
+    }
+
+    @Test
+    void triggerReportsAScanThatIsAlreadyQueued() {
+        ThumbnailScanConfig row = new ThumbnailScanConfig();
+        when(configService.getOrCreate()).thenReturn(row);
+        when(configService.readDirs(row)).thenReturn(List.of("/vol1/media"));
+        when(worker.enqueue(any())).thenReturn(ThumbnailScanWorker.EnqueueResult.ALREADY_QUEUED);
+
+        Result<ThumbnailScanConfigResponse> result = controller.triggerScan(null);
+
+        assertFalse(result.isSuccess());
+    }
+
+    @Test
+    void triggerScansTheRequestedDirectoriesWhenTheyAreSaved() {
+        ThumbnailScanConfig row = new ThumbnailScanConfig();
+        when(configService.getOrCreate()).thenReturn(row);
+        when(configService.readDirs(row)).thenReturn(List.of("/vol1/media", "/vol1/movies"));
+        when(worker.enqueue(any())).thenReturn(ThumbnailScanWorker.EnqueueResult.ENQUEUED);
+        when(configService.toResponse(row)).thenReturn(response());
+        ThumbnailScanConfigRequest request = new ThumbnailScanConfigRequest();
+        request.setDirs(List.of("/vol1/movies"));
+
+        Result<ThumbnailScanConfigResponse> result = controller.triggerScan(request);
+
+        assertTrue(result.isSuccess());
+        ArgumentCaptor<ThumbnailScanWorker.ScanRequest> captor =
+                ArgumentCaptor.forClass(ThumbnailScanWorker.ScanRequest.class);
+        verify(worker).enqueue(captor.capture());
+        assertEquals(List.of("/vol1/movies"), captor.getValue().dirs());
+    }
+
+    @Test
+    void triggerRejectsDirectoriesThatAreNotSaved() {
+        ThumbnailScanConfig row = new ThumbnailScanConfig();
+        when(configService.getOrCreate()).thenReturn(row);
+        when(configService.readDirs(row)).thenReturn(List.of("/vol1/media"));
+        ThumbnailScanConfigRequest request = new ThumbnailScanConfigRequest();
+        request.setDirs(List.of("/vol1/drafts"));
+
+        Result<ThumbnailScanConfigResponse> result = controller.triggerScan(request);
+
+        assertFalse(result.isSuccess());
+        verify(worker, never()).enqueue(any());
     }
 
     @Test

@@ -15,8 +15,10 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -28,6 +30,7 @@ import java.util.Map;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
 
 /**
  * Serial executor of directory scans for the scheduled thumbnail feature.
@@ -77,6 +80,8 @@ public class ThumbnailScanWorker {
 
     private volatile String currentDir;
     private volatile Integer scannedFiles;
+    /** Directories of the current/last run that could not be walked; cleared by each run. */
+    private volatile List<String> inaccessibleDirs = List.of();
     private volatile boolean started;
 
     @EventListener(ApplicationReadyEvent.class)
@@ -117,6 +122,11 @@ public class ThumbnailScanWorker {
         return Progress.idle();
     }
 
+    /** Directories the last run could not walk (missing or not granted access); empty afterwards when all were readable. */
+    public List<String> inaccessibleDirs() {
+        return inaccessibleDirs;
+    }
+
     private void processQueue() {
         while (!Thread.currentThread().isInterrupted()) {
             try {
@@ -147,6 +157,7 @@ public class ThumbnailScanWorker {
         int scanned = 0;
         int queued = 0;
         List<String> errors = new ArrayList<>();
+        List<String> inaccessible = new ArrayList<>();
         markRunStarted();
         try {
             for (String dir : request.dirs()) {
@@ -156,9 +167,18 @@ public class ThumbnailScanWorker {
                     scanned += outcome.scanned();
                     queued += outcome.queued();
                 } catch (Exception e) {
-                    log.warn("Thumbnail scan of directory {} failed", dir, e);
+                    // Always logged: an unwalkable directory otherwise only shows up as a missing count.
+                    log.error("Thumbnail scan of directory {} failed", dir, e);
+                    if (isAccessDenied(e)) {
+                        inaccessible.add(dir);
+                    }
                     errors.add(dir + ": " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
                 }
+            }
+            inaccessibleDirs = List.copyOf(inaccessible);
+            if (!inaccessible.isEmpty()) {
+                log.error("Thumbnail scan could not access {} configured director(ies): {} — add folder access permission for the FlyNarwhal server in fnOS",
+                        inaccessible.size(), inaccessible);
             }
             scannedFiles = scanned;
             markRunFinished(ThumbnailScanConfig.STATUS_SUCCESS, scanned, queued,
@@ -173,6 +193,7 @@ public class ThumbnailScanWorker {
     }
 
     private void markRunStarted() {
+        inaccessibleDirs = List.of();
         ThumbnailScanConfig row = configRow();
         row.setLastRunTime(LocalDateTime.now());
         row.setLastStatus(ThumbnailScanConfig.STATUS_RUNNING);
@@ -209,10 +230,7 @@ public class ThumbnailScanWorker {
     }
 
     private ScanOutcome scanDirectory(String dir) throws IOException {
-        Path root = Path.of(dir);
-        if (!Files.isDirectory(root)) {
-            throw new IOException("not a directory or not accessible");
-        }
+        Path root = listRoot(Path.of(dir));
         List<String> videos = new ArrayList<>();
         Files.walkFileTree(root, new SimpleFileVisitor<>() {
             @Override
@@ -226,7 +244,15 @@ public class ThumbnailScanWorker {
             @Override
             public FileVisitResult visitFileFailed(Path file, IOException exc) {
                 // A single unreadable entry (permissions, vanished mount) must not abort the walk.
-                log.debug("Thumbnail scan could not visit {}: {}", file, exc.getMessage());
+                log.error("Thumbnail scan could not visit {}", file, exc);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path sub, IOException exc) {
+                if (exc != null) {
+                    log.error("Thumbnail scan could not list directory {}", sub, exc);
+                }
                 return FileVisitResult.CONTINUE;
             }
         });
@@ -246,6 +272,25 @@ public class ThumbnailScanWorker {
             }
         }
         return new ScanOutcome(videos.size(), queued);
+    }
+
+    /**
+     * Validates the folder and proves it can be listed: an unreadable root
+     * otherwise walks as empty and reads as "nothing to do" instead of a
+     * permission problem.
+     */
+    private static Path listRoot(Path root) throws IOException {
+        if (!Files.isDirectory(root)) {
+            throw new NoSuchFileException(root.toString(), null, "not a directory or not accessible");
+        }
+        if (!Files.isReadable(root)) {
+            throw new AccessDeniedException(root.toString(), null, "directory is not readable");
+        }
+        try (Stream<Path> entries = Files.list(root)) {
+            // Opening the listing is the check; the walk below re-lists the folder itself.
+            entries.findAny();
+        }
+        return root;
     }
 
     /**
@@ -310,6 +355,19 @@ public class ThumbnailScanWorker {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** Missing directories and fnOS file-permission denials; anything else is a transient walk error. */
+    private static boolean isAccessDenied(Throwable error) {
+        for (Throwable t = error; t != null; t = t.getCause()) {
+            if (t instanceof AccessDeniedException || t instanceof NoSuchFileException) {
+                return true;
+            }
+            if (t.getCause() == t) {
+                break;
+            }
+        }
+        return false;
     }
 
     private static List<List<String>> partition(List<String> list, int size) {

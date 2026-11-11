@@ -47,4 +47,11 @@ public class ThumbnailScanConfigResponse {
     private Integer lastScannedCount;
     private Integer lastQueuedCount;
     private String lastError;
+
+    /**
+     * Configured directories the last run could not walk at all — missing, or
+     * created without granting this server access, which fnOS reports as an
+     * access-denied error. Needing no schema change; cleared at run start.
+     */
+    private List<String> lastInaccessibleDirs;
 }

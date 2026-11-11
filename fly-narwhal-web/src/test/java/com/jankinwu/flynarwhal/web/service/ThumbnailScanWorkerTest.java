@@ -137,6 +137,32 @@ class ThumbnailScanWorkerTest {
     }
 
     @Test
+    void anUnreadableRootIsReportedInsteadOfCountingAsEmpty() throws Exception {
+        Path locked = Files.createDirectory(tempDir.resolve("locked"));
+        video("locked/movie.mp4");
+        locked.toFile().setReadable(false, false);
+
+        try {
+            worker.runScan(new ThumbnailScanWorker.ScanRequest(
+                    ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of(locked.toString())));
+            if (Files.isReadable(locked)) {
+                // Running as root: permissions are not enforced, nothing to assert.
+                return;
+            }
+            assertEquals(List.of(locked.toString()), worker.inaccessibleDirs());
+            verify(thumbnailService, never()).trigger(anyString(), anyString());
+
+            // A later readable run replaces (not merges with) the previous report.
+            video("movie.mp4");
+            worker.runScan(new ThumbnailScanWorker.ScanRequest(
+                    ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of(tempDir.toString())));
+            assertTrue(worker.inaccessibleDirs().isEmpty());
+        } finally {
+            locked.toFile().setReadable(true, false);
+        }
+    }
+
+    @Test
     void enqueueDedupesWhileOneScanIsWaiting() {
         ThumbnailScanWorker.ScanRequest request = new ThumbnailScanWorker.ScanRequest(
                 ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of("/vol1/media"));
