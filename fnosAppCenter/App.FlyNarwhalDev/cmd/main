@@ -105,6 +105,7 @@ start_process() {
             -XX:StackSize=524288 \
             -Dfly-narwhal.data-dir="${data_dir}" \
             -Ddanmu.cache.dir="${data_dir}/danmu-cache" \
+            -Dfly-narwhal.thumbnail.dir="${data_dir}/thumbnails" \
             -DFN_DB_URL="jdbc:h2:file:${data_dir}/fly-narwhal;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CACHE_SIZE=8192" \
             --server.port="${port}" \
             >> "${STDOUT_LOG}" 2>&1 < /dev/null &

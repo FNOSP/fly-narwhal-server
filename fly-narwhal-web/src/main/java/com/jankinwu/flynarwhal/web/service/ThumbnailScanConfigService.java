@@ -139,6 +139,22 @@ public class ThumbnailScanConfigService {
         }
     }
 
+    /** Directories the last run could not open; empty list on missing/corrupt JSON. */
+    public List<String> readInaccessibleDirs(ThumbnailScanConfig row) {
+        String json = row == null ? null : row.getLastInaccessibleDirs();
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<String> dirs = objectMapper.readValue(json, new TypeReference<List<String>>() {
+            });
+            return dirs == null ? List.of() : dirs;
+        } catch (Exception e) {
+            log.warn("Corrupt LAST_INACCESSIBLE_DIRS value, treating as empty: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
     public CronPreviewResponse preview(String cron, Integer count) {
         int limit = (count == null || count <= 0)
                 ? CronSupport.DEFAULT_PREVIEW_COUNT
@@ -186,7 +202,7 @@ public class ThumbnailScanConfigService {
                 .lastScannedCount(row.getLastScannedCount())
                 .lastQueuedCount(row.getLastQueuedCount())
                 .lastError(row.getLastError())
-                .lastInaccessibleDirs(worker.inaccessibleDirs())
+                .lastInaccessibleDirs(readInaccessibleDirs(row))
                 .build();
     }
 

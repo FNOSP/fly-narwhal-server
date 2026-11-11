@@ -1,6 +1,7 @@
 package com.jankinwu.flynarwhal.web.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.core.data.ThumbnailStatus;
 import com.jankinwu.flynarwhal.core.dto.response.ThumbnailStatusResponse;
 import com.jankinwu.flynarwhal.core.scanner.VideoFileTypes;
@@ -73,6 +74,7 @@ public class ThumbnailScanWorker {
     private final ThumbnailTaskMapper taskMapper;
     /** Written directly instead of via ThumbnailScanConfigService: that service depends on this worker. */
     private final ThumbnailScanConfigMapper scanConfigMapper;
+    private final ObjectMapper objectMapper;
 
     private final BlockingDeque<ScanRequest> queue = new LinkedBlockingDeque<>();
     private final AtomicBoolean queuedFlag = new AtomicBoolean(false);
@@ -80,8 +82,6 @@ public class ThumbnailScanWorker {
 
     private volatile String currentDir;
     private volatile Integer scannedFiles;
-    /** Directories of the current/last run that could not be walked; cleared by each run. */
-    private volatile List<String> inaccessibleDirs = List.of();
     private volatile boolean started;
 
     @EventListener(ApplicationReadyEvent.class)
@@ -120,11 +120,6 @@ public class ThumbnailScanWorker {
             return new Progress(ScanState.QUEUED, null, null);
         }
         return Progress.idle();
-    }
-
-    /** Directories the last run could not walk (missing or not granted access); empty afterwards when all were readable. */
-    public List<String> inaccessibleDirs() {
-        return inaccessibleDirs;
     }
 
     private void processQueue() {
@@ -175,42 +170,56 @@ public class ThumbnailScanWorker {
                     errors.add(dir + ": " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
                 }
             }
-            inaccessibleDirs = List.copyOf(inaccessible);
             if (!inaccessible.isEmpty()) {
                 log.error("Thumbnail scan could not access {} configured director(ies): {} — add folder access permission for the FlyNarwhal server in fnOS",
                         inaccessible.size(), inaccessible);
             }
             scannedFiles = scanned;
             markRunFinished(ThumbnailScanConfig.STATUS_SUCCESS, scanned, queued,
-                    errors.isEmpty() ? null : String.join("; ", errors));
+                    errors.isEmpty() ? null : String.join("; ", errors), inaccessible);
             log.info("Thumbnail scan finished in {}ms (source={}): {} video(s), {} queued, {} dir error(s)",
                     System.currentTimeMillis() - startedAt, request.source(), scanned, queued, errors.size());
         } catch (Exception e) {
             log.error("Thumbnail scan failed (source={})", request.source(), e);
             markRunFinished(ThumbnailScanConfig.STATUS_FAILED, scanned, queued,
-                    e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+                    e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(), inaccessible);
         }
     }
 
     private void markRunStarted() {
-        inaccessibleDirs = List.of();
         ThumbnailScanConfig row = configRow();
         row.setLastRunTime(LocalDateTime.now());
         row.setLastStatus(ThumbnailScanConfig.STATUS_RUNNING);
         row.setLastError(null);
+        row.setLastInaccessibleDirs(null);
         row.setUpdateTime(LocalDateTime.now());
         scanConfigMapper.updateById(row);
     }
 
-    private void markRunFinished(String status, int scannedCount, int queuedCount, String error) {
+    private void markRunFinished(String status, int scannedCount, int queuedCount, String error,
+                                 List<String> inaccessibleDirs) {
         ThumbnailScanConfig row = configRow();
         row.setLastFinishTime(LocalDateTime.now());
         row.setLastStatus(status);
         row.setLastScannedCount(scannedCount);
         row.setLastQueuedCount(queuedCount);
-        row.setLastError(error != null && error.length() > 2048 ? error.substring(0, 2048) : error);
+        row.setLastError(truncate(error, 2048));
+        row.setLastInaccessibleDirs(inaccessibleDirs.isEmpty() ? null : truncate(writeJson(inaccessibleDirs), 2048));
         row.setUpdateTime(LocalDateTime.now());
         scanConfigMapper.updateById(row);
+    }
+
+    private String writeJson(List<String> dirs) {
+        try {
+            return objectMapper.writeValueAsString(dirs);
+        } catch (Exception e) {
+            log.warn("Could not serialize inaccessible scan dirs: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private static String truncate(String value, int maxChars) {
+        return value != null && value.length() > maxChars ? value.substring(0, maxChars) : value;
     }
 
     private ThumbnailScanConfig configRow() {

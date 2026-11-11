@@ -47,5 +47,8 @@ public class ThumbnailScanConfig {
 
     private String lastError;
 
+    /** JSON string array of directories the last run could not open (missing or not granted access). */
+    private String lastInaccessibleDirs;
+
     private LocalDateTime updateTime;
 }

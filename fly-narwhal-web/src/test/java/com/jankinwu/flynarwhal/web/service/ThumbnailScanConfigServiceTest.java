@@ -151,6 +151,16 @@ class ThumbnailScanConfigServiceTest {
     }
 
     @Test
+    void responseCarriesPersistedInaccessibleDirs() {
+        ThumbnailScanConfig row = existingRow();
+        row.setLastInaccessibleDirs("[\"/vol1/locked\"]");
+        assertEquals(List.of("/vol1/locked"), service.toResponse(row).getLastInaccessibleDirs());
+
+        row.setLastInaccessibleDirs("{not json");
+        assertEquals(List.of(), service.toResponse(row).getLastInaccessibleDirs());
+    }
+
+    @Test
     void corruptDirsJsonReadsAsEmpty() {
         ThumbnailScanConfig row = existingRow();
         row.setScanDirs("{not json");

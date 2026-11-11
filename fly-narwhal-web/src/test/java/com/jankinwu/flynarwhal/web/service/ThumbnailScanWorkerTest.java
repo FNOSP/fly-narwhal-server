@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -45,7 +46,8 @@ class ThumbnailScanWorkerTest {
         thumbnailService = mock(ThumbnailService.class);
         taskMapper = mock(ThumbnailTaskMapper.class);
         scanConfigMapper = mock(ThumbnailScanConfigMapper.class);
-        worker = new ThumbnailScanWorker(thumbnailService, taskMapper, scanConfigMapper);
+        worker = new ThumbnailScanWorker(thumbnailService, taskMapper, scanConfigMapper,
+                new com.fasterxml.jackson.databind.ObjectMapper());
 
         ThumbnailScanConfig configRow = new ThumbnailScanConfig();
         configRow.setId(ThumbnailScanConfig.SINGLETON_ID);
@@ -149,14 +151,17 @@ class ThumbnailScanWorkerTest {
                 // Running as root: permissions are not enforced, nothing to assert.
                 return;
             }
-            assertEquals(List.of(locked.toString()), worker.inaccessibleDirs());
+            // The denied folder is persisted with the run result, as JSON.
+            ArgumentCaptor<ThumbnailScanConfig> finished = ArgumentCaptor.forClass(ThumbnailScanConfig.class);
+            verify(scanConfigMapper, org.mockito.Mockito.atLeastOnce()).updateById(finished.capture());
+            assertEquals("[\"" + locked + "\"]", finished.getValue().getLastInaccessibleDirs());
             verify(thumbnailService, never()).trigger(anyString(), anyString());
 
             // A later readable run replaces (not merges with) the previous report.
             video("movie.mp4");
             worker.runScan(new ThumbnailScanWorker.ScanRequest(
                     ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of(tempDir.toString())));
-            assertTrue(worker.inaccessibleDirs().isEmpty());
+            assertNull(finished.getValue().getLastInaccessibleDirs());
         } finally {
             locked.toFile().setReadable(true, false);
         }

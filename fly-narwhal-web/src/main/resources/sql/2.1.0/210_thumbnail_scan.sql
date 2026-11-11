@@ -12,12 +12,18 @@ CREATE TABLE IF NOT EXISTS THUMBNAIL_SCAN_CONFIG (
     LAST_SCANNED_COUNT INT           DEFAULT 0,
     LAST_QUEUED_COUNT  INT           DEFAULT 0,
     LAST_ERROR         VARCHAR(2048),
+    LAST_INACCESSIBLE_DIRS VARCHAR(2048),
     UPDATE_TIME        TIMESTAMP
 );
 COMMENT ON TABLE THUMBNAIL_SCAN_CONFIG IS '定时缩略图扫描配置(单行,id=1);运行瞬时进度只在内存';
 COMMENT ON COLUMN THUMBNAIL_SCAN_CONFIG.cron_expression IS 'Quartz方言cron(6或7字段),保存时用cron-utils校验';
 COMMENT ON COLUMN THUMBNAIL_SCAN_CONFIG.scan_dirs IS 'JSON字符串数组,NAS绝对路径';
 COMMENT ON COLUMN THUMBNAIL_SCAN_CONFIG.last_status IS 'NEVER/RUNNING/SUCCESS/FAILED';
+COMMENT ON COLUMN THUMBNAIL_SCAN_CONFIG.last_inaccessible_dirs IS 'JSON字符串数组,上次扫描无权限/不存在的目录';
+
+-- Databases that already ran the first cut of this 2.1.0 script (dev installs
+-- only; 2.1.0 was never released without the column) get it added in place.
+ALTER TABLE THUMBNAIL_SCAN_CONFIG ADD COLUMN IF NOT EXISTS LAST_INACCESSIBLE_DIRS VARCHAR(2048);
 
 -- THUMBNAIL_TASKS was introduced on the thumbnail branch inside the 2.0.0
 -- consolidated script, so databases that already sit at 2.0.0 never ran it and
