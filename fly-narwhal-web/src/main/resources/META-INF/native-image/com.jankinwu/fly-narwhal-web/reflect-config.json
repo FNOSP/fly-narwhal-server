@@ -54,6 +54,7 @@
   { "name": "com.jankinwu.flynarwhal.web.entity.EpisodeSegment", "allDeclaredFields": true, "allPublicFields": true, "allDeclaredMethods": true, "allDeclaredConstructors": true, "queryAllDeclaredMethods": true },
   { "name": "com.jankinwu.flynarwhal.web.entity.ThumbnailTask", "allDeclaredFields": true, "allPublicFields": true, "allDeclaredMethods": true, "allDeclaredConstructors": true, "queryAllDeclaredMethods": true },
   { "name": "com.jankinwu.flynarwhal.web.entity.ThumbnailScanConfig", "allDeclaredFields": true, "allPublicFields": true, "allDeclaredMethods": true, "allDeclaredConstructors": true, "queryAllDeclaredMethods": true },
+  { "name": "com.jankinwu.flynarwhal.web.entity.ThumbnailScanRun", "allDeclaredFields": true, "allPublicFields": true, "allDeclaredMethods": true, "allDeclaredConstructors": true, "queryAllDeclaredMethods": true },
   { "name": "com.jankinwu.flynarwhal.web.entity.TvSeasonInfo", "allDeclaredFields": true, "allPublicFields": true, "allDeclaredMethods": true, "allDeclaredConstructors": true, "queryAllDeclaredMethods": true },
   { "name": "com.jankinwu.flynarwhal.web.entity.UserSmartSkipConfig", "allDeclaredFields": true, "allPublicFields": true, "allDeclaredMethods": true, "allDeclaredConstructors": true, "queryAllDeclaredMethods": true },
   { "name": "com.jankinwu.flynarwhal.web.entity.DanmuPlatformUrl", "allDeclaredFields": true, "allPublicFields": true, "allDeclaredMethods": true, "allDeclaredConstructors": true, "queryAllDeclaredMethods": true },

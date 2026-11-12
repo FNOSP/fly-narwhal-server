@@ -1,11 +1,14 @@
 package com.jankinwu.flynarwhal.web.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.core.dto.response.CronPreviewResponse;
 import com.jankinwu.flynarwhal.core.dto.response.ThumbnailScanConfigResponse;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanConfig;
+import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRun;
 import com.jankinwu.flynarwhal.web.mapper.ThumbnailScanConfigMapper;
+import com.jankinwu.flynarwhal.web.mapper.ThumbnailScanRunMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -34,7 +37,11 @@ public class ThumbnailScanConfigService {
     /** Hard cap matching the SCAN_DIRS column; the client enforces its own lower limit. */
     private static final int SCAN_DIRS_JSON_MAX_CHARS = 8192;
 
+    /** At most this many run rows are kept; older ones are dropped before a new scan. */
+    static final int MAX_RUN_HISTORY = 100;
+
     private final ThumbnailScanConfigMapper mapper;
+    private final ThumbnailScanRunMapper scanRunMapper;
     private final ObjectMapper objectMapper;
     private final ThumbnailScanWorker worker;
     private final ApplicationEventPublisher eventPublisher;
@@ -96,31 +103,128 @@ public class ThumbnailScanConfigService {
         return row;
     }
 
-    /** Persist a terminal outcome onto the config row (startup recovery uses this). */
-    public void markRunFinished(String status, int scannedCount, int queuedCount, String error) {
-        ThumbnailScanConfig row = getOrCreate();
-        row.setLastFinishTime(LocalDateTime.now());
-        row.setLastStatus(status);
-        row.setLastScannedCount(scannedCount);
-        row.setLastQueuedCount(queuedCount);
-        row.setLastError(truncate(error, 2048));
-        row.setUpdateTime(LocalDateTime.now());
-        mapper.updateById(row);
+    /** Newest run row, in flight or finished; null when no scan has ever run. */
+    public ThumbnailScanRun latestRun() {
+        return scanRunMapper.selectOne(new QueryWrapper<ThumbnailScanRun>()
+                .orderByDesc("ID")
+                .last("LIMIT 1"));
     }
 
-    /** Startup recovery: a row left RUNNING by a crash can never finish. */
+    /** One run by id; null when the id is unknown (or never existed). */
+    public ThumbnailScanRun findRun(Long runId) {
+        return runId == null ? null : scanRunMapper.selectById(runId);
+    }
+
+    /**
+     * Opens the QUEUED row for a scan that is about to be enqueued. Inserted
+     * before the worker sees the request so the trigger response can carry its
+     * id: the client polls this row instead of inferring which run is "newest".
+     *
+     * <p>The table keeps at most {@link #MAX_RUN_HISTORY} rows: once it is at
+     * the cap the oldest rows are dropped first, so history growth is bounded
+     * without touching the in-flight run.
+     */
+    public ThumbnailScanRun createQueuedRun(String source) {
+        pruneRunHistory();
+        ThumbnailScanRun run = new ThumbnailScanRun();
+        run.setSource(source);
+        run.setStatus(ThumbnailScanRun.STATUS_QUEUED);
+        run.setPhase(ThumbnailScanRun.PHASE_QUEUED);
+        run.setScannedCount(0);
+        run.setQueuedCount(0);
+        run.setProgressMarker(1);
+        scanRunMapper.insert(run);
+        return run;
+    }
+
+    /** Drops the oldest runs until one more insert fits under the cap. */
+    private void pruneRunHistory() {
+        Long count = scanRunMapper.selectCount(new QueryWrapper<>());
+        if (count == null || count < MAX_RUN_HISTORY) {
+            return;
+        }
+        // Fetch just the ids to delete: the newest MAX_RUN_HISTORY-1 stay.
+        List<ThumbnailScanRun> keepNewest = scanRunMapper.selectList(
+                new QueryWrapper<ThumbnailScanRun>()
+                        .select("ID")
+                        .orderByDesc("ID")
+                        .last("LIMIT " + (MAX_RUN_HISTORY - 1)));
+        List<Long> keepIds = keepNewest.stream().map(ThumbnailScanRun::getId).toList();
+        if (keepIds.isEmpty()) {
+            return;
+        }
+        if (keepIds.size() < MAX_RUN_HISTORY - 1) {
+            // Fewer rows than the cap: nothing to drop even though the count
+            // says otherwise (concurrent trim); let the next run retry.
+            return;
+        }
+        int removed = scanRunMapper.delete(new QueryWrapper<ThumbnailScanRun>()
+                .notIn("ID", keepIds));
+        log.info("Thumbnail scan history pruned: {} row(s) dropped (cap {})", removed, MAX_RUN_HISTORY);
+    }
+
+    /** Snapshot of one run, same field layout as the config response's last-run block. */
+    public ThumbnailScanConfigResponse toRunResponse(ThumbnailScanRun run) {
+        return ThumbnailScanConfigResponse.builder()
+                .lastRunId(run == null ? null : run.getId())
+                .lastRunSource(run == null ? null : run.getSource())
+                .lastRunTimeMs(run == null ? null : toEpochMillis(run.getStartTime()))
+                .lastFinishTimeMs(run == null ? null : toEpochMillis(run.getFinishTime()))
+                .lastStatus(run == null ? null : run.getStatus())
+                .lastScannedCount(run == null ? null : run.getScannedCount())
+                .lastQueuedCount(run == null ? null : run.getQueuedCount())
+                .lastPhase(run == null ? null : run.getPhase())
+                .lastSourcedCount(run == null ? null : run.getSourcedCount())
+                .lastGeneratedCount(run == null ? null : run.getGeneratedCount())
+                .lastFailedCount(run == null ? null : run.getFailedCount())
+                .lastError(run == null ? null : run.getError())
+                .lastInaccessibleDirs(readInaccessibleDirs(run))
+                .build();
+    }
+
+    /**
+     * Startup recovery: a run left RUNNING by a crash can never finish. Closing
+     * it here (rather than at run start) keeps the closing write on the run row
+     * itself, so nothing stale survives on the config row.
+     */
     public void resetInterruptedRun() {
         try {
-            ThumbnailScanConfig row = mapper.selectById(ThumbnailScanConfig.SINGLETON_ID);
-            if (row != null && ThumbnailScanConfig.STATUS_RUNNING.equals(row.getLastStatus())) {
-                markRunFinished(ThumbnailScanConfig.STATUS_FAILED,
-                        row.getLastScannedCount() == null ? 0 : row.getLastScannedCount(),
-                        row.getLastQueuedCount() == null ? 0 : row.getLastQueuedCount(),
-                        "interrupted by server restart");
+            ThumbnailScanRun run = latestRun();
+            if (run == null || !ThumbnailScanRun.STATUS_RUNNING.equals(run.getStatus())) {
+                return;
             }
+            markRunFinished(run.getId(), ThumbnailScanRun.STATUS_FAILED,
+                    run.getScannedCount() == null ? 0 : run.getScannedCount(),
+                    run.getQueuedCount() == null ? 0 : run.getQueuedCount(),
+                    "interrupted by server restart");
         } catch (Exception e) {
             log.warn("Could not reset interrupted thumbnail scan run: {}", e.getMessage());
         }
+    }
+
+    /**
+     * Closes a run row; a no-op once the row is no longer the in-flight run.
+     * Public so a trigger that never reaches the worker can abandon the row it
+     * just opened instead of leaving a permanently QUEUED record.
+     */
+    public void abandonRun(Long runId) {
+        markRunFinished(runId, ThumbnailScanRun.STATUS_FAILED, 0, 0, "not queued: a scan was already running");
+    }
+
+    /** Closes a run row; a no-op once the row is no longer the in-flight run. */
+    private void markRunFinished(Long runId, String status, int scannedCount, int queuedCount, String error) {
+        if (runId == null) {
+            return;
+        }
+        ThumbnailScanRun run = new ThumbnailScanRun();
+        run.setFinishTime(LocalDateTime.now());
+        run.setStatus(status);
+        run.setScannedCount(scannedCount);
+        run.setQueuedCount(queuedCount);
+        run.setError(truncate(error, 2048));
+        scanRunMapper.update(run, new QueryWrapper<ThumbnailScanRun>()
+                .eq("ID", runId)
+                .eq("PROGRESS_MARKER", 1));
     }
 
     /** Directories of a config row; empty list on missing/corrupt JSON. */
@@ -140,8 +244,8 @@ public class ThumbnailScanConfigService {
     }
 
     /** Directories the last run could not open; empty list on missing/corrupt JSON. */
-    public List<String> readInaccessibleDirs(ThumbnailScanConfig row) {
-        String json = row == null ? null : row.getLastInaccessibleDirs();
+    public List<String> readInaccessibleDirs(ThumbnailScanRun run) {
+        String json = run == null ? null : run.getInaccessibleDirs();
         if (json == null || json.isBlank()) {
             return List.of();
         }
@@ -150,7 +254,7 @@ public class ThumbnailScanConfigService {
             });
             return dirs == null ? List.of() : dirs;
         } catch (Exception e) {
-            log.warn("Corrupt LAST_INACCESSIBLE_DIRS value, treating as empty: {}", e.getMessage());
+            log.warn("Corrupt INACCESSIBLE_DIRS value, treating as empty: {}", e.getMessage());
             return List.of();
         }
     }
@@ -186,6 +290,10 @@ public class ThumbnailScanConfigService {
                     .orElse(null);
         }
         ThumbnailScanWorker.Progress progress = worker.progress();
+        // The last-run fields come from the newest run row, never from the
+        // config row: each run is its own record, so a successful run is not
+        // shadowed by an earlier run's error.
+        ThumbnailScanRun lastRun = latestRun();
         return ThumbnailScanConfigResponse.builder()
                 .enabled(Boolean.TRUE.equals(row.getEnabled()))
                 .cron(cron)
@@ -196,13 +304,19 @@ public class ThumbnailScanConfigService {
                 .scanState(progress.state().name())
                 .currentDir(progress.currentDir())
                 .scannedFiles(progress.scannedFiles())
-                .lastRunTimeMs(toEpochMillis(row.getLastRunTime()))
-                .lastFinishTimeMs(toEpochMillis(row.getLastFinishTime()))
-                .lastStatus(row.getLastStatus() == null ? ThumbnailScanConfig.STATUS_NEVER : row.getLastStatus())
-                .lastScannedCount(row.getLastScannedCount())
-                .lastQueuedCount(row.getLastQueuedCount())
-                .lastError(row.getLastError())
-                .lastInaccessibleDirs(readInaccessibleDirs(row))
+                .lastRunId(lastRun == null ? null : lastRun.getId())
+                .lastRunSource(lastRun == null ? null : lastRun.getSource())
+                .lastRunTimeMs(lastRun == null ? null : toEpochMillis(lastRun.getStartTime()))
+                .lastFinishTimeMs(lastRun == null ? null : toEpochMillis(lastRun.getFinishTime()))
+                .lastStatus(lastRun == null ? ThumbnailScanConfig.STATUS_NEVER : lastRun.getStatus())
+                .lastScannedCount(lastRun == null ? null : lastRun.getScannedCount())
+                .lastQueuedCount(lastRun == null ? null : lastRun.getQueuedCount())
+                .lastPhase(lastRun == null ? null : lastRun.getPhase())
+                .lastSourcedCount(lastRun == null ? null : lastRun.getSourcedCount())
+                .lastGeneratedCount(lastRun == null ? null : lastRun.getGeneratedCount())
+                .lastFailedCount(lastRun == null ? null : lastRun.getFailedCount())
+                .lastError(lastRun == null ? null : lastRun.getError())
+                .lastInaccessibleDirs(readInaccessibleDirs(lastRun))
                 .build();
     }
 

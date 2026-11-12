@@ -1,6 +1,7 @@
 package com.jankinwu.flynarwhal.web.service;
 
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanConfig;
+import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRun;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -43,7 +44,12 @@ class ThumbnailScanSchedulerTest {
         config.setEnabled(true);
         config.setCronExpression("0 0 3 * * ?");
         when(configService.getOrCreate()).thenReturn(config);
+        // Never block a scheduler test on a generation wait.
+        worker.setGenerationWaitTimeoutMs(0);
         when(configService.readDirs(config)).thenReturn(List.of("/vol1/media"));
+        ThumbnailScanRun run = new ThumbnailScanRun();
+        run.setId(1L);
+        when(configService.createQueuedRun(any())).thenReturn(run);
     }
 
     @Test

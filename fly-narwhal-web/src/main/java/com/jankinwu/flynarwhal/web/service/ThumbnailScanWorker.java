@@ -5,9 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.core.data.ThumbnailStatus;
 import com.jankinwu.flynarwhal.core.dto.response.ThumbnailStatusResponse;
 import com.jankinwu.flynarwhal.core.scanner.VideoFileTypes;
-import com.jankinwu.flynarwhal.web.entity.ThumbnailScanConfig;
+import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRun;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailTask;
-import com.jankinwu.flynarwhal.web.mapper.ThumbnailScanConfigMapper;
+import com.jankinwu.flynarwhal.web.mapper.ThumbnailScanRunMapper;
 import com.jankinwu.flynarwhal.web.mapper.ThumbnailTaskMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,11 +23,15 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -57,10 +61,18 @@ public class ThumbnailScanWorker {
 
     public enum EnqueueResult { ENQUEUED, QUEUED_BEHIND_RUNNING, ALREADY_QUEUED }
 
-    /** One queued scan. {@code dirs} is snapshotted at enqueue time from the config row. */
-    public record ScanRequest(String source, List<String> dirs) {
+    /**
+     * One queued scan. {@code runId} is the THUMBNAIL_SCAN_RUNS row the caller
+     * already inserted when queuing, so the client can poll that row's status
+     * from the moment the trigger returns ({@code dirs} snapshotted then).
+     */
+    public record ScanRequest(String source, List<String> dirs, Long runId) {
         public static final String SOURCE_SCHEDULED = "SCHEDULED";
         public static final String SOURCE_MANUAL = "MANUAL";
+
+        public ScanRequest(String source, List<String> dirs) {
+            this(source, dirs, null);
+        }
     }
 
     /** Live progress snapshot for the config response. */
@@ -72,8 +84,8 @@ public class ThumbnailScanWorker {
 
     private final ThumbnailService thumbnailService;
     private final ThumbnailTaskMapper taskMapper;
-    /** Written directly instead of via ThumbnailScanConfigService: that service depends on this worker. */
-    private final ThumbnailScanConfigMapper scanConfigMapper;
+    /** Run history: one row per scan, written only by this worker. */
+    private final ThumbnailScanRunMapper scanRunMapper;
     private final ObjectMapper objectMapper;
 
     private final BlockingDeque<ScanRequest> queue = new LinkedBlockingDeque<>();
@@ -84,8 +96,36 @@ public class ThumbnailScanWorker {
     private volatile Integer scannedFiles;
     private volatile boolean started;
 
+    /**
+     * Run whose sprite jobs are still outstanding: the row id, the guids this
+     * run queued, and how many are still pending. Touched from the scan thread
+     * and from {@link ThumbnailService}'s job thread, hence the lock.
+     */
+    private final Object generationLock = new Object();
+    /**
+     * Ceiling on how long a run waits for the sprites it queued. Generation is
+     * serial and can be slow on an ARM NAS, so the limit is generous; past it
+     * the worker stops waiting (the row is closed) and the remaining jobs run
+     * on regardless.
+     */
+    private static final long GENERATION_WAIT_TIMEOUT_MS = Duration.ofHours(6).toMillis();
+    private Long generatingRunId;
+    private Set<String> generatingGuids = new HashSet<>();
+    private int generatedCount;
+    private int failedCount;
+
+    /**
+     * Outcomes of this run's jobs that landed before the run armed its
+     * generation set. The job thread is independent of the scan thread, so a
+     * fast job (an already-completed file, a tiny sprite sheet) can finish
+     * between the trigger and {@link #markGenerating}; such a job must still
+     * count for the run instead of waiting forever.
+     */
+    private final Map<String, Boolean> completedBeforeArmed = new HashMap<>();
+
     @EventListener(ApplicationReadyEvent.class)
     public synchronized void start() {
+        thumbnailService.setJobCompletionListener(this::onGenerationJobFinished);
         if (started) {
             return;
         }
@@ -144,7 +184,11 @@ public class ThumbnailScanWorker {
         }
     }
 
-    /** Package-visible for tests: run one scan synchronously on the calling thread. */
+    /**
+     * Package-visible for tests: run one scan synchronously on the calling
+     * thread. Uses the run row the enqueue already inserted, or opens one when
+     * the request carries none (tests and legacy callers).
+     */
     void runScan(ScanRequest request) {
         long startedAt = System.currentTimeMillis();
         currentDir = null;
@@ -153,12 +197,14 @@ public class ThumbnailScanWorker {
         int queued = 0;
         List<String> errors = new ArrayList<>();
         List<String> inaccessible = new ArrayList<>();
-        markRunStarted();
+        List<String> queuedGuids = new ArrayList<>();
+        Long runId = request.runId() != null ? request.runId() : markRunStarted(request.source());
+        markRunRunning(runId);
         try {
             for (String dir : request.dirs()) {
                 currentDir = dir;
                 try {
-                    ScanOutcome outcome = scanDirectory(dir);
+                    ScanOutcome outcome = scanDirectory(dir, queuedGuids, runId);
                     scanned += outcome.scanned();
                     queued += outcome.queued();
                 } catch (Exception e) {
@@ -175,38 +221,191 @@ public class ThumbnailScanWorker {
                         inaccessible.size(), inaccessible);
             }
             scannedFiles = scanned;
-            markRunFinished(ThumbnailScanConfig.STATUS_SUCCESS, scanned, queued,
+            // The scan half is done; the run now waits for the sprites it queued.
+            markGenerating(runId, scanned, queued, queuedGuids);
+            awaitGeneration(runId, scanned, queued,
                     errors.isEmpty() ? null : String.join("; ", errors), inaccessible);
-            log.info("Thumbnail scan finished in {}ms (source={}): {} video(s), {} queued, {} dir error(s)",
-                    System.currentTimeMillis() - startedAt, request.source(), scanned, queued, errors.size());
+            log.info("Thumbnail scan finished in {}ms (source={}): {} video(s), {} queued, {} generated, {} failed, {} dir error(s)",
+                    System.currentTimeMillis() - startedAt, request.source(), scanned, queued,
+                    generatedCount, failedCount, errors.size());
         } catch (Exception e) {
             log.error("Thumbnail scan failed (source={})", request.source(), e);
-            markRunFinished(ThumbnailScanConfig.STATUS_FAILED, scanned, queued,
-                    e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(), inaccessible);
+            synchronized (generationLock) {
+                generatingRunId = null;
+                generatingGuids = new HashSet<>();
+                markRunFinished(runId, ThumbnailScanRun.STATUS_FAILED, scanned, queued,
+                        e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(),
+                        inaccessible, generatedCount, failedCount);
+            }
         }
     }
 
-    private void markRunStarted() {
-        ThumbnailScanConfig row = configRow();
-        row.setLastRunTime(LocalDateTime.now());
-        row.setLastStatus(ThumbnailScanConfig.STATUS_RUNNING);
-        row.setLastError(null);
-        row.setLastInaccessibleDirs(null);
-        row.setUpdateTime(LocalDateTime.now());
-        scanConfigMapper.updateById(row);
+    /**
+     * Records the generation half of the run and blocks the worker until every
+     * sprite job this run queued has finished. The row already shows SCANNING
+     * counts, so the client sees progress while waiting; a job from an older
+     * run (or any other request) is ignored by run id.
+     */
+    private void markGenerating(Long runId, int scanned, int queued, List<String> queuedGuids) {
+        synchronized (generationLock) {
+            generatedCount = 0;
+            failedCount = 0;
+            Set<String> pending = new LinkedHashSet<>();
+            for (String guid : queuedGuids) {
+                Boolean early = completedBeforeArmed.remove(guid);
+                if (early == null) {
+                    pending.add(guid);
+                } else if (early) {
+                    generatedCount++;
+                } else {
+                    failedCount++;
+                }
+            }
+            generatingRunId = pending.isEmpty() ? null : runId;
+            generatingGuids = pending;
+            ThumbnailScanRun run = new ThumbnailScanRun();
+            run.setPhase(ThumbnailScanRun.PHASE_GENERATING);
+            run.setScannedCount(scanned);
+            run.setQueuedCount(queued);
+            run.setSourcedCount(scanned);
+            run.setGeneratedCount(generatedCount);
+            run.setFailedCount(failedCount);
+            scanRunMapper.update(run, new QueryWrapper<ThumbnailScanRun>()
+                    .eq("ID", runId)
+                    .eq("PROGRESS_MARKER", 1));
+        }
     }
 
-    private void markRunFinished(String status, int scannedCount, int queuedCount, String error,
-                                 List<String> inaccessibleDirs) {
-        ThumbnailScanConfig row = configRow();
-        row.setLastFinishTime(LocalDateTime.now());
-        row.setLastStatus(status);
-        row.setLastScannedCount(scannedCount);
-        row.setLastQueuedCount(queuedCount);
-        row.setLastError(truncate(error, 2048));
-        row.setLastInaccessibleDirs(inaccessibleDirs.isEmpty() ? null : truncate(writeJson(inaccessibleDirs), 2048));
-        row.setUpdateTime(LocalDateTime.now());
-        scanConfigMapper.updateById(row);
+    /** Waits for this run's outstanding jobs, then closes the row. */
+    private void awaitGeneration(Long runId, int scanned, int queued, String error,
+                                 List<String> inaccessible) {
+        synchronized (generationLock) {
+            long deadline = System.currentTimeMillis() + generationWaitTimeoutMs;
+            while (generatingRunId != null && !generatingGuids.isEmpty()
+                    && System.currentTimeMillis() < deadline) {
+                try {
+                    generationLock.wait(2000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+            generatingRunId = null;
+            // Counts were written by markGenerating and refined per job; the
+            // closing write only settles status, phase and the report.
+            markRunFinished(runId, ThumbnailScanRun.STATUS_SUCCESS, scanned, queued, error,
+                    inaccessible, generatedCount, failedCount);
+        }
+    }
+
+    /** Test seam: feeds a completion the way the job thread would. */
+    void onJobFinishedForTest(String guid, boolean succeeded, boolean queued, Long runId) {
+        onGenerationJobFinished(guid, succeeded, queued, runId);
+    }
+
+    /** Test seam: overrides the generation wait ceiling. */
+    void setGenerationWaitTimeoutMs(long timeoutMs) {
+        this.generationWaitTimeoutMs = timeoutMs;
+    }
+
+    private volatile long generationWaitTimeoutMs = GENERATION_WAIT_TIMEOUT_MS;
+
+    /** Called from ThumbnailService's job thread; never blocks it. */
+    private void onGenerationJobFinished(String guid, boolean succeeded, boolean queuedByTrigger, Long runId) {
+        if (!queuedByTrigger) {
+            // A state probe, not a job this run queued: it counts as neither
+            // progress nor a failure.
+            return;
+        }
+        synchronized (generationLock) {
+            if (generatingRunId == null || !generatingGuids.contains(guid)) {
+                // Not this run's outstanding job (yet): remember the outcome only
+                // if this run queued it, so markGenerating can count it.
+                if (runId != null) {
+                    completedBeforeArmed.put(guid, succeeded);
+                }
+                return;
+            }
+            // Attribute by run when the caller labelled the job; otherwise (a
+            // request that queued this guid without a run) fall back to guid.
+            boolean mine = runId != null ? runId.equals(generatingRunId) : true;
+            if (!mine) {
+                return;
+            }
+            generatingGuids.remove(guid);
+            if (succeeded) {
+                generatedCount++;
+            } else {
+                failedCount++;
+            }
+            ThumbnailScanRun run = new ThumbnailScanRun();
+            run.setGeneratedCount(generatedCount);
+            run.setFailedCount(failedCount);
+            scanRunMapper.update(run, new QueryWrapper<ThumbnailScanRun>()
+                    .eq("ID", generatingRunId)
+                    .eq("PROGRESS_MARKER", 1));
+            generationLock.notifyAll();
+        }
+    }
+
+    /**
+     * Opens a new run row in RUNNING state (used when the request carries no
+     * run id). The row is the only record of this run: the config row is not
+     * touched, so a later success can never be masked by an earlier run's
+     * error staying behind.
+     */
+    private Long markRunStarted(String source) {
+        ThumbnailScanRun run = new ThumbnailScanRun();
+        run.setSource(source);
+        run.setStartTime(LocalDateTime.now());
+        run.setStatus(ThumbnailScanRun.STATUS_RUNNING);
+        run.setPhase(ThumbnailScanRun.PHASE_SCANNING);
+        run.setScannedCount(0);
+        run.setQueuedCount(0);
+        run.setSourcedCount(0);
+        run.setGeneratedCount(0);
+        run.setFailedCount(0);
+        run.setProgressMarker(1);
+        scanRunMapper.insert(run);
+        return run.getId();
+    }
+
+    /**
+     * Writes the run's start time once the worker picks it up. Rows inserted at
+     * enqueue time are QUEUED until this lands, which is what the client polls.
+     */
+    private void markRunRunning(Long runId) {
+        ThumbnailScanRun run = new ThumbnailScanRun();
+        run.setStartTime(LocalDateTime.now());
+        run.setStatus(ThumbnailScanRun.STATUS_RUNNING);
+        run.setPhase(ThumbnailScanRun.PHASE_SCANNING);
+        scanRunMapper.update(run, new QueryWrapper<ThumbnailScanRun>()
+                .eq("ID", runId)
+                .eq("STATUS", ThumbnailScanRun.STATUS_QUEUED));
+    }
+
+    /**
+     * Closes the run row: status, counts and the report land in one write, so
+     * the row is never half-updated from the client's point of view. Only rows
+     * still marked as the in-flight run are updated, making it idempotent.
+     */
+    private void markRunFinished(Long runId, String status, int scanned, int queued, String error,
+                                 List<String> inaccessibleDirs, int generated, int failed) {
+        ThumbnailScanRun run = new ThumbnailScanRun();
+        run.setFinishTime(LocalDateTime.now());
+        run.setStatus(status);
+        run.setPhase(status);
+        run.setScannedCount(scanned);
+        run.setQueuedCount(queued);
+        run.setSourcedCount(scanned);
+        run.setGeneratedCount(generated);
+        run.setFailedCount(failed);
+        run.setError(truncate(error, 2048));
+        run.setInaccessibleDirs(inaccessibleDirs.isEmpty() ? null : truncate(writeJson(inaccessibleDirs), 2048));
+        run.setProgressMarker(null);
+        scanRunMapper.update(run, new QueryWrapper<ThumbnailScanRun>()
+                .eq("ID", runId)
+                .eq("PROGRESS_MARKER", 1));
     }
 
     private String writeJson(List<String> dirs) {
@@ -222,23 +421,10 @@ public class ThumbnailScanWorker {
         return value != null && value.length() > maxChars ? value.substring(0, maxChars) : value;
     }
 
-    private ThumbnailScanConfig configRow() {
-        ThumbnailScanConfig row = scanConfigMapper.selectById(ThumbnailScanConfig.SINGLETON_ID);
-        if (row != null) {
-            return row;
-        }
-        row = new ThumbnailScanConfig();
-        row.setId(ThumbnailScanConfig.SINGLETON_ID);
-        row.setEnabled(false);
-        row.setLastStatus(ThumbnailScanConfig.STATUS_NEVER);
-        scanConfigMapper.insert(row);
-        return row;
-    }
-
     private record ScanOutcome(int scanned, int queued) {
     }
 
-    private ScanOutcome scanDirectory(String dir) throws IOException {
+    private ScanOutcome scanDirectory(String dir, List<String> queuedGuids, Long runId) throws IOException {
         Path root = listRoot(Path.of(dir));
         List<String> videos = new ArrayList<>();
         Files.walkFileTree(root, new SimpleFileVisitor<>() {
@@ -272,10 +458,12 @@ public class ThumbnailScanWorker {
             Map<String, ThumbnailTask> byPath = loadTasksByPath(chunk);
             for (String path : chunk) {
                 if (needsGeneration(byPath.get(path), path)) {
+                    String guid = ThumbnailService.syntheticGuid(path);
                     ThumbnailStatusResponse response = thumbnailService.trigger(
-                            ThumbnailService.syntheticGuid(path), path);
+                            guid, path, false, true, runId);
                     if (ThumbnailStatus.PENDING.name().equals(response.getStatus())) {
                         queued++;
+                        queuedGuids.add(guid);
                     }
                 }
             }

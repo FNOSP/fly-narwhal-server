@@ -6,11 +6,13 @@ import com.jankinwu.flynarwhal.core.dto.response.CronPreviewResponse;
 import com.jankinwu.flynarwhal.core.dto.response.Result;
 import com.jankinwu.flynarwhal.core.dto.response.ThumbnailScanConfigResponse;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanConfig;
+import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRun;
 import com.jankinwu.flynarwhal.web.service.ThumbnailScanConfigService;
 import com.jankinwu.flynarwhal.web.service.ThumbnailScanWorker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -86,16 +88,54 @@ public class ThumbnailScanController {
                 return Result.error("scan directories are not saved: " + String.join(", ", unknown));
             }
             List<String> scanDirs = requested.isEmpty() ? dirs : requested;
+            // The run row is opened before the worker sees the request, so the
+            // response carries the id the client then polls by (GET /runs/{id}).
+            ThumbnailScanRun run = configService.createQueuedRun(ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL);
             ThumbnailScanWorker.EnqueueResult result = worker.enqueue(
-                    new ThumbnailScanWorker.ScanRequest(ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, scanDirs));
-            log.info("Manual thumbnail scan requested: {}", result);
+                    new ThumbnailScanWorker.ScanRequest(
+                            ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, scanDirs, run.getId()));
+            log.info("Manual thumbnail scan requested: run={} {}", run.getId(), result);
             if (result == ThumbnailScanWorker.EnqueueResult.ALREADY_QUEUED) {
-                // Answering with the snapshot's own state would tell the client nothing is happening.
+                // Nothing was queued for this run, so close the row we just
+                // opened rather than leave a permanently QUEUED ghost record.
+                configService.abandonRun(run.getId());
                 return Result.error("scan is already running");
             }
-            return Result.success(configService.toResponse(row));
+            ThumbnailScanConfigResponse response = configService.toResponse(row);
+            response.setLastRunId(run.getId());
+            response.setLastRunSource(run.getSource());
+            response.setLastStatus(run.getStatus());
+            response.setLastRunTimeMs(null);
+            response.setLastFinishTimeMs(null);
+            response.setLastScannedCount(0);
+            response.setLastQueuedCount(0);
+            response.setLastPhase(run.getPhase());
+            response.setLastSourcedCount(0);
+            response.setLastGeneratedCount(0);
+            response.setLastFailedCount(0);
+            response.setLastError(null);
+            response.setLastInaccessibleDirs(List.of());
+            return Result.success(response);
         } catch (Exception e) {
             log.error("Error triggering thumbnail scan", e);
+            return Result.error("Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Status of one scan run, polled by the client after a trigger. Ids are
+     * unique, so a stale poll can never be answered with another run's result.
+     */
+    @GetMapping("/runs/{id}")
+    public Result<ThumbnailScanConfigResponse> runStatus(@PathVariable("id") Long id) {
+        try {
+            ThumbnailScanRun run = configService.findRun(id);
+            if (run == null) {
+                return Result.error("scan run not found: " + id);
+            }
+            return Result.success(configService.toRunResponse(run));
+        } catch (Exception e) {
+            log.error("Error reading thumbnail scan run {}", id, e);
             return Result.error("Error: " + e.getMessage());
         }
     }

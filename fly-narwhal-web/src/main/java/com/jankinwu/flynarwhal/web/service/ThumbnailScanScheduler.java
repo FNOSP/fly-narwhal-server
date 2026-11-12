@@ -1,6 +1,7 @@
 package com.jankinwu.flynarwhal.web.service;
 
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanConfig;
+import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRun;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -139,8 +140,11 @@ public class ThumbnailScanScheduler {
         // entirely, because nextExecution is strictly in the future.
         List<String> dirs = configService.readDirs(config);
         if (!dirs.isEmpty()) {
+            // Same record discipline as a manual trigger: the run row exists
+            // (QUEUED) before the worker runs it, so history is never implicit.
+            ThumbnailScanRun run = configService.createQueuedRun(ThumbnailScanWorker.ScanRequest.SOURCE_SCHEDULED);
             worker.enqueue(new ThumbnailScanWorker.ScanRequest(
-                    ThumbnailScanWorker.ScanRequest.SOURCE_SCHEDULED, dirs));
+                    ThumbnailScanWorker.ScanRequest.SOURCE_SCHEDULED, dirs, run.getId()));
         }
         // Advance from the fired point to keep the cadence; skip points already
         // in the past (a missed fire is never replayed).

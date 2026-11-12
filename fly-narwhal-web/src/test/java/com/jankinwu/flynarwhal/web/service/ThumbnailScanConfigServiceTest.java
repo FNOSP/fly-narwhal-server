@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.core.dto.response.CronPreviewResponse;
 import com.jankinwu.flynarwhal.core.dto.response.ThumbnailScanConfigResponse;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanConfig;
+import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRun;
 import com.jankinwu.flynarwhal.web.mapper.ThumbnailScanConfigMapper;
+import com.jankinwu.flynarwhal.web.mapper.ThumbnailScanRunMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -30,6 +32,7 @@ import static org.mockito.Mockito.when;
 class ThumbnailScanConfigServiceTest {
 
     private ThumbnailScanConfigMapper mapper;
+    private ThumbnailScanRunMapper runMapper;
     private ThumbnailScanWorker worker;
     private ApplicationEventPublisher publisher;
     private ThumbnailScanConfigService service;
@@ -37,10 +40,11 @@ class ThumbnailScanConfigServiceTest {
     @BeforeEach
     void setUp() {
         mapper = mock(ThumbnailScanConfigMapper.class);
+        runMapper = mock(ThumbnailScanRunMapper.class);
         worker = mock(ThumbnailScanWorker.class);
         publisher = mock(ApplicationEventPublisher.class);
         when(worker.progress()).thenReturn(ThumbnailScanWorker.Progress.idle());
-        service = new ThumbnailScanConfigService(mapper, new ObjectMapper(), worker, publisher);
+        service = new ThumbnailScanConfigService(mapper, runMapper, new ObjectMapper(), worker, publisher);
     }
 
     private ThumbnailScanConfig existingRow() {
@@ -100,9 +104,13 @@ class ThumbnailScanConfigServiceTest {
         row.setEnabled(true);
         row.setCronExpression("0 0 3 * * ?");
         row.setScanDirs("[\"/vol1/media\"]");
-        row.setLastStatus(ThumbnailScanConfig.STATUS_SUCCESS);
-        row.setLastScannedCount(10);
-        row.setLastQueuedCount(2);
+        // Last-run fields come from the newest run row now, not the config row.
+        ThumbnailScanRun lastRun = new ThumbnailScanRun();
+        lastRun.setId(9L);
+        lastRun.setStatus(ThumbnailScanRun.STATUS_SUCCESS);
+        lastRun.setScannedCount(10);
+        lastRun.setQueuedCount(2);
+        when(runMapper.selectOne(any())).thenReturn(lastRun);
         when(worker.progress()).thenReturn(
                 new ThumbnailScanWorker.Progress(ThumbnailScanWorker.ScanState.RUNNING, "/vol1/media", 5));
 
@@ -115,7 +123,7 @@ class ThumbnailScanConfigServiceTest {
         assertEquals(ThumbnailScanConfigResponse.STATE_RUNNING, response.getScanState());
         assertEquals("/vol1/media", response.getCurrentDir());
         assertEquals(5, response.getScannedFiles());
-        assertEquals(ThumbnailScanConfig.STATUS_SUCCESS, response.getLastStatus());
+        assertEquals(ThumbnailScanRun.STATUS_SUCCESS, response.getLastStatus());
         assertEquals(10, response.getLastScannedCount());
     }
 
@@ -152,12 +160,17 @@ class ThumbnailScanConfigServiceTest {
 
     @Test
     void responseCarriesPersistedInaccessibleDirs() {
-        ThumbnailScanConfig row = existingRow();
-        row.setLastInaccessibleDirs("[\"/vol1/locked\"]");
-        assertEquals(List.of("/vol1/locked"), service.toResponse(row).getLastInaccessibleDirs());
+        ThumbnailScanRun run = new ThumbnailScanRun();
+        run.setId(7L);
+        run.setStatus(ThumbnailScanRun.STATUS_SUCCESS);
+        run.setInaccessibleDirs("[\"/vol1/locked\"]");
+        when(runMapper.selectOne(any())).thenReturn(run);
+        ThumbnailScanConfigResponse response = service.toResponse(existingRow());
+        assertEquals(List.of("/vol1/locked"), response.getLastInaccessibleDirs());
+        assertEquals(7L, response.getLastRunId());
 
-        row.setLastInaccessibleDirs("{not json");
-        assertEquals(List.of(), service.toResponse(row).getLastInaccessibleDirs());
+        run.setInaccessibleDirs("{not json");
+        assertEquals(List.of(), service.toResponse(existingRow()).getLastInaccessibleDirs());
     }
 
     @Test
@@ -165,5 +178,48 @@ class ThumbnailScanConfigServiceTest {
         ThumbnailScanConfig row = existingRow();
         row.setScanDirs("{not json");
         assertEquals(List.of(), service.readDirs(row));
+    }
+
+    @Test
+    void queuedRunIsOpenedBeforeTheWorkerSeesIt() {
+        service.createQueuedRun(ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL);
+
+        ArgumentCaptor<ThumbnailScanRun> inserted = ArgumentCaptor.forClass(ThumbnailScanRun.class);
+        verify(runMapper).insert(inserted.capture());
+        assertEquals(ThumbnailScanRun.STATUS_QUEUED, inserted.getValue().getStatus());
+        assertEquals("MANUAL", inserted.getValue().getSource());
+        assertEquals(1, inserted.getValue().getProgressMarker());
+    }
+
+    @Test
+    void historyIsTrimmedToTheCapBeforeANewRun() {
+        when(runMapper.selectCount(any())).thenReturn(100L);
+        List<ThumbnailScanRun> keep = java.util.stream.LongStream.rangeClosed(2, 100)
+                .mapToObj(id -> {
+                    ThumbnailScanRun run = new ThumbnailScanRun();
+                    run.setId(id);
+                    return run;
+                })
+                .toList();
+        when(runMapper.selectList(any())).thenReturn(keep);
+
+        service.createQueuedRun(ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL);
+
+        // The oldest row (id 1) is dropped; the newest 99 stay plus the new row.
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper<ThumbnailScanRun>> deleteQuery =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(runMapper).delete(deleteQuery.capture());
+        verify(runMapper).insert(any(ThumbnailScanRun.class));
+        assertTrue(deleteQuery.getValue().getSqlSegment().contains("NOT IN"));
+    }
+
+    @Test
+    void historyUnderTheCapIsNotTrimmed() {
+        when(runMapper.selectCount(any())).thenReturn(99L);
+
+        service.createQueuedRun(ThumbnailScanWorker.ScanRequest.SOURCE_SCHEDULED);
+
+        verify(runMapper, org.mockito.Mockito.never()).delete(any());
+        verify(runMapper).insert(any(ThumbnailScanRun.class));
     }
 }

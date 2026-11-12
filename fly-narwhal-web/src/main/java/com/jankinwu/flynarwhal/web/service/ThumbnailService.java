@@ -64,6 +64,42 @@ public class ThumbnailService {
 
     private final BlockingDeque<ThumbnailJob> jobQueue = new LinkedBlockingDeque<>();
 
+    /**
+     * Notified after every job finishes (success or failure) with the job's
+     * guid. The scan worker subscribes so it can count the sprites this run
+     * actually produced, instead of re-deriving it from task rows that other
+     * requests may have created too.
+     */
+    private volatile JobCompletionListener jobCompletionListener;
+
+    /**
+     * Completion report of one sprite job.
+     *
+     * @param queued whether a real trigger queued it (a pure state probe is false)
+     * @param runId  the scan run that queued it, or null for client requests
+     */
+    @FunctionalInterface
+    public interface JobCompletionListener {
+        void onJobFinished(String guid, boolean succeeded, boolean queued, Long runId);
+    }
+
+    public void setJobCompletionListener(JobCompletionListener listener) {
+        this.jobCompletionListener = listener;
+    }
+
+    /** Reports a finished job; listener failures must never break the queue. */
+    private void notifyJobCompletion(String guid, boolean succeeded, ThumbnailJob job) {
+        JobCompletionListener listener = jobCompletionListener;
+        if (listener == null) {
+            return;
+        }
+        try {
+            listener.onJobFinished(guid, succeeded, job.queued(), job.runId());
+        } catch (Exception e) {
+            log.warn("Thumbnail job completion listener failed for {}: {}", guid, e.getMessage());
+        }
+    }
+
     @Autowired
     public ThumbnailService(ThumbnailTaskMapper thumbnailTaskMapper,
                             ThumbnailFileStore fileStore,
@@ -142,7 +178,11 @@ public class ThumbnailService {
      * and the check-then-enqueue must be atomic per guid.
      */
     public synchronized ThumbnailStatusResponse trigger(String guid, String filePath) {
-        return trigger(guid, filePath, false);
+        return trigger(guid, filePath, false, true, null);
+    }
+
+    public synchronized ThumbnailStatusResponse trigger(String guid, String filePath, Long runId) {
+        return trigger(guid, filePath, false, true, runId);
     }
 
     /**
@@ -155,6 +195,22 @@ public class ThumbnailService {
      * check-then-enqueue must be atomic per guid.
      */
     public synchronized ThumbnailStatusResponse trigger(String guid, String filePath, boolean force) {
+        return trigger(guid, filePath, force, true);
+    }
+
+    /**
+     * As {@link #trigger(String, String, boolean)}, with {@code countForRun}
+     * false for requests made only to learn a file's state: such a job is never
+     * attributed to the scan run that is waiting for its own sprites.
+     */
+    public synchronized ThumbnailStatusResponse trigger(String guid, String filePath, boolean force,
+                                                        boolean countForRun) {
+        return trigger(guid, filePath, force, countForRun, null);
+    }
+
+    /** {@code runId} attributes the job to a scan run's generation counter (null for other callers). */
+    public synchronized ThumbnailStatusResponse trigger(String guid, String filePath, boolean force,
+                                                        boolean countForRun, Long runId) {
         if (guid == null || guid.isBlank()) {
             throw new IllegalArgumentException("guid is required");
         }
@@ -165,7 +221,7 @@ public class ThumbnailService {
 
         ThumbnailTask existing = thumbnailTaskMapper.selectById(guid);
         if (existing == null) {
-            Reconciliation reconciliation = reconcileByPath(guid, normalizedPath, force);
+            Reconciliation reconciliation = reconcileByPath(guid, normalizedPath, force, countForRun, runId);
             if (reconciliation.immediate() != null) {
                 return reconciliation.immediate();
             }
@@ -190,7 +246,7 @@ public class ThumbnailService {
         }
 
         ThumbnailTask row = upsertPending(existing, guid, normalizedPath);
-        jobQueue.addLast(new ThumbnailJob(guid, normalizedPath));
+        jobQueue.addLast(new ThumbnailJob(guid, normalizedPath, countForRun, runId));
         log.info("Thumbnail generation queued for {} ({})", guid, normalizedPath);
         return toResponse(row, false);
     }
@@ -210,18 +266,19 @@ public class ThumbnailService {
      *     re-labelled to the real guid; runJob completes the adoption.</li>
      * </ul>
      */
-    private Reconciliation reconcileByPath(String guid, String normalizedPath, boolean force) {
+    private Reconciliation reconcileByPath(String guid, String normalizedPath, boolean force, boolean countForRun,
+                                           Long runId) {
         ThumbnailTask byPath = findByPath(normalizedPath);
         if (byPath == null) {
             return Reconciliation.NONE;
         }
         if (isScanGuid(guid) && !isScanGuid(byPath.getGuid())) {
             // The file already has a task under its real client guid; work on that one.
-            return new Reconciliation(null, trigger(byPath.getGuid(), normalizedPath, force));
+            return new Reconciliation(null, trigger(byPath.getGuid(), normalizedPath, force, countForRun, runId));
         }
         if (!isScanGuid(guid) && isScanGuid(byPath.getGuid())) {
             if (byPath.getStatus() == ThumbnailStatus.COMPLETED || byPath.getStatus() == ThumbnailStatus.FAILED) {
-                adoptNow(byPath, guid);
+                adoptNow(byPath, guid, countForRun, runId);
                 return new Reconciliation(thumbnailTaskMapper.selectById(guid), null);
             }
             claimForAdoption(byPath, guid);
@@ -338,11 +395,13 @@ public class ThumbnailService {
             log.info("Thumbnail generation finished for {} in {}ms: {} sheet(s), {}x{} thumbs",
                     guid, System.currentTimeMillis() - startedAt,
                     result.sheetCount(), result.thumbWidth(), result.thumbHeight());
+            notifyJobCompletion(guid, true, job);
         } catch (Exception e) {
             log.error("Thumbnail generation failed for {}", guid, e);
             fileStore.deleteRecursively(tmpDir);
             markFailed(thumbnailTaskMapper.selectById(guid), guid, job.filePath(), describe(e));
             finishAdoption(guid);
+            notifyJobCompletion(guid, false, job);
         }
     }
 
@@ -365,6 +424,12 @@ public class ThumbnailService {
      * when the scan row is already gone or the real guid already has a row.
      */
     private synchronized ThumbnailStatusResponse adoptNow(ThumbnailTask scanRow, String realGuid) {
+        return adoptNow(scanRow, realGuid, true, null);
+    }
+
+    /** Adoption keeps the caller's attribution: a probe's sprite is not this run's work. */
+    private synchronized ThumbnailStatusResponse adoptNow(ThumbnailTask scanRow, String realGuid,
+                                                          boolean countForRun, Long runId) {
         ThumbnailTask current = thumbnailTaskMapper.selectById(scanRow.getGuid());
         if (current == null) {
             ThumbnailTask already = thumbnailTaskMapper.selectById(realGuid);
@@ -410,7 +475,7 @@ public class ThumbnailService {
                         .set("update_time", now);
                 thumbnailTaskMapper.update(null, reset);
                 row.setStatus(ThumbnailStatus.PENDING);
-                jobQueue.addLast(new ThumbnailJob(realGuid, row.getFilePath()));
+                jobQueue.addLast(new ThumbnailJob(realGuid, row.getFilePath(), countForRun, runId));
             }
         }
         log.info("Adopted scan thumbnail task {} onto guid {}", current.getGuid(), realGuid);
@@ -654,6 +719,12 @@ public class ThumbnailService {
                 .build();
     }
 
-    private record ThumbnailJob(String guid, String filePath) {
+    /** {@code queued} is false for tasks that were already pending and only re-costed. */
+    /**
+     * A queued sprite job. {@code runId} is the scan run that queued it (null
+     * for client requests and probes), so completion is attributed to exactly
+     * that run's counter.
+     */
+    public record ThumbnailJob(String guid, String filePath, boolean queued, Long runId) {
     }
 }

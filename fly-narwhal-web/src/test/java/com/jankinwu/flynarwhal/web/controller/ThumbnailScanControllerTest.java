@@ -6,6 +6,7 @@ import com.jankinwu.flynarwhal.core.dto.response.CronPreviewResponse;
 import com.jankinwu.flynarwhal.core.dto.response.Result;
 import com.jankinwu.flynarwhal.core.dto.response.ThumbnailScanConfigResponse;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanConfig;
+import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRun;
 import com.jankinwu.flynarwhal.web.service.ThumbnailScanConfigService;
 import com.jankinwu.flynarwhal.web.service.ThumbnailScanWorker;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +36,14 @@ class ThumbnailScanControllerTest {
         configService = mock(ThumbnailScanConfigService.class);
         worker = mock(ThumbnailScanWorker.class);
         controller = new ThumbnailScanController(configService, worker);
+    }
+
+    private ThumbnailScanRun queuedRun() {
+        ThumbnailScanRun run = new ThumbnailScanRun();
+        run.setId(42L);
+        run.setSource(ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL);
+        run.setStatus(ThumbnailScanRun.STATUS_QUEUED);
+        return run;
     }
 
     private ThumbnailScanConfigResponse response() {
@@ -104,6 +113,7 @@ class ThumbnailScanControllerTest {
         ThumbnailScanConfig row = new ThumbnailScanConfig();
         when(configService.getOrCreate()).thenReturn(row);
         when(configService.readDirs(row)).thenReturn(List.of("/vol1/media"));
+        when(configService.createQueuedRun(any())).thenReturn(queuedRun());
         when(worker.enqueue(any())).thenReturn(ThumbnailScanWorker.EnqueueResult.ENQUEUED);
         when(configService.toResponse(row)).thenReturn(response());
 
@@ -130,6 +140,7 @@ class ThumbnailScanControllerTest {
         ThumbnailScanConfig row = new ThumbnailScanConfig();
         when(configService.getOrCreate()).thenReturn(row);
         when(configService.readDirs(row)).thenReturn(List.of("/vol1/media", "/vol1/movies"));
+        when(configService.createQueuedRun(any())).thenReturn(queuedRun());
         when(worker.enqueue(any())).thenReturn(ThumbnailScanWorker.EnqueueResult.ENQUEUED);
         when(configService.toResponse(row)).thenReturn(response());
         ThumbnailScanConfigRequest request = new ThumbnailScanConfigRequest();

@@ -42,10 +42,21 @@ public class ThumbnailScanConfigResponse {
 
     private Long lastRunTimeMs;
     private Long lastFinishTimeMs;
-    /** NEVER / RUNNING / SUCCESS / FAILED. */
+    /** Id and source of the run these last-* fields describe. */
+    private Long lastRunId;
+    private String lastRunSource;
+    /** NEVER / QUEUED / RUNNING / SUCCESS / FAILED. */
     private String lastStatus;
     private Integer lastScannedCount;
     private Integer lastQueuedCount;
+
+    /** Coarse stage of that run: QUEUED / SCANNING / GENERATING / SUCCESS / FAILED. */
+    private String lastPhase;
+    /** Videos the run matched; queued = those actually generating; generated/failed = this run's outcome. */
+    private Integer lastSourcedCount;
+    private Integer lastGeneratedCount;
+    private Integer lastFailedCount;
+
     private String lastError;
 
     /**
