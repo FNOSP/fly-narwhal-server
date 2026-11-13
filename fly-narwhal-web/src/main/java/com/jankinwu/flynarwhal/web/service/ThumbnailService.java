@@ -17,8 +17,10 @@ import org.springframework.stereotype.Service;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
@@ -232,16 +234,16 @@ public class ThumbnailService {
             return toResponse(existing, false);
         }
 
-        Long mtime = readFileMtime(normalizedPath);
+        MediaStat stat = readMediaStat(normalizedPath);
         if (!force && existing != null && existing.getStatus() == ThumbnailStatus.COMPLETED
-                && isUnchanged(existing, mtime)) {
+                && isUnchanged(existing, stat) && hasCompleteSheets(existing)) {
             return toResponse(existing, false);
         }
 
         if (!FFmpegWrapper.isFfmpegAvailable()) {
             return markFailed(existing, guid, normalizedPath, "ffmpeg is not available on the server");
         }
-        if (mtime == null) {
+        if (stat == null) {
             return markFailed(existing, guid, normalizedPath, "media file not found or unreadable: " + normalizedPath);
         }
 
@@ -364,8 +366,8 @@ public class ThumbnailService {
         int generation = nextGeneration(guid);
         Path tmpDir = fileStore.tmpDir(guid, generation);
         try {
-            Long mtime = readFileMtime(job.filePath());
-            if (mtime == null) {
+            MediaStat stat = readMediaStat(job.filePath());
+            if (stat == null) {
                 throw new IllegalStateException("media file not found or unreadable: " + job.filePath());
             }
             double durationSec = ffmpegWrapper.getDuration(job.filePath());
@@ -389,7 +391,7 @@ public class ThumbnailService {
                     tileCols, tileRows, sheetCount, jpegQScale, nice, timeout);
             fileStore.commitGeneration(guid, generation);
 
-            markCompleted(guid, mtime, (long) (durationSec * 1000), result, generation);
+            markCompleted(guid, stat.mtime(), stat.size(), (long) (durationSec * 1000), result, generation);
             fileStore.purgeOtherGenerations(guid, generation);
             finishAdoption(guid);
             log.info("Thumbnail generation finished for {} in {}ms: {} sheet(s), {}x{} thumbs",
@@ -447,6 +449,7 @@ public class ThumbnailService {
         row.setGuid(realGuid);
         row.setFilePath(current.getFilePath());
         row.setFileMtime(current.getFileMtime());
+        row.setFileSize(current.getFileSize());
         row.setDurationMs(current.getDurationMs());
         row.setStatus(current.getStatus());
         row.setIntervalMs(current.getIntervalMs());
@@ -532,13 +535,25 @@ public class ThumbnailService {
         return candidate.getUpdateTime().isAfter(existing.getUpdateTime());
     }
 
-    /** COMPLETED but the file's current mtime differs from the recorded one. */
+    /**
+     * The sheets the row promises are all still on disk and non-empty. Rows
+     * without a persisted layout cannot be verified and count as complete.
+     */
+    private boolean hasCompleteSheets(ThumbnailTask row) {
+        if (row.getGeneration() == null || row.getSheetCount() == null
+                || row.getGeneration() <= 0 || row.getSheetCount() <= 0) {
+            return true;
+        }
+        return fileStore.isGenerationComplete(row.getGuid(), row.getGeneration(), row.getSheetCount());
+    }
+
+    /** COMPLETED but the file's current mtime or size differs from the recorded ones. */
     private boolean staleOf(ThumbnailTask row) {
-        if (row.getStatus() != ThumbnailStatus.COMPLETED || row.getFileMtime() == null) {
+        if (row.getStatus() != ThumbnailStatus.COMPLETED) {
             return false;
         }
-        Long current = readFileMtime(row.getFilePath());
-        return current != null && !current.equals(row.getFileMtime());
+        MediaStat current = readMediaStat(row.getFilePath());
+        return !isUnchanged(row, current);
     }
 
     /** True for tasks the scheduled scan created under a synthetic guid. */
@@ -591,11 +606,13 @@ public class ThumbnailService {
         thumbnailTaskMapper.update(null, update);
     }
 
-    private void markCompleted(String guid, Long mtime, Long durationMs, SpriteSheetResult result, int generation) {
+    private void markCompleted(String guid, Long mtime, Long size, Long durationMs, SpriteSheetResult result,
+                               int generation) {
         UpdateWrapper<ThumbnailTask> update = new UpdateWrapper<>();
         update.eq("guid", guid)
                 .set("status", ThumbnailStatus.COMPLETED.name())
                 .set("file_mtime", mtime)
+                .set("file_size", size)
                 .set("duration_ms", durationMs)
                 .set("interval_ms", intervalSeconds * 1000)
                 .set("thumb_width", result.thumbWidth())
@@ -665,26 +682,34 @@ public class ThumbnailService {
     }
 
     /**
-     * A stored mtime that differs from the file's current one means the file was
-     * replaced (same rule as the analysis pipeline). A null current mtime is
-     * trusted so a transient mount failure never forces pointless regeneration.
+     * A stored mtime or size that differs from the file's current one means the
+     * file was replaced (same rule as the analysis pipeline). A null current stat
+     * is trusted so a transient mount failure never forces pointless regeneration.
      */
-    private boolean isUnchanged(ThumbnailTask row, Long currentMtime) {
-        return currentMtime == null || row.getFileMtime() == null || row.getFileMtime().equals(currentMtime);
+    private boolean isUnchanged(ThumbnailTask row, MediaStat current) {
+        if (current == null) {
+            return true;
+        }
+        return Objects.equals(row.getFileMtime(), current.mtime())
+                && Objects.equals(row.getFileSize(), current.size());
     }
 
-    /** Last-modified time (epoch millis) of a media file, or null when it cannot be stat'ed. */
-    private Long readFileMtime(String path) {
+    /** Modification time and size of a media file, or null when it cannot be stat'ed. */
+    private MediaStat readMediaStat(String path) {
         try {
             Path resolved = resolveMediaPath(path);
             if (resolved == null || !Files.isRegularFile(resolved)) {
                 return null;
             }
-            return Files.getLastModifiedTime(resolved).toMillis();
+            BasicFileAttributes attrs = Files.readAttributes(resolved, BasicFileAttributes.class);
+            return new MediaStat(attrs.lastModifiedTime().toMillis(), attrs.size());
         } catch (Exception e) {
-            log.debug("Could not read modification time for {}: {}", path, e.getMessage());
+            log.debug("Could not stat {}: {}", path, e.getMessage());
             return null;
         }
+    }
+
+    private record MediaStat(long mtime, long size) {
     }
 
     /** Media paths arrive as plain paths or file: URIs (same conversion the analysis pipeline uses). */

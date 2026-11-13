@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -72,6 +73,8 @@ class ThumbnailServiceAdoptionTest {
             return 1;
         });
         when(mapper.update(any(), any())).thenReturn(1);
+        // These rows describe generations that exist in full; completeness is not under test here.
+        when(store.isGenerationComplete(any(), anyInt(), anyInt())).thenReturn(true);
         when(mapper.selectList(any())).thenAnswer(inv -> {
             QueryWrapper<ThumbnailTask> wrapper = inv.getArgument(0);
             String sql = wrapper.getSqlSegment();
@@ -100,6 +103,11 @@ class ThumbnailServiceAdoptionTest {
         task.setFilePath(path);
         task.setStatus(status);
         task.setFileMtime(mtime);
+        try {
+            task.setFileSize(Files.size(Path.of(path)));
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
         task.setGeneration(2);
         task.setSheetCount(3);
         task.setIntervalMs(10_000);

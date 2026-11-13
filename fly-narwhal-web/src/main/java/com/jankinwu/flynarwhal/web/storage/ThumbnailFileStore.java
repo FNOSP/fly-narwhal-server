@@ -99,6 +99,33 @@ public class ThumbnailFileStore {
         }
     }
 
+    /**
+     * Whether a generation's sheets are all on disk and non-empty. Metadata
+     * only (directory listing + file sizes), so a scan can call it per file
+     * without reading a byte: deleted or truncated sheets make the generation
+     * incomplete even though its task row still says COMPLETED.
+     */
+    public boolean isGenerationComplete(String guid, int generation, int sheetCount) {
+        if (generation <= 0 || sheetCount <= 0) {
+            return false;
+        }
+        Path dir = generationDir(guid, generation);
+        if (!Files.isDirectory(dir)) {
+            return false;
+        }
+        for (int index = 0; index < sheetCount; index++) {
+            Path sheet = dir.resolve((index + 1) + ".jpg");
+            try {
+                if (!Files.isRegularFile(sheet) || Files.size(sheet) == 0) {
+                    return false;
+                }
+            } catch (IOException e) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** Drop every generation (and temp leftover) of a guid except the current one. */
     public void purgeOtherGenerations(String guid, int keepGeneration) {
         Path dir = guidDir(guid);

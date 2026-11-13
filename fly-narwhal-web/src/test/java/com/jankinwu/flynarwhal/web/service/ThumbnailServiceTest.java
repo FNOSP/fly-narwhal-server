@@ -54,11 +54,24 @@ class ThumbnailServiceTest {
     }
 
     private ThumbnailTask row(ThumbnailStatus status, Long mtime) {
+        return row(status, mtime, sizeOfMediaFile());
+    }
+
+    private Long sizeOfMediaFile() {
+        try {
+            return Files.size(mediaFile);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private ThumbnailTask row(ThumbnailStatus status, Long mtime, Long size) {
         ThumbnailTask task = new ThumbnailTask();
         task.setGuid("guid-1");
         task.setFilePath(mediaFile.toString());
         task.setStatus(status);
         task.setFileMtime(mtime);
+        task.setFileSize(size);
         task.setGeneration(1);
         return task;
     }
@@ -112,6 +125,23 @@ class ThumbnailServiceTest {
         assumeTrue(FFmpegWrapper.isFfmpegAvailable(), "ffmpeg not available");
         long mtime = Files.getLastModifiedTime(mediaFile).toMillis();
         when(mapper.selectById("guid-1")).thenReturn(row(ThumbnailStatus.COMPLETED, mtime - 60_000));
+
+        ThumbnailStatusResponse response = service.trigger("guid-1", mediaFile.toString());
+
+        assertEquals(ThumbnailStatus.PENDING.name(), response.getStatus());
+        verify(mapper).update(any(), any());
+    }
+
+    /** A COMPLETED row whose sheets were deleted must be regenerated, not answered as ready. */
+    @Test
+    void triggerRequeuesWhenTheSheetsAreIncomplete() throws Exception {
+        assumeTrue(FFmpegWrapper.isFfmpegAvailable(), "ffmpeg not available");
+        long mtime = Files.getLastModifiedTime(mediaFile).toMillis();
+        ThumbnailTask task = row(ThumbnailStatus.COMPLETED, mtime);
+        task.setGeneration(1);
+        task.setSheetCount(4);
+        when(mapper.selectById("guid-1")).thenReturn(task);
+        when(store.isGenerationComplete("guid-1", 1, 4)).thenReturn(false);
 
         ThumbnailStatusResponse response = service.trigger("guid-1", mediaFile.toString());
 
@@ -178,6 +208,27 @@ class ThumbnailServiceTest {
 
         assertEquals(ThumbnailStatus.COMPLETED.name(), response.getStatus());
         assertTrue(response.isStale(), "a replaced file must be reported stale");
+    }
+
+    /** Same mtime but a different size still means a different file. */
+    @Test
+    void statusFlagsACompletedTaskWhoseSizeChanged() throws Exception {
+        long mtime = Files.getLastModifiedTime(mediaFile).toMillis();
+        when(mapper.selectById("guid-1"))
+                .thenReturn(row(ThumbnailStatus.COMPLETED, mtime, Files.size(mediaFile) + 1));
+
+        ThumbnailStatusResponse response = service.getStatus("guid-1");
+
+        assertTrue(response.isStale(), "a resized file must be reported stale");
+    }
+
+    /** A row without a recorded size can never match, so it is stale. */
+    @Test
+    void statusFlagsARowWithoutSize() throws Exception {
+        long mtime = Files.getLastModifiedTime(mediaFile).toMillis();
+        when(mapper.selectById("guid-1")).thenReturn(row(ThumbnailStatus.COMPLETED, mtime, null));
+
+        assertTrue(service.getStatus("guid-1").isStale());
     }
 
     @Test

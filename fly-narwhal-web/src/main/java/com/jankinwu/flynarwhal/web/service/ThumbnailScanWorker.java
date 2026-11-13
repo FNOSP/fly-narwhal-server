@@ -9,6 +9,7 @@ import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRun;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailTask;
 import com.jankinwu.flynarwhal.web.mapper.ThumbnailScanRunMapper;
 import com.jankinwu.flynarwhal.web.mapper.ThumbnailTaskMapper;
+import com.jankinwu.flynarwhal.web.storage.ThumbnailFileStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -31,6 +32,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
@@ -86,6 +88,8 @@ public class ThumbnailScanWorker {
     private final ThumbnailTaskMapper taskMapper;
     /** Run history: one row per scan, written only by this worker. */
     private final ThumbnailScanRunMapper scanRunMapper;
+    /** Sprite store, checked for sheets deleted under a still-COMPLETED row. */
+    private final ThumbnailFileStore fileStore;
     private final ObjectMapper objectMapper;
 
     private final BlockingDeque<ScanRequest> queue = new LinkedBlockingDeque<>();
@@ -495,11 +499,12 @@ public class ThumbnailScanWorker {
     }
 
     /**
-     * Whether a file needs (re)generation: no task row, a FAILED row, or a
-     * COMPLETED row whose stored mtime differs from the file's current one.
-     * PENDING/IN_PROGRESS rows are already being handled; an unreadable mtime
-     * is trusted (same rule as ThumbnailService) so a transient mount failure
-     * never triggers pointless regeneration.
+     * Whether a file needs (re)generation: no task row, a FAILED row, a
+     * COMPLETED row whose stored mtime or size differs from the file's current
+     * ones, or a COMPLETED row whose sprite sheets were deleted or truncated on
+     * disk. PENDING/IN_PROGRESS rows are already being handled; an unreadable
+     * stat is trusted (same rule as ThumbnailService) so a transient mount
+     * failure never triggers pointless regeneration.
      */
     private boolean needsGeneration(ThumbnailTask task, String path) {
         if (task == null) {
@@ -509,14 +514,29 @@ public class ThumbnailScanWorker {
             case PENDING, IN_PROGRESS -> false;
             case FAILED -> true;
             case COMPLETED -> {
-                Long stored = task.getFileMtime();
-                if (stored == null) {
+                FileStat current = readStat(path);
+                if (current == null) {
                     yield false;
                 }
-                Long current = readMtime(path);
-                yield current != null && !current.equals(stored);
+                yield !Objects.equals(task.getFileMtime(), current.mtime())
+                        || !Objects.equals(task.getFileSize(), current.size())
+                        || !hasCompleteSheets(task);
             }
         };
+    }
+
+    /**
+     * The sheets the row promises are still all present and non-empty. Rows
+     * without a persisted layout (generation or sheet count missing) cannot be
+     * verified this way and are left to the mtime/size rule alone.
+     */
+    private boolean hasCompleteSheets(ThumbnailTask task) {
+        Integer generation = task.getGeneration();
+        Integer sheetCount = task.getSheetCount();
+        if (generation == null || sheetCount == null || generation <= 0 || sheetCount <= 0) {
+            return true;
+        }
+        return fileStore.isGenerationComplete(task.getGuid(), generation, sheetCount);
     }
 
     private Map<String, ThumbnailTask> loadTasksByPath(List<String> paths) {
@@ -549,13 +569,20 @@ public class ThumbnailScanWorker {
         return candidate.getUpdateTime().isAfter(existing.getUpdateTime());
     }
 
-    private Long readMtime(String path) {
+    private FileStat readStat(String path) {
         try {
             Path resolved = Path.of(path);
-            return Files.isRegularFile(resolved) ? Files.getLastModifiedTime(resolved).toMillis() : null;
+            if (!Files.isRegularFile(resolved)) {
+                return null;
+            }
+            BasicFileAttributes attrs = Files.readAttributes(resolved, BasicFileAttributes.class);
+            return new FileStat(attrs.lastModifiedTime().toMillis(), attrs.size());
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private record FileStat(long mtime, long size) {
     }
 
     /** Missing directories and fnOS file-permission denials; anything else is a transient walk error. */

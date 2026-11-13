@@ -41,6 +41,7 @@ class ThumbnailScanWorkerTest {
     private ThumbnailService thumbnailService;
     private ThumbnailTaskMapper taskMapper;
     private ThumbnailScanRunMapper scanRunMapper;
+    private com.jankinwu.flynarwhal.web.storage.ThumbnailFileStore fileStore;
     private ThumbnailScanWorker worker;
 
     /** The last captured update that carries a terminal status (the closing write). */
@@ -68,7 +69,10 @@ class ThumbnailScanWorkerTest {
         thumbnailService = mock(ThumbnailService.class);
         taskMapper = mock(ThumbnailTaskMapper.class);
         scanRunMapper = mock(ThumbnailScanRunMapper.class);
-        worker = new ThumbnailScanWorker(thumbnailService, taskMapper, scanRunMapper,
+        fileStore = new com.jankinwu.flynarwhal.web.storage.ThumbnailFileStore(
+                tempDir.resolve("thumbnails").toString());
+        fileStore.init();
+        worker = new ThumbnailScanWorker(thumbnailService, taskMapper, scanRunMapper, fileStore,
                 new com.fasterxml.jackson.databind.ObjectMapper());
 
         // The worker opens a run row per scan; give it a dangling update handle.
@@ -91,11 +95,29 @@ class ThumbnailScanWorkerTest {
     }
 
     private ThumbnailTask task(String path, ThumbnailStatus status, Long mtime) {
+        try {
+            return task(path, status, mtime, Files.size(Path.of(path)));
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** Writes generation {@code g<generation>} of a task's sheets: {@code sheets} files of 8 bytes each. */
+    private void writeSheets(ThumbnailTask task, int generation, int sheets) throws Exception {
+        Path dir = fileStore.generationDir(task.getGuid(), generation);
+        Files.createDirectories(dir);
+        for (int i = 1; i <= sheets; i++) {
+            Files.writeString(dir.resolve(i + ".jpg"), "jpegdata");
+        }
+    }
+
+    private ThumbnailTask task(String path, ThumbnailStatus status, Long mtime, Long size) {
         ThumbnailTask row = new ThumbnailTask();
         row.setGuid(ThumbnailService.syntheticGuid(path));
         row.setFilePath(path);
         row.setStatus(status);
         row.setFileMtime(mtime);
+        row.setFileSize(size);
         return row;
     }
 
@@ -119,6 +141,96 @@ class ThumbnailScanWorkerTest {
         assertEquals(ThumbnailScanRun.STATUS_SUCCESS, last.getStatus());
         assertEquals(2, last.getSourcedCount(), "both videos matched");
         assertEquals(2, last.getQueuedCount(), "both needed sprites");
+    }
+
+    /** A same-size edit whose mtime was preserved must still be caught by the recorded size. */
+    @Test
+    void retriesWhenOnlyTheSizeDiffers() throws Exception {
+        Path resized = video("resized.mp4");
+
+        long mtime = Files.getLastModifiedTime(resized).toMillis();
+        when(taskMapper.selectList(any())).thenReturn(List.of(
+                task(resized.toString(), ThumbnailStatus.COMPLETED, mtime, Files.size(resized) + 1)));
+
+        worker.runScan(new ThumbnailScanWorker.ScanRequest(
+                ThumbnailScanWorker.ScanRequest.SOURCE_SCHEDULED, List.of(tempDir.toString())));
+
+        verify(thumbnailService).trigger(ThumbnailService.syntheticGuid(resized.toString()), resized.toString(), false, true, 1L);
+    }
+
+    /** A completed row with no recorded size can never match, so it is regenerated. */
+    @Test
+    void retriesWhenTheRowHasNoSize() throws Exception {
+        Path unsized = video("unsized.mp4");
+
+        long mtime = Files.getLastModifiedTime(unsized).toMillis();
+        when(taskMapper.selectList(any())).thenReturn(List.of(
+                task(unsized.toString(), ThumbnailStatus.COMPLETED, mtime, null)));
+
+        worker.runScan(new ThumbnailScanWorker.ScanRequest(
+                ThumbnailScanWorker.ScanRequest.SOURCE_SCHEDULED, List.of(tempDir.toString())));
+
+        verify(thumbnailService).trigger(ThumbnailService.syntheticGuid(unsized.toString()), unsized.toString(), false, true, 1L);
+    }
+
+    /**
+     * A COMPLETED row whose sheets are still on disk needs nothing; deleting
+     * one sheet (or a whole generation) must put the file back on the queue
+     * even though the media file itself never changed.
+     */
+    @Test
+    void retriesWhenTheSpriteSheetsAreIncomplete() throws Exception {
+        Path intact = video("intact.mp4");
+        Path missing = video("missing.mp4");
+        Path wiped = video("wiped.mp4");
+
+        ThumbnailTask intactTask = task(intact.toString(), ThumbnailStatus.COMPLETED,
+                Files.getLastModifiedTime(intact).toMillis());
+        ThumbnailTask missingTask = task(missing.toString(), ThumbnailStatus.COMPLETED,
+                Files.getLastModifiedTime(missing).toMillis());
+        ThumbnailTask wipedTask = task(wiped.toString(), ThumbnailStatus.COMPLETED,
+                Files.getLastModifiedTime(wiped).toMillis());
+        for (ThumbnailTask t : List.of(intactTask, missingTask, wipedTask)) {
+            t.setGeneration(2);
+            t.setSheetCount(3);
+        }
+        writeSheets(intactTask, 2, 3);
+        writeSheets(missingTask, 2, 3);
+        Files.delete(fileStore.generationDir(missingTask.getGuid(), 2).resolve("2.jpg"));
+        // wiped has no generation dir at all
+
+        when(taskMapper.selectList(any())).thenReturn(List.of(intactTask, missingTask, wipedTask));
+
+        worker.runScan(new ThumbnailScanWorker.ScanRequest(
+                ThumbnailScanWorker.ScanRequest.SOURCE_SCHEDULED, List.of(tempDir.toString())));
+
+        verify(thumbnailService, never()).trigger(eq(ThumbnailService.syntheticGuid(intact.toString())),
+                anyString(), eq(false), eq(true), any());
+        verify(thumbnailService).trigger(ThumbnailService.syntheticGuid(missing.toString()),
+                missing.toString(), false, true, 1L);
+        verify(thumbnailService).trigger(ThumbnailService.syntheticGuid(wiped.toString()),
+                wiped.toString(), false, true, 1L);
+    }
+
+    /** An empty sheet file counts as missing; a failed write must not pass as complete. */
+    @Test
+    void retriesWhenASheetIsEmpty() throws Exception {
+        Path empty = video("empty.mp4");
+
+        ThumbnailTask task = task(empty.toString(), ThumbnailStatus.COMPLETED,
+                Files.getLastModifiedTime(empty).toMillis());
+        task.setGeneration(1);
+        task.setSheetCount(2);
+        writeSheets(task, 1, 2);
+        Files.writeString(fileStore.generationDir(task.getGuid(), 1).resolve("2.jpg"), "");
+
+        when(taskMapper.selectList(any())).thenReturn(List.of(task));
+
+        worker.runScan(new ThumbnailScanWorker.ScanRequest(
+                ThumbnailScanWorker.ScanRequest.SOURCE_SCHEDULED, List.of(tempDir.toString())));
+
+        verify(thumbnailService).trigger(ThumbnailService.syntheticGuid(empty.toString()),
+                empty.toString(), false, true, 1L);
     }
 
     @Test

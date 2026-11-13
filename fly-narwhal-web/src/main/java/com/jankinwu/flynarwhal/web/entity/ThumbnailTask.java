@@ -25,6 +25,9 @@ public class ThumbnailTask {
     /** Media file last-modified time (epoch millis) recorded at generation; a mismatch means the file was replaced. */
     private Long fileMtime;
 
+    /** Media file size in bytes recorded at generation, paired with {@link #fileMtime} to detect a replaced file. */
+    private Long fileSize;
+
     private Long durationMs;
 
     private ThumbnailStatus status;
