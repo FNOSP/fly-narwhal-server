@@ -117,8 +117,8 @@ class ThumbnailScanWorkerTest {
         verify(scanRunMapper, org.mockito.Mockito.atLeastOnce()).update(finished.capture(), any());
         ThumbnailScanRun last = lastClosingUpdate(finished);
         assertEquals(ThumbnailScanRun.STATUS_SUCCESS, last.getStatus());
-        assertEquals(2, last.getScannedCount());
-        assertEquals(2, last.getQueuedCount());
+        assertEquals(2, last.getSourcedCount(), "both videos matched");
+        assertEquals(2, last.getQueuedCount(), "both needed sprites");
     }
 
     @Test
@@ -158,7 +158,7 @@ class ThumbnailScanWorkerTest {
         ThumbnailScanRun last = lastClosingUpdate(finished);
         assertEquals(ThumbnailScanRun.STATUS_SUCCESS, last.getStatus(), "partial failures still complete the run");
         assertTrue(last.getError().contains("missing"), "the broken directory is reported: " + last.getError());
-        assertEquals(1, last.getScannedCount());
+        assertEquals(1, last.getSourcedCount());
     }
 
     @Test

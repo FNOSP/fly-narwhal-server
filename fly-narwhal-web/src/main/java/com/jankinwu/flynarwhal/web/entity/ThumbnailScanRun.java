@@ -50,14 +50,9 @@ public class ThumbnailScanRun {
      */
     private String phase;
 
-    /** Directory walk: videos matched by this run. */
-    private Integer scannedCount;
-
-    /** Videos whose generation this run queued (existing sprites are never counted). */
-    private Integer queuedCount;
-
-    /** Everything the run matched, already-generated ones included. */
+    /** Videos that matched (before), and how many of them still lack sprites. */
     private Integer sourcedCount;
+    private Integer queuedCount;
 
     /** Queued videos whose sprites this run produced. */
     private Integer generatedCount;

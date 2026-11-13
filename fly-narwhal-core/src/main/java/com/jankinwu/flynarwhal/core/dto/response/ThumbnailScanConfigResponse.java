@@ -47,13 +47,14 @@ public class ThumbnailScanConfigResponse {
     private String lastRunSource;
     /** NEVER / QUEUED / RUNNING / SUCCESS / FAILED. */
     private String lastStatus;
-    private Integer lastScannedCount;
-    private Integer lastQueuedCount;
-
     /** Coarse stage of that run: QUEUED / SCANNING / GENERATING / SUCCESS / FAILED. */
     private String lastPhase;
-    /** Videos the run matched; queued = those actually generating; generated/failed = this run's outcome. */
+    /**
+     * Videos the run matched (regardless of sprites), how many of those still
+     * needed generation, and how many of those it produced / failed.
+     */
     private Integer lastSourcedCount;
+    private Integer lastQueuedCount;
     private Integer lastGeneratedCount;
     private Integer lastFailedCount;
 

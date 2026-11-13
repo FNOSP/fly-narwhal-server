@@ -108,7 +108,7 @@ class ThumbnailScanConfigServiceTest {
         ThumbnailScanRun lastRun = new ThumbnailScanRun();
         lastRun.setId(9L);
         lastRun.setStatus(ThumbnailScanRun.STATUS_SUCCESS);
-        lastRun.setScannedCount(10);
+        lastRun.setSourcedCount(10);
         lastRun.setQueuedCount(2);
         when(runMapper.selectOne(any())).thenReturn(lastRun);
         when(worker.progress()).thenReturn(
@@ -124,7 +124,7 @@ class ThumbnailScanConfigServiceTest {
         assertEquals("/vol1/media", response.getCurrentDir());
         assertEquals(5, response.getScannedFiles());
         assertEquals(ThumbnailScanRun.STATUS_SUCCESS, response.getLastStatus());
-        assertEquals(10, response.getLastScannedCount());
+        assertEquals(10, response.getLastSourcedCount());
     }
 
     @Test

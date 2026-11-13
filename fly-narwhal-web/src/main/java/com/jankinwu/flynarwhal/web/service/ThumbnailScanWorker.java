@@ -193,8 +193,8 @@ public class ThumbnailScanWorker {
         long startedAt = System.currentTimeMillis();
         currentDir = null;
         scannedFiles = 0;
-        int scanned = 0;
-        int queued = 0;
+        int matched = 0;
+        int needed = 0;
         List<String> errors = new ArrayList<>();
         List<String> inaccessible = new ArrayList<>();
         List<String> queuedGuids = new ArrayList<>();
@@ -205,8 +205,8 @@ public class ThumbnailScanWorker {
                 currentDir = dir;
                 try {
                     ScanOutcome outcome = scanDirectory(dir, queuedGuids, runId);
-                    scanned += outcome.scanned();
-                    queued += outcome.queued();
+                    matched += outcome.scanned();
+                    needed += outcome.needed();
                 } catch (Exception e) {
                     // Always logged: an unwalkable directory otherwise only shows up as a missing count.
                     log.error("Thumbnail scan of directory {} failed", dir, e);
@@ -220,20 +220,20 @@ public class ThumbnailScanWorker {
                 log.error("Thumbnail scan could not access {} configured director(ies): {} — add folder access permission for the FlyNarwhal server in fnOS",
                         inaccessible.size(), inaccessible);
             }
-            scannedFiles = scanned;
+            scannedFiles = matched;
             // The scan half is done; the run now waits for the sprites it queued.
-            markGenerating(runId, scanned, queued, queuedGuids);
-            awaitGeneration(runId, scanned, queued,
+            markGenerating(runId, matched, needed, queuedGuids);
+            awaitGeneration(runId, matched, needed,
                     errors.isEmpty() ? null : String.join("; ", errors), inaccessible);
-            log.info("Thumbnail scan finished in {}ms (source={}): {} video(s), {} queued, {} generated, {} failed, {} dir error(s)",
-                    System.currentTimeMillis() - startedAt, request.source(), scanned, queued,
+            log.info("Thumbnail scan finished in {}ms (source={}): {} matched, {} need sprites, {} generated, {} failed, {} dir error(s)",
+                    System.currentTimeMillis() - startedAt, request.source(), matched, needed,
                     generatedCount, failedCount, errors.size());
         } catch (Exception e) {
             log.error("Thumbnail scan failed (source={})", request.source(), e);
             synchronized (generationLock) {
                 generatingRunId = null;
                 generatingGuids = new HashSet<>();
-                markRunFinished(runId, ThumbnailScanRun.STATUS_FAILED, scanned, queued,
+                markRunFinished(runId, ThumbnailScanRun.STATUS_FAILED, matched, needed,
                         e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(),
                         inaccessible, generatedCount, failedCount);
             }
@@ -246,7 +246,7 @@ public class ThumbnailScanWorker {
      * counts, so the client sees progress while waiting; a job from an older
      * run (or any other request) is ignored by run id.
      */
-    private void markGenerating(Long runId, int scanned, int queued, List<String> queuedGuids) {
+    private void markGenerating(Long runId, int matched, int needed, List<String> queuedGuids) {
         synchronized (generationLock) {
             generatedCount = 0;
             failedCount = 0;
@@ -265,9 +265,8 @@ public class ThumbnailScanWorker {
             generatingGuids = pending;
             ThumbnailScanRun run = new ThumbnailScanRun();
             run.setPhase(ThumbnailScanRun.PHASE_GENERATING);
-            run.setScannedCount(scanned);
-            run.setQueuedCount(queued);
-            run.setSourcedCount(scanned);
+            run.setSourcedCount(matched);
+            run.setQueuedCount(needed);
             run.setGeneratedCount(generatedCount);
             run.setFailedCount(failedCount);
             scanRunMapper.update(run, new QueryWrapper<ThumbnailScanRun>()
@@ -277,7 +276,7 @@ public class ThumbnailScanWorker {
     }
 
     /** Waits for this run's outstanding jobs, then closes the row. */
-    private void awaitGeneration(Long runId, int scanned, int queued, String error,
+    private void awaitGeneration(Long runId, int matched, int needed, String error,
                                  List<String> inaccessible) {
         synchronized (generationLock) {
             long deadline = System.currentTimeMillis() + generationWaitTimeoutMs;
@@ -293,7 +292,7 @@ public class ThumbnailScanWorker {
             generatingRunId = null;
             // Counts were written by markGenerating and refined per job; the
             // closing write only settles status, phase and the report.
-            markRunFinished(runId, ThumbnailScanRun.STATUS_SUCCESS, scanned, queued, error,
+            markRunFinished(runId, ThumbnailScanRun.STATUS_SUCCESS, matched, needed, error,
                     inaccessible, generatedCount, failedCount);
         }
     }
@@ -360,9 +359,8 @@ public class ThumbnailScanWorker {
         run.setStartTime(LocalDateTime.now());
         run.setStatus(ThumbnailScanRun.STATUS_RUNNING);
         run.setPhase(ThumbnailScanRun.PHASE_SCANNING);
-        run.setScannedCount(0);
-        run.setQueuedCount(0);
         run.setSourcedCount(0);
+        run.setQueuedCount(0);
         run.setGeneratedCount(0);
         run.setFailedCount(0);
         run.setProgressMarker(1);
@@ -389,15 +387,14 @@ public class ThumbnailScanWorker {
      * the row is never half-updated from the client's point of view. Only rows
      * still marked as the in-flight run are updated, making it idempotent.
      */
-    private void markRunFinished(Long runId, String status, int scanned, int queued, String error,
+    private void markRunFinished(Long runId, String status, int matched, int needed, String error,
                                  List<String> inaccessibleDirs, int generated, int failed) {
         ThumbnailScanRun run = new ThumbnailScanRun();
         run.setFinishTime(LocalDateTime.now());
         run.setStatus(status);
         run.setPhase(status);
-        run.setScannedCount(scanned);
-        run.setQueuedCount(queued);
-        run.setSourcedCount(scanned);
+        run.setSourcedCount(matched);
+        run.setQueuedCount(needed);
         run.setGeneratedCount(generated);
         run.setFailedCount(failed);
         run.setError(truncate(error, 2048));
@@ -421,7 +418,8 @@ public class ThumbnailScanWorker {
         return value != null && value.length() > maxChars ? value.substring(0, maxChars) : value;
     }
 
-    private record ScanOutcome(int scanned, int queued) {
+    /** {@code scanned}: videos matched; {@code needed}: those without usable sprites. */
+    private record ScanOutcome(int scanned, int needed) {
     }
 
     private ScanOutcome scanDirectory(String dir, List<String> queuedGuids, Long runId) throws IOException {
@@ -453,18 +451,24 @@ public class ThumbnailScanWorker {
         });
         scannedFiles = videos.size();
 
+        // The videos this run puts on the generation queue: those without
+        // usable sprites (no task, failed, or the file changed since the last
+        // generation) that the trigger actually accepted.
         int queued = 0;
         for (List<String> chunk : partition(videos, QUERY_CHUNK_SIZE)) {
             Map<String, ThumbnailTask> byPath = loadTasksByPath(chunk);
             for (String path : chunk) {
-                if (needsGeneration(byPath.get(path), path)) {
-                    String guid = ThumbnailService.syntheticGuid(path);
-                    ThumbnailStatusResponse response = thumbnailService.trigger(
-                            guid, path, false, true, runId);
-                    if (ThumbnailStatus.PENDING.name().equals(response.getStatus())) {
-                        queued++;
-                        queuedGuids.add(guid);
-                    }
+                if (!needsGeneration(byPath.get(path), path)) {
+                    continue;
+                }
+                String guid = ThumbnailService.syntheticGuid(path);
+                ThumbnailStatusResponse response = thumbnailService.trigger(
+                        guid, path, false, true, runId);
+                // A file whose generation an earlier run still has in flight
+                // needs nothing from this run and is not counted for it.
+                if (ThumbnailStatus.PENDING.name().equals(response.getStatus())) {
+                    queued++;
+                    queuedGuids.add(guid);
                 }
             }
         }

@@ -107,7 +107,6 @@ public class ThumbnailScanController {
             response.setLastStatus(run.getStatus());
             response.setLastRunTimeMs(null);
             response.setLastFinishTimeMs(null);
-            response.setLastScannedCount(0);
             response.setLastQueuedCount(0);
             response.setLastPhase(run.getPhase());
             response.setLastSourcedCount(0);

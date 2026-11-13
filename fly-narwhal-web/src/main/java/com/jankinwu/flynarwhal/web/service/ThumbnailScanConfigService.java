@@ -130,11 +130,17 @@ public class ThumbnailScanConfigService {
         run.setSource(source);
         run.setStatus(ThumbnailScanRun.STATUS_QUEUED);
         run.setPhase(ThumbnailScanRun.PHASE_QUEUED);
-        run.setScannedCount(0);
         run.setQueuedCount(0);
         run.setProgressMarker(1);
         scanRunMapper.insert(run);
         return run;
+    }
+
+    /** Closes the given row (only while it is still the in-flight run). */
+    private void runMapperUpdate(ThumbnailScanRun update, Long runId) {
+        scanRunMapper.update(update, new QueryWrapper<ThumbnailScanRun>()
+                .eq("ID", runId)
+                .eq("PROGRESS_MARKER", 1));
     }
 
     /** Drops the oldest runs until one more insert fits under the cap. */
@@ -171,10 +177,9 @@ public class ThumbnailScanConfigService {
                 .lastRunTimeMs(run == null ? null : toEpochMillis(run.getStartTime()))
                 .lastFinishTimeMs(run == null ? null : toEpochMillis(run.getFinishTime()))
                 .lastStatus(run == null ? null : run.getStatus())
-                .lastScannedCount(run == null ? null : run.getScannedCount())
-                .lastQueuedCount(run == null ? null : run.getQueuedCount())
                 .lastPhase(run == null ? null : run.getPhase())
                 .lastSourcedCount(run == null ? null : run.getSourcedCount())
+                .lastQueuedCount(run == null ? null : run.getQueuedCount())
                 .lastGeneratedCount(run == null ? null : run.getGeneratedCount())
                 .lastFailedCount(run == null ? null : run.getFailedCount())
                 .lastError(run == null ? null : run.getError())
@@ -193,10 +198,12 @@ public class ThumbnailScanConfigService {
             if (run == null || !ThumbnailScanRun.STATUS_RUNNING.equals(run.getStatus())) {
                 return;
             }
-            markRunFinished(run.getId(), ThumbnailScanRun.STATUS_FAILED,
-                    run.getScannedCount() == null ? 0 : run.getScannedCount(),
-                    run.getQueuedCount() == null ? 0 : run.getQueuedCount(),
-                    "interrupted by server restart");
+            ThumbnailScanRun closed = new ThumbnailScanRun();
+            closed.setFinishTime(LocalDateTime.now());
+            closed.setStatus(ThumbnailScanRun.STATUS_FAILED);
+            closed.setPhase(ThumbnailScanRun.STATUS_FAILED);
+            closed.setError("interrupted by server restart");
+            runMapperUpdate(closed, run.getId());
         } catch (Exception e) {
             log.warn("Could not reset interrupted thumbnail scan run: {}", e.getMessage());
         }
@@ -208,20 +215,14 @@ public class ThumbnailScanConfigService {
      * just opened instead of leaving a permanently QUEUED record.
      */
     public void abandonRun(Long runId) {
-        markRunFinished(runId, ThumbnailScanRun.STATUS_FAILED, 0, 0, "not queued: a scan was already running");
-    }
-
-    /** Closes a run row; a no-op once the row is no longer the in-flight run. */
-    private void markRunFinished(Long runId, String status, int scannedCount, int queuedCount, String error) {
         if (runId == null) {
             return;
         }
         ThumbnailScanRun run = new ThumbnailScanRun();
         run.setFinishTime(LocalDateTime.now());
-        run.setStatus(status);
-        run.setScannedCount(scannedCount);
-        run.setQueuedCount(queuedCount);
-        run.setError(truncate(error, 2048));
+        run.setStatus(ThumbnailScanRun.STATUS_FAILED);
+        run.setPhase(ThumbnailScanRun.STATUS_FAILED);
+        run.setError("not queued: a scan was already running");
         scanRunMapper.update(run, new QueryWrapper<ThumbnailScanRun>()
                 .eq("ID", runId)
                 .eq("PROGRESS_MARKER", 1));
@@ -309,10 +310,9 @@ public class ThumbnailScanConfigService {
                 .lastRunTimeMs(lastRun == null ? null : toEpochMillis(lastRun.getStartTime()))
                 .lastFinishTimeMs(lastRun == null ? null : toEpochMillis(lastRun.getFinishTime()))
                 .lastStatus(lastRun == null ? ThumbnailScanConfig.STATUS_NEVER : lastRun.getStatus())
-                .lastScannedCount(lastRun == null ? null : lastRun.getScannedCount())
-                .lastQueuedCount(lastRun == null ? null : lastRun.getQueuedCount())
                 .lastPhase(lastRun == null ? null : lastRun.getPhase())
                 .lastSourcedCount(lastRun == null ? null : lastRun.getSourcedCount())
+                .lastQueuedCount(lastRun == null ? null : lastRun.getQueuedCount())
                 .lastGeneratedCount(lastRun == null ? null : lastRun.getGeneratedCount())
                 .lastFailedCount(lastRun == null ? null : lastRun.getFailedCount())
                 .lastError(lastRun == null ? null : lastRun.getError())
