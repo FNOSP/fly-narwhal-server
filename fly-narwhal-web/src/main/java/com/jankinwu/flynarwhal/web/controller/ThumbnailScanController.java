@@ -5,6 +5,7 @@ import com.jankinwu.flynarwhal.core.dto.request.ThumbnailScanConfigRequest;
 import com.jankinwu.flynarwhal.core.dto.response.CronPreviewResponse;
 import com.jankinwu.flynarwhal.core.dto.response.Result;
 import com.jankinwu.flynarwhal.core.dto.response.ThumbnailScanConfigResponse;
+import com.jankinwu.flynarwhal.core.dto.response.ThumbnailScanFailureResponse;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanConfig;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRun;
 import com.jankinwu.flynarwhal.web.service.ThumbnailScanConfigService;
@@ -146,6 +147,21 @@ public class ThumbnailScanController {
             return Result.success(configService.preview(request.getCron(), request.getCount()));
         } catch (Exception e) {
             log.error("Error previewing cron expression", e);
+            return Result.error("Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Every failure of one run — files whose generation failed and directories
+     * the run could not open — so the client can explain a failed count instead
+     * of only showing it. Empty list for an unknown id or a run with no failures.
+     */
+    @GetMapping("/runs/{id}/failures")
+    public Result<List<ThumbnailScanFailureResponse>> runFailures(@PathVariable("id") Long id) {
+        try {
+            return Result.success(configService.findFailures(id));
+        } catch (Exception e) {
+            log.error("Error reading thumbnail scan run failures {}", id, e);
             return Result.error("Error: " + e.getMessage());
         }
     }

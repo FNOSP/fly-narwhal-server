@@ -5,6 +5,7 @@ import com.jankinwu.flynarwhal.core.dto.request.ThumbnailScanConfigRequest;
 import com.jankinwu.flynarwhal.core.dto.response.CronPreviewResponse;
 import com.jankinwu.flynarwhal.core.dto.response.Result;
 import com.jankinwu.flynarwhal.core.dto.response.ThumbnailScanConfigResponse;
+import com.jankinwu.flynarwhal.core.dto.response.ThumbnailScanFailureResponse;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanConfig;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRun;
 import com.jankinwu.flynarwhal.web.service.ThumbnailScanConfigService;
@@ -182,5 +183,27 @@ class ThumbnailScanControllerTest {
 
         assertTrue(result.isSuccess());
         assertEquals(List.of(1L, 2L), result.getData().getNextRuns());
+    }
+
+    @Test
+    void runFailuresPassesThrough() {
+        List<ThumbnailScanFailureResponse> failures = List.of(ThumbnailScanFailureResponse.builder()
+                .filePath("/vol1/media/a.mp4").error("cannot read media duration")
+                .kind(ThumbnailScanFailureResponse.KIND_FILE).build());
+        when(configService.findFailures(42L)).thenReturn(failures);
+
+        Result<List<ThumbnailScanFailureResponse>> result = controller.runFailures(42L);
+
+        assertTrue(result.isSuccess());
+        assertEquals(failures, result.getData());
+    }
+
+    @Test
+    void runFailuresReportsAnErrorAsFailure() {
+        when(configService.findFailures(42L)).thenThrow(new RuntimeException("boom"));
+
+        Result<List<ThumbnailScanFailureResponse>> result = controller.runFailures(42L);
+
+        assertFalse(result.isSuccess());
     }
 }

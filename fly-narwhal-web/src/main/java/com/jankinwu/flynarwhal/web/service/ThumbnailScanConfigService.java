@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.core.dto.response.CronPreviewResponse;
 import com.jankinwu.flynarwhal.core.dto.response.ThumbnailScanConfigResponse;
+import com.jankinwu.flynarwhal.core.dto.response.ThumbnailScanFailureResponse;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanConfig;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRun;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRunItem;
@@ -117,6 +118,39 @@ public class ThumbnailScanConfigService {
     /** One run by id; null when the id is unknown (or never existed). */
     public ThumbnailScanRun findRun(Long runId) {
         return runId == null ? null : scanRunMapper.selectById(runId);
+    }
+
+    /**
+     * Every failure of one run: each queued file whose generation failed, plus
+     * each configured directory the run could not open at all. Empty for an
+     * unknown run id or a run with no failures.
+     */
+    public List<ThumbnailScanFailureResponse> findFailures(Long runId) {
+        ThumbnailScanRun run = findRun(runId);
+        if (run == null) {
+            return List.of();
+        }
+        List<ThumbnailScanFailureResponse> failures = new ArrayList<>();
+        List<ThumbnailScanRunItem> failedItems = scanRunItemMapper.selectList(
+                new QueryWrapper<ThumbnailScanRunItem>()
+                        .eq("RUN_ID", runId)
+                        .eq("STATUS", ThumbnailScanRunItem.STATUS_FAILED));
+        for (ThumbnailScanRunItem item : failedItems) {
+            String error = item.getErrorMessage();
+            failures.add(ThumbnailScanFailureResponse.builder()
+                    .filePath(item.getFilePath())
+                    .error(error == null || error.isBlank() ? "generation failed" : error)
+                    .kind(ThumbnailScanFailureResponse.KIND_FILE)
+                    .build());
+        }
+        for (String dir : readInaccessibleDirs(run)) {
+            failures.add(ThumbnailScanFailureResponse.builder()
+                    .filePath(dir)
+                    .error("directory is not accessible")
+                    .kind(ThumbnailScanFailureResponse.KIND_DIRECTORY)
+                    .build());
+        }
+        return failures;
     }
 
     /**

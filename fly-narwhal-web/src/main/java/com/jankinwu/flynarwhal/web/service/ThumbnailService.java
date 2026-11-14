@@ -77,13 +77,14 @@ public class ThumbnailService {
     /**
      * Completion report of one sprite job.
      *
-     * @param guid     the guid the job ran under; playback may have adopted it
-     * @param filePath normalized media path — the identity that never drifts
-     * @param runId    the scan run that queued it, or null for client requests
+     * @param guid         the guid the job ran under; playback may have adopted it
+     * @param filePath     normalized media path — the identity that never drifts
+     * @param runId        the scan run that queued it, or null for client requests
+     * @param errorMessage why the job failed, or null on success
      */
     @FunctionalInterface
     public interface JobCompletionListener {
-        void onJobFinished(String guid, String filePath, boolean succeeded, Long runId);
+        void onJobFinished(String guid, String filePath, boolean succeeded, Long runId, String errorMessage);
     }
 
     public void setJobCompletionListener(JobCompletionListener listener) {
@@ -91,14 +92,14 @@ public class ThumbnailService {
     }
 
     /** Reports a finished job; listener failures must never break the queue. */
-    private void notifyJobCompletion(String guid, boolean succeeded, ThumbnailJob job) {
+    private void notifyJobCompletion(String guid, boolean succeeded, ThumbnailJob job, String errorMessage) {
         JobCompletionListener listener = jobCompletionListener;
         if (listener == null || !job.queued()) {
             // A pure state probe is neither progress nor a failure for any run.
             return;
         }
         try {
-            listener.onJobFinished(guid, job.filePath(), succeeded, job.runId());
+            listener.onJobFinished(guid, job.filePath(), succeeded, job.runId(), errorMessage);
         } catch (Exception e) {
             log.warn("Thumbnail job completion listener failed for {}: {}", guid, e.getMessage());
         }
@@ -404,15 +405,16 @@ public class ThumbnailService {
             log.info("Thumbnail generation finished for {} in {}ms: {} sheet(s), {}x{} thumbs",
                     guid, System.currentTimeMillis() - startedAt,
                     result.sheetCount(), result.thumbWidth(), result.thumbHeight());
-            notifyJobCompletion(guid, true, job);
+            notifyJobCompletion(guid, true, job, null);
         } catch (Exception e) {
             log.error("Thumbnail generation failed for {}", guid, e);
             if (tmpDir != null) {
                 fileStore.deleteRecursively(tmpDir);
             }
-            markFailed(thumbnailTaskMapper.selectById(guid), guid, job.filePath(), describe(e));
+            String reason = describe(e);
+            markFailed(thumbnailTaskMapper.selectById(guid), guid, job.filePath(), reason);
             finishAdoption(guid);
-            notifyJobCompletion(guid, false, job);
+            notifyJobCompletion(guid, false, job, reason);
         }
     }
 

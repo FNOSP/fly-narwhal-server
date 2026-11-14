@@ -443,6 +443,82 @@ class ThumbnailScanWorkerTest {
                 "the run closes promptly instead of waiting out the ceiling");
     }
 
+    /** The reason a synchronous trigger failure carries must land on the item, not just its status. */
+    @Test
+    void aSynchronousTriggerFailurePersistsItsReason() throws Exception {
+        Path movie = video("movie.mp4");
+        String reason = "media file not found or unreadable: " + movie;
+        when(thumbnailService.trigger(anyString(), anyString(), anyBoolean(), anyBoolean(), any()))
+                .thenReturn(ThumbnailStatusResponse.builder()
+                        .guid(ThumbnailService.syntheticGuid(movie.toString()))
+                        .status(ThumbnailStatus.FAILED.name())
+                        .error(reason)
+                        .build());
+
+        worker.runScan(new ThumbnailScanWorker.ScanRequest(
+                ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of(tempDir.toString())));
+
+        assertEquals(reason, ledger.forPath(movie.toString()).getErrorMessage());
+    }
+
+    /** An async job failure must persist the reason the job thread reported, not just mark FAILED. */
+    @Test
+    void anAsyncJobFailurePersistsItsReason() throws Exception {
+        Path movie = video("movie.mp4");
+        String reason = "cannot read media duration";
+        when(thumbnailService.trigger(anyString(), anyString(), anyBoolean(), anyBoolean(), any()))
+                .thenAnswer(invocation -> {
+                    worker.onJobFinishedForTest(invocation.getArgument(0), invocation.getArgument(1),
+                            false, invocation.getArgument(4), reason);
+                    return ThumbnailStatusResponse.builder()
+                            .guid(invocation.getArgument(0))
+                            .status(ThumbnailStatus.PENDING.name())
+                            .build();
+                });
+
+        worker.runScan(new ThumbnailScanWorker.ScanRequest(
+                ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of(tempDir.toString())));
+
+        assertEquals(ThumbnailScanRunItem.STATUS_FAILED, ledger.forPath(movie.toString()).getStatus());
+        assertEquals(reason, ledger.forPath(movie.toString()).getErrorMessage());
+    }
+
+    /** A successful job must never leave a stale error message on the item. */
+    @Test
+    void aSuccessfulJobLeavesNoErrorMessage() throws Exception {
+        Path movie = video("movie.mp4");
+
+        worker.runScan(new ThumbnailScanWorker.ScanRequest(
+                ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of(tempDir.toString())));
+
+        assertNull(ledger.forPath(movie.toString()).getErrorMessage());
+    }
+
+    /**
+     * A single unreadable entry mid-walk (not the configured root itself) must
+     * still surface in the run's persisted error, not only in the log.
+     */
+    @Test
+    void aMidWalkVisitFailureIsPersistedInTheRunError() throws Exception {
+        Path locked = Files.createDirectory(tempDir.resolve("locked"));
+        video("locked/movie.mp4");
+        locked.toFile().setReadable(false, false);
+
+        try {
+            worker.runScan(new ThumbnailScanWorker.ScanRequest(
+                    ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of(tempDir.toString())));
+            if (Files.isReadable(locked)) {
+                // Running as root: permissions are not enforced, nothing to assert.
+                return;
+            }
+            String error = (String) setValue(lastClosingWrapper(), "ERROR");
+            assertTrue(error != null && error.contains("locked"),
+                    "the unreadable subdirectory is reported: " + error);
+        } finally {
+            locked.toFile().setReadable(true, false);
+        }
+    }
+
     /** Giving up on outstanding work is a failure, not a success. */
     @Test
     void aWaitThatTimesOutClosesTheRunAsFailed() throws Exception {

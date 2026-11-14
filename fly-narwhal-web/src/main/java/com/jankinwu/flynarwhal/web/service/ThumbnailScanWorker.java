@@ -192,7 +192,7 @@ public class ThumbnailScanWorker {
             for (String dir : request.dirs()) {
                 currentDir = dir;
                 try {
-                    matched += scanDirectory(dir, runId);
+                    matched += scanDirectory(dir, runId, errors);
                 } catch (Exception e) {
                     // Always logged: an unwalkable directory otherwise only shows up as a missing count.
                     log.error("Thumbnail scan of directory {} failed", dir, e);
@@ -272,7 +272,12 @@ public class ThumbnailScanWorker {
 
     /** Test seam: feeds a completion the way the job thread would. */
     void onJobFinishedForTest(String guid, String filePath, boolean succeeded, Long runId) {
-        onGenerationJobFinished(guid, filePath, succeeded, runId);
+        onGenerationJobFinished(guid, filePath, succeeded, runId, null);
+    }
+
+    /** Test seam: as above, carrying the failure reason a real job would report. */
+    void onJobFinishedForTest(String guid, String filePath, boolean succeeded, Long runId, String errorMessage) {
+        onGenerationJobFinished(guid, filePath, succeeded, runId, errorMessage);
     }
 
     /** Test seam: overrides the generation wait ceiling. */
@@ -292,7 +297,7 @@ public class ThumbnailScanWorker {
      * already had a queued real-guid row when the scan asked for it) carries no
      * run id, so it falls back to the guid recorded on the item.
      */
-    private void onGenerationJobFinished(String guid, String filePath, boolean succeeded, Long runId) {
+    private void onGenerationJobFinished(String guid, String filePath, boolean succeeded, Long runId, String errorMessage) {
         String outcome = succeeded ? ThumbnailScanRunItem.STATUS_GENERATED : ThumbnailScanRunItem.STATUS_FAILED;
         try {
             Long settledRunId = runId;
@@ -300,7 +305,7 @@ public class ThumbnailScanWorker {
             if (runId != null) {
                 updated = settleItem(new UpdateWrapper<ThumbnailScanRunItem>()
                         .eq("RUN_ID", runId)
-                        .eq("SCAN_GUID", ThumbnailService.syntheticGuid(filePath)), outcome);
+                        .eq("SCAN_GUID", ThumbnailService.syntheticGuid(filePath)), outcome, errorMessage);
             }
             if (updated == 0) {
                 ThumbnailScanRunItem item = itemMapper.selectOne(new QueryWrapper<ThumbnailScanRunItem>()
@@ -312,7 +317,7 @@ public class ThumbnailScanWorker {
                     return;
                 }
                 settledRunId = item.getRunId();
-                updated = settleItem(new UpdateWrapper<ThumbnailScanRunItem>().eq("ID", item.getId()), outcome);
+                updated = settleItem(new UpdateWrapper<ThumbnailScanRunItem>().eq("ID", item.getId()), outcome, errorMessage);
             }
             if (updated > 0 && settledRunId != null) {
                 writeDerivedCounters(settledRunId);
@@ -324,13 +329,17 @@ public class ThumbnailScanWorker {
 
     /**
      * Settles an outstanding item. The STATUS guard makes it idempotent: a
-     * duplicate completion updates nothing.
+     * duplicate completion updates nothing. Only a FAILED outcome carries a
+     * reason worth persisting; GENERATED/SKIPPED leave ERROR_MESSAGE untouched.
      */
-    private int settleItem(UpdateWrapper<ThumbnailScanRunItem> match, String status) {
-        return itemMapper.update(null, match
-                .eq("STATUS", ThumbnailScanRunItem.STATUS_QUEUED)
+    private int settleItem(UpdateWrapper<ThumbnailScanRunItem> match, String status, String errorMessage) {
+        match.eq("STATUS", ThumbnailScanRunItem.STATUS_QUEUED)
                 .set("STATUS", status)
-                .set("UPDATE_TIME", LocalDateTime.now()));
+                .set("UPDATE_TIME", LocalDateTime.now());
+        if (ThumbnailScanRunItem.STATUS_FAILED.equals(status)) {
+            match.set("ERROR_MESSAGE", truncate(errorMessage, 2048));
+        }
+        return itemMapper.update(null, match);
     }
 
     private int countItems(Long runId, String status) {
@@ -440,9 +449,21 @@ public class ThumbnailScanWorker {
         return value != null && value.length() > maxChars ? value.substring(0, maxChars) : value;
     }
 
-    private int scanDirectory(String dir, Long runId) throws IOException {
+    /** Records a per-file/subdirectory walk failure, capped so one bad mount cannot flood the run's error text. */
+    private static void recordWalkIssue(List<String> issues, Path path, IOException exc) {
+        if (issues.size() >= MAX_WALK_ISSUES_PER_DIR) {
+            return;
+        }
+        issues.add(path + ": " + (exc.getMessage() == null ? exc.getClass().getSimpleName() : exc.getMessage()));
+    }
+
+    /** Cap on per-file/subdirectory walk issues recorded for one configured directory. */
+    private static final int MAX_WALK_ISSUES_PER_DIR = 20;
+
+    private int scanDirectory(String dir, Long runId, List<String> errors) throws IOException {
         Path root = listRoot(Path.of(dir));
         List<String> videos = new ArrayList<>();
+        List<String> walkIssues = new ArrayList<>();
         Files.walkFileTree(root, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
@@ -456,6 +477,7 @@ public class ThumbnailScanWorker {
             public FileVisitResult visitFileFailed(Path file, IOException exc) {
                 // A single unreadable entry (permissions, vanished mount) must not abort the walk.
                 log.error("Thumbnail scan could not visit {}", file, exc);
+                recordWalkIssue(walkIssues, file, exc);
                 return FileVisitResult.CONTINUE;
             }
 
@@ -463,10 +485,12 @@ public class ThumbnailScanWorker {
             public FileVisitResult postVisitDirectory(Path sub, IOException exc) {
                 if (exc != null) {
                     log.error("Thumbnail scan could not list directory {}", sub, exc);
+                    recordWalkIssue(walkIssues, sub, exc);
                 }
                 return FileVisitResult.CONTINUE;
             }
         });
+        errors.addAll(walkIssues);
         scannedFiles = videos.size();
 
         // The videos this run puts on the generation queue: those without
@@ -517,7 +541,8 @@ public class ThumbnailScanWorker {
             // A synchronous outcome queues no job, so nothing will report back.
             boolean failed = ThumbnailStatus.FAILED.name().equals(response.getStatus());
             settleItem(new UpdateWrapper<ThumbnailScanRunItem>().eq("ID", item.getId()),
-                    failed ? ThumbnailScanRunItem.STATUS_FAILED : ThumbnailScanRunItem.STATUS_SKIPPED);
+                    failed ? ThumbnailScanRunItem.STATUS_FAILED : ThumbnailScanRunItem.STATUS_SKIPPED,
+                    failed ? response.getError() : null);
         }
     }
 

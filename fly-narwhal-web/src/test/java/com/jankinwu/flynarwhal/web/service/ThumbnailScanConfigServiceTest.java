@@ -282,4 +282,61 @@ class ThumbnailScanConfigServiceTest {
 
         assertTrue(writesNull(capturedClose(), "PROGRESS_MARKER"));
     }
+
+    private ThumbnailScanRunItem failedItem(Long runId, String path, String error) {
+        ThumbnailScanRunItem item = new ThumbnailScanRunItem();
+        item.setRunId(runId);
+        item.setScanGuid(ThumbnailService.syntheticGuid(path));
+        item.setFilePath(path);
+        item.setStatus(ThumbnailScanRunItem.STATUS_FAILED);
+        item.setErrorMessage(error);
+        ledger.mapper.insert(item);
+        return item;
+    }
+
+    @Test
+    void findFailuresReturnsEmptyForAnUnknownRun() {
+        when(runMapper.selectById(99L)).thenReturn(null);
+        assertTrue(service.findFailures(99L).isEmpty());
+    }
+
+    @Test
+    void findFailuresListsFailedFilesAndInaccessibleDirectories() {
+        ThumbnailScanRun run = new ThumbnailScanRun();
+        run.setId(7L);
+        run.setStatus(ThumbnailScanRun.STATUS_SUCCESS);
+        run.setInaccessibleDirs("[\"/vol1/locked\"]");
+        when(runMapper.selectById(7L)).thenReturn(run);
+        failedItem(7L, "/vol1/media/a.mp4", "cannot read media duration");
+        failedItem(7L, "/vol1/media/b.mp4", null);
+
+        List<com.jankinwu.flynarwhal.core.dto.response.ThumbnailScanFailureResponse> failures =
+                service.findFailures(7L);
+
+        assertEquals(3, failures.size());
+        assertEquals("/vol1/media/a.mp4", failures.get(0).getFilePath());
+        assertEquals("cannot read media duration", failures.get(0).getError());
+        assertEquals(com.jankinwu.flynarwhal.core.dto.response.ThumbnailScanFailureResponse.KIND_FILE,
+                failures.get(0).getKind());
+        assertEquals("generation failed", failures.get(1).getError(), "a blank reason falls back to a generic one");
+        assertEquals("/vol1/locked", failures.get(2).getFilePath());
+        assertEquals(com.jankinwu.flynarwhal.core.dto.response.ThumbnailScanFailureResponse.KIND_DIRECTORY,
+                failures.get(2).getKind());
+    }
+
+    @Test
+    void findFailuresExcludesGeneratedAndQueuedItems() {
+        ThumbnailScanRun run = new ThumbnailScanRun();
+        run.setId(7L);
+        run.setStatus(ThumbnailScanRun.STATUS_SUCCESS);
+        when(runMapper.selectById(7L)).thenReturn(run);
+        ThumbnailScanRunItem generated = new ThumbnailScanRunItem();
+        generated.setRunId(7L);
+        generated.setScanGuid(ThumbnailService.syntheticGuid("/vol1/media/ok.mp4"));
+        generated.setFilePath("/vol1/media/ok.mp4");
+        generated.setStatus(ThumbnailScanRunItem.STATUS_GENERATED);
+        ledger.mapper.insert(generated);
+
+        assertTrue(service.findFailures(7L).isEmpty());
+    }
 }
