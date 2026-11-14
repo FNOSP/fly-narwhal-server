@@ -52,7 +52,6 @@ public class ThumbnailScanScheduler {
             return;
         }
         started = true;
-        configService.resetInterruptedRun();
         running = true;
         Thread thread = new Thread(this::loop, "ThumbnailScanSchedulerThread");
         thread.setDaemon(true);

@@ -245,38 +245,6 @@ class ThumbnailScanConfigServiceTest {
     }
 
     @Test
-    void anInterruptedRunningRunIsClosedAndItsPendingItemsDiscarded() {
-        ThumbnailScanRun run = new ThumbnailScanRun();
-        run.setId(7L);
-        run.setStatus(ThumbnailScanRun.STATUS_RUNNING);
-        when(runMapper.selectOne(any())).thenReturn(run);
-        ThumbnailScanRunItem item = new ThumbnailScanRunItem();
-        item.setRunId(7L);
-        item.setScanGuid("scan:abc");
-        item.setStatus(ThumbnailScanRunItem.STATUS_QUEUED);
-        ledger.mapper.insert(item);
-
-        service.resetInterruptedRun();
-
-        assertEquals(ThumbnailScanRunItem.STATUS_SKIPPED, ledger.all().get(0).getStatus());
-        assertTrue(writesNull(capturedClose(), "PROGRESS_MARKER"),
-                "a closed run must not keep looking in-flight");
-    }
-
-    /** A crash between opening the row and the worker picking it up leaves a QUEUED ghost. */
-    @Test
-    void anInterruptedQueuedRunIsAlsoClosed() {
-        ThumbnailScanRun run = new ThumbnailScanRun();
-        run.setId(8L);
-        run.setStatus(ThumbnailScanRun.STATUS_QUEUED);
-        when(runMapper.selectOne(any())).thenReturn(run);
-
-        service.resetInterruptedRun();
-
-        assertTrue(writesNull(capturedClose(), "PROGRESS_MARKER"));
-    }
-
-    @Test
     void abandoningARunClearsItsInFlightMarker() {
         service.abandonRun(9L);
 

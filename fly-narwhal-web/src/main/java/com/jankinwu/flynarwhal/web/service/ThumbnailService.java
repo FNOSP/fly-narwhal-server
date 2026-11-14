@@ -3,6 +3,7 @@ package com.jankinwu.flynarwhal.web.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.jankinwu.flynarwhal.core.data.SpriteSheetResult;
+import com.jankinwu.flynarwhal.core.data.ThumbnailErrorCode;
 import com.jankinwu.flynarwhal.core.data.ThumbnailStatus;
 import com.jankinwu.flynarwhal.core.dto.response.ThumbnailStatusResponse;
 import com.jankinwu.flynarwhal.core.ffmpeg.FFmpegWrapper;
@@ -32,8 +33,10 @@ import java.util.concurrent.LinkedBlockingDeque;
  *
  * <p>Jobs are triggered per movie from the client, run ffmpeg keyframe-only
  * extraction once per file, and publish generation-scoped sprite dirs through
- * {@link ThumbnailFileStore}. Rows left PENDING/IN_PROGRESS by a crash are
- * recovered to FAILED at startup (the in-memory queue does not survive).
+ * {@link ThumbnailFileStore}. The in-memory queue does not survive a restart,
+ * so rows left PENDING/IN_PROGRESS are re-enqueued by
+ * {@link ThumbnailScanWorker} once the app is ready — an interrupted job is
+ * unfinished work, not a failure.
  */
 @Slf4j
 @Service
@@ -139,27 +142,44 @@ public class ThumbnailService {
 
     @PostConstruct
     public void init() {
-        recoverInterruptedTasks();
         Thread thread = new Thread(this::processQueue, "ThumbnailThread");
         thread.setDaemon(true);
         thread.start();
     }
 
-    /** The queue is in-memory; anything not finished before a restart can never resume. */
-    private void recoverInterruptedTasks() {
-        try {
-            UpdateWrapper<ThumbnailTask> reset = new UpdateWrapper<>();
-            reset.in("status", ThumbnailStatus.PENDING.name(), ThumbnailStatus.IN_PROGRESS.name())
-                    .set("status", ThumbnailStatus.FAILED.name())
-                    .set("error_message", "interrupted by server restart")
-                    .set("update_time", LocalDateTime.now());
-            int resetCount = thumbnailTaskMapper.update(null, reset);
-            if (resetCount > 0) {
-                log.info("Reset {} interrupted thumbnail task(s) to FAILED", resetCount);
-            }
-        } catch (Exception e) {
-            log.error("Failed to recover interrupted thumbnail tasks", e);
+    /**
+     * Re-enqueues the rows a restart stranded. The queue is in-memory, so these
+     * jobs lost their place but not their work: they go back on the queue as-is,
+     * with status and error_message untouched — declaring them FAILED would both
+     * misreport unfinished work and destroy the reason an earlier attempt failed.
+     *
+     * <p>Cannot go through {@link #trigger}: it returns unfinished rows without
+     * enqueueing anything. Called by {@link ThumbnailScanWorker} after it has
+     * registered its completion listener, so a job that finishes immediately is
+     * still attributed to its run.
+     *
+     * @param runIdResolver resolves the scan run an outstanding ledger item
+     *                      belongs to, or null when the task is nobody's scan
+     * @return how many jobs were put back on the queue
+     */
+    int resumeInterruptedTasks(RunIdResolver runIdResolver) {
+        List<ThumbnailTask> stranded = thumbnailTaskMapper.selectList(
+                new QueryWrapper<ThumbnailTask>().in("status",
+                        ThumbnailStatus.PENDING.name(), ThumbnailStatus.IN_PROGRESS.name()));
+        for (ThumbnailTask row : stranded) {
+            Long runId = runIdResolver.resolve(row.getGuid(), row.getFilePath());
+            jobQueue.addLast(new ThumbnailJob(row.getGuid(), row.getFilePath(), true, runId));
         }
+        if (!stranded.isEmpty()) {
+            log.info("Re-enqueued {} thumbnail task(s) interrupted by a restart", stranded.size());
+        }
+        return stranded.size();
+    }
+
+    /** Which scan run still expects this task's completion, or null for none. */
+    @FunctionalInterface
+    interface RunIdResolver {
+        Long resolve(String guid, String filePath);
     }
 
     private void processQueue() {
@@ -477,6 +497,7 @@ public class ThumbnailService {
         row.setSheetCount(current.getSheetCount());
         row.setGeneration(current.getGeneration());
         row.setErrorMessage(current.getErrorMessage());
+        row.setErrorCode(current.getErrorCode());
         row.setCreateTime(now);
         row.setUpdateTime(now);
         thumbnailTaskMapper.insert(row);
@@ -492,6 +513,7 @@ public class ThumbnailService {
                 reset.eq("guid", realGuid)
                         .set("status", ThumbnailStatus.PENDING.name())
                         .set("error_message", null)
+                        .set("error_code", null)
                         .set("update_time", now);
                 thumbnailTaskMapper.update(null, reset);
                 row.setStatus(ThumbnailStatus.PENDING);
@@ -641,6 +663,7 @@ public class ThumbnailService {
                 .set("sheet_count", result.sheetCount())
                 .set("generation", generation)
                 .set("error_message", null)
+                .set("error_code", null)
                 .set("update_time", LocalDateTime.now());
         thumbnailTaskMapper.update(null, update);
     }
@@ -648,6 +671,7 @@ public class ThumbnailService {
     private ThumbnailStatusResponse markFailed(ThumbnailTask existing, String guid, String filePath, String error) {
         String truncated = error != null && error.length() > ERROR_MESSAGE_MAX_CHARS
                 ? error.substring(0, ERROR_MESSAGE_MAX_CHARS) : error;
+        String code = ThumbnailErrorCode.of(error).wireName();
         LocalDateTime now = LocalDateTime.now();
         if (existing == null) {
             ThumbnailTask row = new ThumbnailTask();
@@ -656,6 +680,7 @@ public class ThumbnailService {
             row.setStatus(ThumbnailStatus.FAILED);
             row.setGeneration(0);
             row.setErrorMessage(truncated);
+            row.setErrorCode(code);
             row.setCreateTime(now);
             row.setUpdateTime(now);
             thumbnailTaskMapper.insert(row);
@@ -666,11 +691,13 @@ public class ThumbnailService {
                 .set("status", ThumbnailStatus.FAILED.name())
                 .set("file_path", filePath)
                 .set("error_message", truncated)
+                .set("error_code", code)
                 .set("update_time", now);
         thumbnailTaskMapper.update(null, update);
         existing.setStatus(ThumbnailStatus.FAILED);
         existing.setFilePath(filePath);
         existing.setErrorMessage(truncated);
+        existing.setErrorCode(code);
         return toResponse(existing, false);
     }
 
@@ -692,11 +719,13 @@ public class ThumbnailService {
                 .set("status", ThumbnailStatus.PENDING.name())
                 .set("file_path", filePath)
                 .set("error_message", null)
+                .set("error_code", null)
                 .set("update_time", now);
         thumbnailTaskMapper.update(null, update);
         existing.setStatus(ThumbnailStatus.PENDING);
         existing.setFilePath(filePath);
         existing.setErrorMessage(null);
+        existing.setErrorCode(null);
         return existing;
     }
 
@@ -760,6 +789,7 @@ public class ThumbnailService {
                 .durationMs(row.getDurationMs())
                 .generation(row.getGeneration())
                 .error(row.getErrorMessage())
+                .errorCode(row.getErrorCode())
                 .build();
     }
 

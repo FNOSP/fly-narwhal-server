@@ -276,4 +276,78 @@ class ThumbnailServiceTest {
         assertEquals(7_200_000L, response.getDurationMs());
         assertEquals(2, response.getGeneration());
     }
+
+    // —— Restart recovery: unfinished work is re-queued, never written off ——
+
+    /** Recovery must not touch the row: no status flip, no error overwrite. */
+    @Test
+    void recoveryRequeuesWithoutWritingToTheRow() {
+        ThumbnailTask stranded = row(ThumbnailStatus.IN_PROGRESS, 123L);
+        stranded.setErrorMessage("/var/apps/other: AccessDeniedException");
+        when(mapper.selectList(any())).thenReturn(java.util.List.of(stranded));
+
+        int resumed = service.resumeInterruptedTasks((guid, path) -> null);
+
+        assertEquals(1, resumed);
+        verify(mapper, never()).update(any(), any());
+        verify(mapper, never()).insert(any(ThumbnailTask.class));
+        assertEquals("/var/apps/other: AccessDeniedException", stranded.getErrorMessage(),
+                "the reason an earlier attempt failed must survive a restart");
+        assertEquals(ThumbnailStatus.IN_PROGRESS, stranded.getStatus());
+    }
+
+    @Test
+    void recoveryRequeuesBothPendingAndInProgressRows() {
+        when(mapper.selectList(any())).thenReturn(java.util.List.of(
+                row(ThumbnailStatus.PENDING, 123L), row(ThumbnailStatus.IN_PROGRESS, 123L)));
+
+        assertEquals(2, service.resumeInterruptedTasks((guid, path) -> null));
+    }
+
+    @Test
+    void recoveryDoesNothingWhenNoRowWasStranded() {
+        when(mapper.selectList(any())).thenReturn(java.util.List.of());
+
+        assertEquals(0, service.resumeInterruptedTasks((guid, path) -> null));
+        verify(mapper, never()).update(any(), any());
+    }
+
+    /** The resolver's answer is what attributes the job to a scan run. */
+    @Test
+    void recoveryPassesTheResolvedRunIdToTheJob() {
+        ThumbnailTask stranded = row(ThumbnailStatus.PENDING, 123L);
+        when(mapper.selectList(any())).thenReturn(java.util.List.of(stranded));
+        java.util.List<Long> seen = new java.util.ArrayList<>();
+
+        service.resumeInterruptedTasks((guid, path) -> {
+            assertEquals("guid-1", guid);
+            assertEquals(mediaFile.toString(), path);
+            seen.add(42L);
+            return 42L;
+        });
+
+        assertEquals(java.util.List.of(42L), seen);
+    }
+
+    /** A failure carries a stable code alongside the raw text, for localization. */
+    @Test
+    void aFailureRecordsAStableErrorCode() {
+        when(mapper.selectById("guid-1")).thenReturn(null);
+
+        ThumbnailStatusResponse response =
+                service.trigger("guid-1", tempDir.resolve("missing.mkv").toString());
+
+        assertEquals("FAILED", response.getStatus());
+        assertEquals("file_unreadable", response.getErrorCode());
+        assertTrue(response.getError().contains("not found"), "the raw text is kept for troubleshooting");
+    }
+
+    @Test
+    void anUnrecognizedFailureFallsBackToTheUnknownCode() {
+        ThumbnailTask task = row(ThumbnailStatus.COMPLETED, 123L);
+        task.setErrorMessage("some unexpected IO problem");
+        task.setErrorCode("unknown");
+
+        assertEquals("unknown", ThumbnailService.toResponse(task, false).getErrorCode());
+    }
 }

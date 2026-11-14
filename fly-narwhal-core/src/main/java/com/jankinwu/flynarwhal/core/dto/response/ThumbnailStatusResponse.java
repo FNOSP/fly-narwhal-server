@@ -33,6 +33,8 @@ public class ThumbnailStatusResponse {
     /** Sprite files are addressed per generation; a bump invalidates client caches. */
     private Integer generation;
     private String error;
+    /** Stable reason code for localization; {@link #error} stays the raw text. */
+    private String errorCode;
 
     public static ThumbnailStatusResponse none(String guid) {
         return ThumbnailStatusResponse.builder().guid(guid).status(STATUS_NONE).build();

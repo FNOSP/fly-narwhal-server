@@ -1,5 +1,6 @@
 package com.jankinwu.flynarwhal.web.db;
 
+import com.jankinwu.flynarwhal.web.config.BuildVersionConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -37,7 +38,7 @@ class DatabaseMigrationRunnerTest {
         DriverManagerDataSource ds = freshDatabase();
         new DatabaseMigrationRunner(ds).run(null);
 
-        assertEquals("2.1.3", version(jdbc(ds)));
+        assertEquals(BuildVersionConfiguration.BASE_VERSION, version(jdbc(ds)));
         assertThumbnailTasksShape(jdbc(ds));
         assertRunItemsShape(jdbc(ds));
     }
@@ -71,7 +72,7 @@ class DatabaseMigrationRunnerTest {
 
         new DatabaseMigrationRunner(ds).run(null);
 
-        assertEquals("2.1.3", version(jdbc));
+        assertEquals(BuildVersionConfiguration.BASE_VERSION, version(jdbc));
         assertThumbnailTasksShape(jdbc);
         assertRunItemsShape(jdbc);
     }
@@ -84,7 +85,7 @@ class DatabaseMigrationRunnerTest {
 
         new DatabaseMigrationRunner(ds).run(null);
 
-        assertEquals("2.1.3", version(jdbc));
+        assertEquals(BuildVersionConfiguration.BASE_VERSION, version(jdbc));
         assertThumbnailTasksShape(jdbc);
         assertRunItemsShape(jdbc);
     }
@@ -97,7 +98,7 @@ class DatabaseMigrationRunnerTest {
 
         new DatabaseMigrationRunner(ds).run(null);
 
-        assertEquals("2.1.3", version(jdbc));
+        assertEquals(BuildVersionConfiguration.BASE_VERSION, version(jdbc));
         assertThumbnailTasksShape(jdbc);
         assertRunItemsShape(jdbc);
         assertTrue(hasColumn(jdbc, "THUMBNAIL_SCAN_RUNS", "phase"),
@@ -122,11 +123,30 @@ class DatabaseMigrationRunnerTest {
 
         new DatabaseMigrationRunner(ds).run(null);
 
-        assertEquals("2.1.3", version(jdbc));
+        assertEquals(BuildVersionConfiguration.BASE_VERSION, version(jdbc));
         assertRunItemsShape(jdbc);
         assertNull(jdbc.queryForObject(
                 "SELECT PROGRESS_MARKER FROM THUMBNAIL_SCAN_RUNS WHERE STATUS='SUCCESS'", Integer.class),
                 "finished runs must have their stale in-flight marker backfilled away");
+    }
+
+    /**
+     * The installed-NAS path: 2.1.3 is recorded with its batch applied, so the
+     * error-code column must arrive from its own newer directory.
+     */
+    @Test
+    void errorCodeArrivesOnADatabaseRecordedAt213() throws Exception {
+        DriverManagerDataSource ds = freshDatabase();
+        JdbcTemplate jdbc = jdbc(ds);
+        recordVersion(jdbc, "2.1.1");
+        new DatabaseMigrationRunner(ds).run(null);
+        jdbc.update("UPDATE DB_VERSION SET version='2.1.3' WHERE id=1");
+
+        new DatabaseMigrationRunner(ds).run(null);
+
+        assertEquals(BuildVersionConfiguration.BASE_VERSION, version(jdbc));
+        assertTrue(hasColumn(jdbc, "THUMBNAIL_TASKS", "error_code"),
+                "the localized failure reason needs its column on an already-recorded install");
     }
 
     private static JdbcTemplate jdbc(DriverManagerDataSource ds) {
@@ -143,6 +163,7 @@ class DatabaseMigrationRunnerTest {
         assertTrue(hasColumn(jdbc, "THUMBNAIL_TASKS", "file_mtime"), "THUMBNAIL_TASKS.file_mtime is missing");
         assertTrue(hasColumn(jdbc, "THUMBNAIL_TASKS", "adopt_guid"), "THUMBNAIL_TASKS.adopt_guid is missing");
         assertTrue(hasColumn(jdbc, "THUMBNAIL_TASKS", "generation"), "THUMBNAIL_TASKS.generation is missing");
+        assertTrue(hasColumn(jdbc, "THUMBNAIL_TASKS", "error_code"), "THUMBNAIL_TASKS.error_code is missing");
     }
 
     /** The run ledger the scan's progress accounting depends on. */

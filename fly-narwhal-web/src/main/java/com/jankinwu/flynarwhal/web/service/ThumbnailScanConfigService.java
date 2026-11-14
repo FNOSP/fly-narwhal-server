@@ -246,29 +246,6 @@ public class ThumbnailScanConfigService {
     }
 
     /**
-     * Startup recovery: a run left in flight by a crash can never finish —
-     * including one still QUEUED, which the worker never picked up. Its
-     * outstanding items are discarded with it so no pending row survives.
-     */
-    public void resetInterruptedRun() {
-        try {
-            ThumbnailScanRun run = latestRun();
-            if (run == null || !(ThumbnailScanRun.STATUS_RUNNING.equals(run.getStatus())
-                    || ThumbnailScanRun.STATUS_QUEUED.equals(run.getStatus()))) {
-                return;
-            }
-            scanRunItemMapper.update(null, new UpdateWrapper<ThumbnailScanRunItem>()
-                    .eq("RUN_ID", run.getId())
-                    .eq("STATUS", ThumbnailScanRunItem.STATUS_QUEUED)
-                    .set("STATUS", ThumbnailScanRunItem.STATUS_SKIPPED)
-                    .set("UPDATE_TIME", LocalDateTime.now()));
-            closeRun(run.getId(), "interrupted by server restart");
-        } catch (Exception e) {
-            log.warn("Could not reset interrupted thumbnail scan run: {}", e.getMessage());
-        }
-    }
-
-    /**
      * Closes a run row; a no-op once the row is no longer in flight.
      * Public so a trigger that never reaches the worker can abandon the row it
      * just opened instead of leaving a permanently QUEUED record.

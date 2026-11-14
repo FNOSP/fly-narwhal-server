@@ -49,6 +49,9 @@ public class ThumbnailTask {
 
     private String errorMessage;
 
+    /** Stable ThumbnailErrorCode wire name; errorMessage keeps the raw text. */
+    private String errorCode;
+
     /**
      * Real media guid waiting to claim this scan-created row (set on scan rows
      * only, first request wins). Cleared when the row is adopted and re-keyed.

@@ -2,6 +2,7 @@ package com.jankinwu.flynarwhal.web.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.core.data.ThumbnailStatus;
 import com.jankinwu.flynarwhal.core.dto.response.ThumbnailStatusResponse;
@@ -68,12 +69,23 @@ public class ThumbnailScanWorker {
      * already inserted when queuing, so the client can poll that row's status
      * from the moment the trigger returns ({@code dirs} snapshotted then).
      */
-    public record ScanRequest(String source, List<String> dirs, Long runId) {
+    public record ScanRequest(String source, List<String> dirs, Long runId, boolean resume) {
         public static final String SOURCE_SCHEDULED = "SCHEDULED";
         public static final String SOURCE_MANUAL = "MANUAL";
+        /** Re-drives runs a restart stranded; carries no directories to walk. */
+        public static final String SOURCE_RESUMED = "RESUMED";
 
         public ScanRequest(String source, List<String> dirs) {
-            this(source, dirs, null);
+            this(source, dirs, null, false);
+        }
+
+        public ScanRequest(String source, List<String> dirs, Long runId) {
+            this(source, dirs, runId, false);
+        }
+
+        /** One request re-drives every in-flight run, oldest first. */
+        public static ScanRequest resumeAll() {
+            return new ScanRequest(SOURCE_RESUMED, List.of(), null, true);
         }
     }
 
@@ -116,6 +128,9 @@ public class ThumbnailScanWorker {
     @EventListener(ApplicationReadyEvent.class)
     public synchronized void start() {
         thumbnailService.setJobCompletionListener(this::onGenerationJobFinished);
+        // After the listener, so a resumed job that finishes at once still settles
+        // its run's item. ApplicationReadyEvent also means migrations have run.
+        resumeInterruptedWork();
         if (started) {
             return;
         }
@@ -124,6 +139,58 @@ public class ThumbnailScanWorker {
         thread.setDaemon(true);
         thread.start();
         log.info("Thumbnail scan worker started");
+    }
+
+    /** Test seam: recovery without starting the queue thread. */
+    void resumeInterruptedWorkForTest() {
+        thumbnailService.setJobCompletionListener(this::onGenerationJobFinished);
+        resumeInterruptedWork();
+    }
+
+    /**
+     * Puts a restart's unfinished work back in motion: stranded task rows go
+     * back on the ffmpeg queue, and the runs that were waiting for them are
+     * re-driven instead of being written off as failures.
+     */
+    private void resumeInterruptedWork() {
+        try {
+            thumbnailService.resumeInterruptedTasks(this::resolveOutstandingRunId);
+            if (!findInFlightRuns().isEmpty()) {
+                enqueue(ScanRequest.resumeAll());
+            }
+        } catch (Exception e) {
+            log.error("Could not resume interrupted thumbnail work", e);
+        }
+    }
+
+    /**
+     * The run still expecting this task, or null when no outstanding item claims
+     * it (client-requested task, or an item already settled). A null keeps the
+     * completion out of every run's counters.
+     */
+    private Long resolveOutstandingRunId(String guid, String filePath) {
+        ThumbnailScanRunItem item = outstandingItem("SCAN_GUID", ThumbnailService.syntheticGuid(filePath));
+        if (item == null) {
+            // Adopted onto a real client guid: the item kept its scan key but
+            // recorded the guid the job actually runs under.
+            item = outstandingItem("TASK_GUID", guid);
+        }
+        return item == null ? null : item.getRunId();
+    }
+
+    private ThumbnailScanRunItem outstandingItem(String column, String value) {
+        return itemMapper.selectOne(new QueryWrapper<ThumbnailScanRunItem>()
+                .eq("STATUS", ThumbnailScanRunItem.STATUS_QUEUED)
+                .eq(column, value)
+                .orderByDesc("RUN_ID")
+                .last("LIMIT 1"));
+    }
+
+    /** Runs a restart left in flight, oldest first. There is normally at most one. */
+    private List<ThumbnailScanRun> findInFlightRuns() {
+        return scanRunMapper.selectList(new QueryWrapper<ThumbnailScanRun>()
+                .in("STATUS", ThumbnailScanRun.STATUS_QUEUED, ThumbnailScanRun.STATUS_RUNNING)
+                .orderByAsc("ID"));
     }
 
     /**
@@ -180,6 +247,10 @@ public class ThumbnailScanWorker {
      * the request carries none (tests and legacy callers).
      */
     void runScan(ScanRequest request) {
+        if (request.resume()) {
+            resumeRuns();
+            return;
+        }
         long startedAt = System.currentTimeMillis();
         currentDir = null;
         scannedFiles = 0;
@@ -206,26 +277,64 @@ public class ThumbnailScanWorker {
                 log.error("Thumbnail scan could not access {} configured director(ies): {} — add folder access permission for the FlyNarwhal server in fnOS",
                         inaccessible.size(), inaccessible);
             }
-            int needed = countItems(runId, null);
-            markGenerating(runId, matched, needed);
-            scannedFiles = matched;
-            boolean timedOut = awaitGeneration(runId);
-            int generated = countItems(runId, ThumbnailScanRunItem.STATUS_GENERATED);
-            int failed = countItems(runId, ThumbnailScanRunItem.STATUS_FAILED);
-            String error = errors.isEmpty() ? null : String.join("; ", errors);
-            if (timedOut) {
-                String timeout = "timed out waiting for sprite generation";
-                error = error == null ? timeout : error + "; " + timeout;
-            }
-            markRunFinished(runId, timedOut ? ThumbnailScanRun.STATUS_FAILED : ThumbnailScanRun.STATUS_SUCCESS,
-                    matched, needed, error, inaccessible);
-            log.info("Thumbnail scan finished in {}ms (source={}): {} matched, {} need sprites, {} generated, {} failed, {} dir error(s)",
-                    System.currentTimeMillis() - startedAt, request.source(), matched, needed,
-                    generated, failed, errors.size());
+            finishGeneration(runId, matched, errors, inaccessible, request.source(), startedAt);
         } catch (Exception e) {
             log.error("Thumbnail scan failed (source={})", request.source(), e);
             markRunFinished(runId, ThumbnailScanRun.STATUS_FAILED, matched, countItems(runId, null),
                     e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(), inaccessible);
+        }
+    }
+
+    /**
+     * Waits for the sprites this run queued and closes it. Shared by a normal
+     * scan and a resumed one so both finish through exactly the same accounting.
+     */
+    private void finishGeneration(Long runId, int matched, List<String> errors, List<String> inaccessible,
+                                  String source, long startedAt) {
+        int needed = countItems(runId, null);
+        markGenerating(runId, matched, needed);
+        scannedFiles = matched;
+        boolean timedOut = awaitGeneration(runId);
+        int generated = countItems(runId, ThumbnailScanRunItem.STATUS_GENERATED);
+        int failed = countItems(runId, ThumbnailScanRunItem.STATUS_FAILED);
+        String error = errors.isEmpty() ? null : String.join("; ", errors);
+        if (timedOut) {
+            String timeout = "timed out waiting for sprite generation";
+            error = error == null ? timeout : error + "; " + timeout;
+        }
+        markRunFinished(runId, timedOut ? ThumbnailScanRun.STATUS_FAILED : ThumbnailScanRun.STATUS_SUCCESS,
+                matched, needed, error, inaccessible);
+        log.info("Thumbnail scan finished in {}ms (source={}): {} matched, {} need sprites, {} generated, {} failed, {} dir error(s)",
+                System.currentTimeMillis() - startedAt, source, matched, needed,
+                generated, failed, errors.size());
+    }
+
+    /**
+     * Re-drives every run a restart stranded, serially on this thread. The walk
+     * already happened, so each run keeps its recorded totals and directory
+     * errors and only waits for the jobs that were put back on the queue.
+     */
+    private void resumeRuns() {
+        for (ThumbnailScanRun run : findInFlightRuns()) {
+            Long runId = run.getId();
+            try {
+                markRunRunning(runId);
+                markGeneratingResume(runId);
+                int matched = run.getSourcedCount() == null ? 0 : run.getSourcedCount();
+                // Carry the original report forward: finishing with an empty list
+                // would erase the directory errors the first attempt recorded.
+                List<String> errors = run.getError() == null || run.getError().isBlank()
+                        ? new ArrayList<>() : new ArrayList<>(List.of(run.getError()));
+                finishGeneration(runId, matched, errors, readJsonList(run.getInaccessibleDirs()),
+                        ScanRequest.SOURCE_RESUMED, System.currentTimeMillis());
+            } catch (Exception e) {
+                log.error("Could not resume thumbnail scan run {}", runId, e);
+                markRunFinished(runId, ThumbnailScanRun.STATUS_FAILED,
+                        run.getSourcedCount() == null ? 0 : run.getSourcedCount(), countItems(runId, null),
+                        "could not resume after restart: "
+                                + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()),
+                        readJsonList(run.getInaccessibleDirs()));
+            }
         }
     }
 
@@ -239,6 +348,19 @@ public class ThumbnailScanWorker {
         run.setPhase(ThumbnailScanRun.PHASE_GENERATING);
         run.setSourcedCount(matched);
         run.setQueuedCount(needed);
+        scanRunMapper.update(run, new QueryWrapper<ThumbnailScanRun>()
+                .eq("ID", runId)
+                .eq("STATUS", ThumbnailScanRun.STATUS_RUNNING));
+        writeDerivedCounters(runId);
+    }
+
+    /**
+     * As {@link #markGenerating} but for a resumed run: the walk totals were
+     * recorded before the restart and must survive it, so only the phase moves.
+     */
+    private void markGeneratingResume(Long runId) {
+        ThumbnailScanRun run = new ThumbnailScanRun();
+        run.setPhase(ThumbnailScanRun.PHASE_GENERATING);
         scanRunMapper.update(run, new QueryWrapper<ThumbnailScanRun>()
                 .eq("ID", runId)
                 .eq("STATUS", ThumbnailScanRun.STATUS_RUNNING));
@@ -442,6 +564,21 @@ public class ThumbnailScanWorker {
         } catch (Exception e) {
             log.warn("Could not serialize inaccessible scan dirs: {}", e.getMessage());
             return null;
+        }
+    }
+
+    /** Inverse of {@link #writeJson}; empty on missing/corrupt JSON. */
+    private List<String> readJsonList(String json) {
+        if (json == null || json.isBlank()) {
+            return new ArrayList<>();
+        }
+        try {
+            List<String> values = objectMapper.readValue(json, new TypeReference<List<String>>() {
+            });
+            return values == null ? new ArrayList<>() : new ArrayList<>(values);
+        } catch (Exception e) {
+            log.warn("Could not read inaccessible scan dirs: {}", e.getMessage());
+            return new ArrayList<>();
         }
     }
 

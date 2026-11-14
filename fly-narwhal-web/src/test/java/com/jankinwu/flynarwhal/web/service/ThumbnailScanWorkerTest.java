@@ -558,4 +558,181 @@ class ThumbnailScanWorkerTest {
                 ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of(tempDir.toString())));
         assertEquals(ThumbnailScanWorker.ScanState.IDLE, worker.progress().state());
     }
+
+    // —— Restart recovery: unfinished work resumes instead of being written off ——
+
+    /** An in-flight run a restart stranded, with the totals its walk recorded. */
+    private ThumbnailScanRun strandedRun(long id, String status, int sourced, int queued) {
+        ThumbnailScanRun run = new ThumbnailScanRun();
+        run.setId(id);
+        run.setStatus(status);
+        run.setSourcedCount(sourced);
+        run.setQueuedCount(queued);
+        return run;
+    }
+
+    private ThumbnailScanRunItem outstandingItem(Long runId, String path) {
+        ThumbnailScanRunItem item = new ThumbnailScanRunItem();
+        item.setRunId(runId);
+        item.setScanGuid(ThumbnailService.syntheticGuid(path));
+        item.setFilePath(path);
+        item.setStatus(ThumbnailScanRunItem.STATUS_QUEUED);
+        ledger.mapper.insert(item);
+        return item;
+    }
+
+    /**
+     * Makes the service report the stranded job finished as soon as it is asked
+     * to resume it, the way the ffmpeg queue thread would. Must be installed
+     * before recovery runs.
+     */
+    private void finishResumedJobOnResume(String path, boolean succeeded) {
+        when(thumbnailService.resumeInterruptedTasks(any())).thenAnswer(invocation -> {
+            ThumbnailService.RunIdResolver resolver = invocation.getArgument(0);
+            String guid = ThumbnailService.syntheticGuid(path);
+            Long runId = resolver.resolve(guid, path);
+            worker.onJobFinishedForTest(guid, path, succeeded, runId);
+            return 1;
+        });
+    }
+
+    @Test
+    void resumeRequeuesStrandedTasksAndFinishesTheRun() throws Exception {
+        Path movie = video("movie.mp4");
+        outstandingItem(7L, movie.toString());
+        when(scanRunMapper.selectList(any())).thenReturn(List.of(
+                strandedRun(7L, ThumbnailScanRun.STATUS_RUNNING, 3, 1)));
+        finishResumedJobOnResume(movie.toString(), true);
+
+        worker.resumeInterruptedWorkForTest();
+        worker.runScan(ThumbnailScanWorker.ScanRequest.resumeAll());
+
+        UpdateWrapper<ThumbnailScanRun> closed = lastClosingWrapper();
+        assertEquals(ThumbnailScanRun.STATUS_SUCCESS, setValue(closed, "STATUS"));
+        assertNull(setValue(closed, "PROGRESS_MARKER"), "a resumed run must still close cleanly");
+        assertEquals(ThumbnailScanRunItem.STATUS_GENERATED, ledger.forPath(movie.toString()).getStatus());
+    }
+
+    /** The walk already counted these; re-deriving them from an empty walk would zero them out. */
+    @Test
+    void resumePreservesTheWalkTotals() throws Exception {
+        Path movie = video("movie.mp4");
+        outstandingItem(7L, movie.toString());
+        when(scanRunMapper.selectList(any())).thenReturn(List.of(
+                strandedRun(7L, ThumbnailScanRun.STATUS_RUNNING, 42, 9)));
+
+        finishResumedJobOnResume(movie.toString(), true);
+        worker.resumeInterruptedWorkForTest();
+        worker.runScan(ThumbnailScanWorker.ScanRequest.resumeAll());
+
+        UpdateWrapper<ThumbnailScanRun> closed = lastClosingWrapper();
+        assertEquals(42, setValue(closed, "SOURCED_COUNT"), "the interrupted walk's total must survive");
+        assertEquals(1, setValue(closed, "QUEUED_COUNT"), "recounted from the ledger, not zeroed");
+    }
+
+    /** A directory the first attempt could not open stays reported after the resume. */
+    @Test
+    void resumePreservesTheOriginalDirectoryError() throws Exception {
+        Path movie = video("movie.mp4");
+        outstandingItem(7L, movie.toString());
+        ThumbnailScanRun run = strandedRun(7L, ThumbnailScanRun.STATUS_RUNNING, 1, 1);
+        run.setError("/vol2/denied: AccessDeniedException");
+        run.setInaccessibleDirs("[\"/vol2/denied\"]");
+        when(scanRunMapper.selectList(any())).thenReturn(List.of(run));
+
+        finishResumedJobOnResume(movie.toString(), true);
+        worker.resumeInterruptedWorkForTest();
+        worker.runScan(ThumbnailScanWorker.ScanRequest.resumeAll());
+
+        UpdateWrapper<ThumbnailScanRun> closed = lastClosingWrapper();
+        assertEquals("/vol2/denied: AccessDeniedException", setValue(closed, "ERROR"),
+                "resuming must not erase why the first attempt failed");
+        assertTrue(((String) setValue(closed, "INACCESSIBLE_DIRS")).contains("/vol2/denied"));
+    }
+
+    /** Everything had already finished before the crash: the run just closes. */
+    @Test
+    void resumeWithNothingOutstandingFinishesImmediately() {
+        when(scanRunMapper.selectList(any())).thenReturn(List.of(
+                strandedRun(7L, ThumbnailScanRun.STATUS_RUNNING, 5, 5)));
+
+        worker.resumeInterruptedWorkForTest();
+        worker.runScan(ThumbnailScanWorker.ScanRequest.resumeAll());
+
+        assertEquals(ThumbnailScanRun.STATUS_SUCCESS, setValue(lastClosingWrapper(), "STATUS"));
+    }
+
+    /** A crash can strand more than one run; each must be driven to a close. */
+    @Test
+    void everyInFlightRunIsResumed() {
+        when(scanRunMapper.selectList(any())).thenReturn(List.of(
+                strandedRun(7L, ThumbnailScanRun.STATUS_RUNNING, 1, 0),
+                strandedRun(8L, ThumbnailScanRun.STATUS_QUEUED, 2, 0)));
+
+        worker.resumeInterruptedWorkForTest();
+        worker.runScan(ThumbnailScanWorker.ScanRequest.resumeAll());
+
+        ArgumentCaptor<UpdateWrapper<ThumbnailScanRun>> captor = ArgumentCaptor.forClass(UpdateWrapper.class);
+        verify(scanRunMapper, org.mockito.Mockito.atLeastOnce()).update(eq(null), captor.capture());
+        long closed = captor.getAllValues().stream()
+                .filter(w -> w.getSqlSet() != null && w.getSqlSet().contains("FINISH_TIME="))
+                .count();
+        assertEquals(2, closed, "both stranded runs must be finished");
+    }
+
+    /** Recovery must not declare a scan running while another request waits. */
+    @Test
+    void aManualScanDuringResumeIsQueuedBehindIt() {
+        when(scanRunMapper.selectList(any())).thenReturn(List.of(
+                strandedRun(7L, ThumbnailScanRun.STATUS_RUNNING, 1, 0)));
+
+        worker.resumeInterruptedWorkForTest();
+
+        assertEquals(ThumbnailScanWorker.EnqueueResult.ALREADY_QUEUED,
+                worker.enqueue(new ThumbnailScanWorker.ScanRequest(
+                        ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of("/vol1/media"))));
+    }
+
+    /** With nothing stranded, recovery must not invent a scan. */
+    @Test
+    void noResumeIsQueuedWhenNothingWasInterrupted() {
+        when(scanRunMapper.selectList(any())).thenReturn(List.of());
+
+        worker.resumeInterruptedWorkForTest();
+
+        assertEquals(ThumbnailScanWorker.ScanState.IDLE, worker.progress().state());
+    }
+
+    /** Only an outstanding item claims a task; a settled one must not double-count. */
+    @Test
+    void aTaskWhoseItemAlreadySettledCarriesNoRunId() throws Exception {
+        Path movie = video("movie.mp4");
+        ThumbnailScanRunItem item = outstandingItem(7L, movie.toString());
+        item.setStatus(ThumbnailScanRunItem.STATUS_GENERATED);
+        when(scanRunMapper.selectList(any())).thenReturn(List.of());
+
+        worker.resumeInterruptedWorkForTest();
+        ArgumentCaptor<ThumbnailService.RunIdResolver> captor =
+                ArgumentCaptor.forClass(ThumbnailService.RunIdResolver.class);
+        verify(thumbnailService).resumeInterruptedTasks(captor.capture());
+
+        assertNull(captor.getValue().resolve(ThumbnailService.syntheticGuid(movie.toString()), movie.toString()));
+    }
+
+    /** An adopted task is found through the real guid recorded on its item. */
+    @Test
+    void anAdoptedTaskIsAttributedThroughItsTaskGuid() throws Exception {
+        Path movie = video("movie.mp4");
+        ThumbnailScanRunItem item = outstandingItem(7L, movie.toString());
+        item.setScanGuid("scan:some-other-path");
+        item.setTaskGuid("real-client-guid");
+        when(scanRunMapper.selectList(any())).thenReturn(List.of());
+
+        worker.resumeInterruptedWorkForTest();
+        ArgumentCaptor<ThumbnailService.RunIdResolver> captor =
+                ArgumentCaptor.forClass(ThumbnailService.RunIdResolver.class);
+        verify(thumbnailService).resumeInterruptedTasks(captor.capture());
+
+        assertEquals(7L, captor.getValue().resolve("real-client-guid", movie.toString()));
+    }
 }
