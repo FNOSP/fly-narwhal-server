@@ -27,6 +27,7 @@ export default {
             changelog: '更新日志',
             faq: '常见问题',
             guide: '使用说明',
+            support: '支持作者',
         },
         getAuthCode: '获取授权码',
         download: '下载客户端',
@@ -443,6 +444,7 @@ export default {
             issues: '问题反馈',
             credits: '开源致谢',
             guide: '使用说明',
+            support: '支持作者',
         },
         disclaimer: '本项目为飞牛 OS 爱好者开发的第三方影视客户端，与飞牛影视官方无关。使用前请确保遵守相关服务条款。',
         copyright: '© {year} FNOSP · 基于 AGPL-3.0 开源协议发布',
@@ -651,6 +653,39 @@ export default {
                 '上次扫描若有视频生成失败，设置项旁会出现红色角标；进入配置弹窗点击「失败原因」可查看每个文件的具体原因（如文件无法读取、时长过短、解码失败等）。',
             ],
         },
+    },
+
+    support: {
+        backHome: '返回首页',
+        crumb: '飞鲸影视 · 支持作者',
+        eyebrow: '支持作者',
+        title: '您的支持，是我持续更新的动力',
+        lede: '飞鲸影视是由我和几个飞牛社区开发者利用业余时间开发和维护——从播放内核到界面细节，每一次更新背后都是深夜里的敲代码时间。如果它让你的观影体验好了一点，欢迎用下面两种方式支持一下。',
+
+        starTitle: '给项目点个 Star',
+        starDesc: '完全免费，只需要一次点击。Star 是开源项目最直接的认可，也能让更多人发现飞鲸影视。',
+        starCta: '前往 GitHub 点 Star',
+        starNote: '客户端与服务端仓库都欢迎 Star',
+        starClientRepo: '客户端仓库',
+        starServerRepo: '服务端仓库',
+
+        donateTitle: '给开发者的蓝色大肥鱼打米',
+        donateDesc: '如果觉得这个软件做得不错，也可以扫码赞赏，给开发者的蓝色大肥鱼打点米，让她更有动力继续加班写代码，谢谢！(^_−)☆',
+        donateQrAlt: '微信赞赏码',
+        donateQrCaption: '微信扫一扫 · 赞赏码',
+        donateMascotAlt: '开发者的蓝色大肥鱼吉祥物',
+        donateSteps: [
+            '打开微信「扫一扫」',
+            '对准上方赞赏码',
+            '金额随意，心意最重要',
+        ],
+
+        issuesTitle: '遇到问题？也欢迎反馈',
+        issuesDesc: '项目诚然还有很多地方需要完善，如果遇到软件问题或者 Bug，欢迎提交 Issue 或者 PR——这也是对项目很实在的支持。',
+        issuesCta: '提交 Issue / PR',
+
+        closingNote: '无论是否赞赏或点 Star，都感谢你使用飞鲸影视。',
+        backToHome: '返回飞鲸影视首页',
     },
 
     authCode: {

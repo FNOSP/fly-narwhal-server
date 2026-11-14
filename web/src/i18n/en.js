@@ -27,6 +27,7 @@ export default {
             changelog: 'Changelog',
             faq: 'FAQ',
             guide: 'User guide',
+            support: 'Support the author',
         },
         getAuthCode: 'Get auth code',
         download: 'Download',
@@ -441,6 +442,7 @@ export default {
             issues: 'Report an issue',
             credits: 'Acknowledgements',
             guide: 'User guide',
+            support: 'Support the author',
         },
         disclaimer: 'This project is a third-party media client built by fnOS enthusiasts and is not affiliated with the fnOS media team. Please be sure to comply with the relevant terms of service before using it.',
         copyright: '© {year} FNOSP · Released under the AGPL-3.0 open-source license',
@@ -648,6 +650,39 @@ export default {
                 'If some videos failed to generate in the last scan, a red badge appears next to the settings row; open the dialog and click “Failure reason” to see why each file failed (unreadable file, too short, decode failure, etc.).',
             ],
         },
+    },
+
+    support: {
+        backHome: 'Back to home',
+        crumb: 'FlyNarwhal · Support the author',
+        eyebrow: 'Support the author',
+        title: "Your support is why I keep building this.",
+        lede: "FlyNarwhal is built and maintained by me and a few fnOS community developers in our spare time — from the playback engine down to the smallest UI detail, every update comes out of late nights at the keyboard. If it's made your watching experience a little better, here are two easy ways to show some support.",
+
+        starTitle: 'Give the project a Star',
+        starDesc: "Completely free, just one click. A Star is the most direct way to say an open-source project matters — and it helps more people find FlyNarwhal.",
+        starCta: 'Star it on GitHub',
+        starNote: 'Stars are welcome on both the client and server repos',
+        starClientRepo: 'Client repo',
+        starServerRepo: 'Server repo',
+
+        donateTitle: "Send the developer's big blue fish some rice",
+        donateDesc: "If you think the app is well made, you can also scan the code to send a tip — a little rice for the developer's big blue fish, so she keeps working harder. Thank you! (^_−)☆",
+        donateQrAlt: 'WeChat tip QR code',
+        donateQrCaption: 'Scan with WeChat · Tip code',
+        donateMascotAlt: "The developer's big-blue-fish mascot",
+        donateSteps: [
+            'Open WeChat Scan',
+            'Point it at the tip code above',
+            'Any amount — the thought counts most',
+        ],
+
+        issuesTitle: 'Run into a problem? Feedback helps too',
+        issuesDesc: "The project admittedly still has plenty of room to grow. If you hit a bug or an issue, feel free to open an Issue or a PR — that's real support too.",
+        issuesCta: 'Open an Issue / PR',
+
+        closingNote: "Star or no star, tip or no tip — thank you for using FlyNarwhal.",
+        backToHome: 'Back to the FlyNarwhal home page',
     },
 
     authCode: {

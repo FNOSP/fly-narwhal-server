@@ -25,6 +25,7 @@ const links = [
     { href: '#changelog', key: 'changelog' },
     { href: '#faq', key: 'faq' },
     { href: '#/guide', key: 'guide' },
+    { href: '#/support', key: 'support' },
 ]
 
 // Below the desktop breakpoint the inline link row is replaced by this

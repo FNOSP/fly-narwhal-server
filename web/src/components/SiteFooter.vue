@@ -28,6 +28,7 @@ const links = [
     { key: 'issues', href: 'https://github.com/FNOSP/FlyNarwhal/issues', external: true },
     { key: 'credits', href: '#/credits' },
     { key: 'guide', href: '#/guide' },
+    { key: 'support', href: '#/support' },
 ]
 
 const commitsTip = (c) => format(t.value.footer.commitsTip, { login: c.login, commits: c.commits })

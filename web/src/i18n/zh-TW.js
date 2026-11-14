@@ -30,6 +30,7 @@ export default {
             changelog: '更新日誌',
             faq: '常見問題',
             guide: '使用說明',
+            support: '支持作者',
         },
         getAuthCode: '取得授權碼',
         download: '下載用戶端',
@@ -444,6 +445,7 @@ export default {
             issues: '問題回報',
             credits: '開源致謝',
             guide: '使用說明',
+            support: '支持作者',
         },
         disclaimer: '本專案為飛牛 OS 愛好者開發的第三方影視用戶端，與飛牛影視官方無關。使用前請確保遵守相關服務條款。',
         copyright: '© {year} FNOSP · 基於 AGPL-3.0 開源授權發佈',
@@ -651,6 +653,39 @@ export default {
                 '上次掃描若有影片生成失敗，設定項旁會出現紅色角標；進入設定對話框點選「失敗原因」可查看每個檔案的具體原因（如檔案無法讀取、時長過短、解碼失敗等）。',
             ],
         },
+    },
+
+    support: {
+        backHome: '返回首頁',
+        crumb: '飛鯨影視 · 支持作者',
+        eyebrow: '支持作者',
+        title: '您的支持，是我持續更新的動力',
+        lede: '飛鯨影視是由我和幾個飛牛社群開發者利用業餘時間開發和維護——從播放核心到介面細節，每一次更新背後都是深夜裡的敲程式碼時間。如果它讓你的觀影體驗好了一點，歡迎用下面兩種方式支持一下。',
+
+        starTitle: '給專案點個 Star',
+        starDesc: '完全免費，只需要一次點擊。Star 是開源專案最直接的認可，也能讓更多人發現飛鯨影視。',
+        starCta: '前往 GitHub 點 Star',
+        starNote: '客戶端與伺服器儲存庫都歡迎 Star',
+        starClientRepo: '客戶端儲存庫',
+        starServerRepo: '伺服器儲存庫',
+
+        donateTitle: '給開發者的藍色大肥魚打米',
+        donateDesc: '如果覺得這個軟體做得不錯，也可以掃碼贊賞，給開發者的藍色大肥魚打點米，讓她更有動力繼續加班寫程式碼，謝謝！(^_−)☆',
+        donateQrAlt: '微信贊賞碼',
+        donateQrCaption: '微信掃一掃 · 贊賞碼',
+        donateMascotAlt: '開發者的藍色大肥魚吉祥物',
+        donateSteps: [
+            '打開微信「掃一掃」',
+            '對準上方贊賞碼',
+            '金額隨意，心意最重要',
+        ],
+
+        issuesTitle: '遇到問題？也歡迎回饋',
+        issuesDesc: '專案確實還有很多地方需要完善，如果遇到軟體問題或者 Bug，歡迎提交 Issue 或者 PR——這也是對專案很實在的支持。',
+        issuesCta: '提交 Issue / PR',
+
+        closingNote: '無論是否贊賞或點 Star，都感謝你使用飛鯨影視。',
+        backToHome: '返回飛鯨影視首頁',
     },
 
     authCode: {
