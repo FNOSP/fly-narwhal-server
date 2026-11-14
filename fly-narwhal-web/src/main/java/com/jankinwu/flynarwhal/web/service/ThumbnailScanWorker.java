@@ -1,12 +1,15 @@
 package com.jankinwu.flynarwhal.web.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.core.data.ThumbnailStatus;
 import com.jankinwu.flynarwhal.core.dto.response.ThumbnailStatusResponse;
 import com.jankinwu.flynarwhal.core.scanner.VideoFileTypes;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRun;
+import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRunItem;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailTask;
+import com.jankinwu.flynarwhal.web.mapper.ThumbnailScanRunItemMapper;
 import com.jankinwu.flynarwhal.web.mapper.ThumbnailScanRunMapper;
 import com.jankinwu.flynarwhal.web.mapper.ThumbnailTaskMapper;
 import com.jankinwu.flynarwhal.web.storage.ThumbnailFileStore;
@@ -28,12 +31,9 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -88,6 +88,8 @@ public class ThumbnailScanWorker {
     private final ThumbnailTaskMapper taskMapper;
     /** Run history: one row per scan, written only by this worker. */
     private final ThumbnailScanRunMapper scanRunMapper;
+    /** The run's per-file ledger: the authority on what is still outstanding. */
+    private final ThumbnailScanRunItemMapper itemMapper;
     /** Sprite store, checked for sheets deleted under a still-COMPLETED row. */
     private final ThumbnailFileStore fileStore;
     private final ObjectMapper objectMapper;
@@ -101,31 +103,15 @@ public class ThumbnailScanWorker {
     private volatile boolean started;
 
     /**
-     * Run whose sprite jobs are still outstanding: the row id, the guids this
-     * run queued, and how many are still pending. Touched from the scan thread
-     * and from {@link ThumbnailService}'s job thread, hence the lock.
-     */
-    private final Object generationLock = new Object();
-    /**
      * Ceiling on how long a run waits for the sprites it queued. Generation is
      * serial and can be slow on an ARM NAS, so the limit is generous; past it
-     * the worker stops waiting (the row is closed) and the remaining jobs run
-     * on regardless.
+     * the worker stops waiting (the row is closed as FAILED) and the remaining
+     * jobs run on regardless.
      */
     private static final long GENERATION_WAIT_TIMEOUT_MS = Duration.ofHours(6).toMillis();
-    private Long generatingRunId;
-    private Set<String> generatingGuids = new HashSet<>();
-    private int generatedCount;
-    private int failedCount;
 
-    /**
-     * Outcomes of this run's jobs that landed before the run armed its
-     * generation set. The job thread is independent of the scan thread, so a
-     * fast job (an already-completed file, a tiny sprite sheet) can finish
-     * between the trigger and {@link #markGenerating}; such a job must still
-     * count for the run instead of waiting forever.
-     */
-    private final Map<String, Boolean> completedBeforeArmed = new HashMap<>();
+    /** How often the wait re-reads the run's outstanding count. */
+    private static final long GENERATION_POLL_INTERVAL_MS = 2000;
 
     @EventListener(ApplicationReadyEvent.class)
     public synchronized void start() {
@@ -198,19 +184,15 @@ public class ThumbnailScanWorker {
         currentDir = null;
         scannedFiles = 0;
         int matched = 0;
-        int needed = 0;
         List<String> errors = new ArrayList<>();
         List<String> inaccessible = new ArrayList<>();
-        List<String> queuedGuids = new ArrayList<>();
         Long runId = request.runId() != null ? request.runId() : markRunStarted(request.source());
         markRunRunning(runId);
         try {
             for (String dir : request.dirs()) {
                 currentDir = dir;
                 try {
-                    ScanOutcome outcome = scanDirectory(dir, queuedGuids, runId);
-                    matched += outcome.scanned();
-                    needed += outcome.needed();
+                    matched += scanDirectory(dir, runId);
                 } catch (Exception e) {
                     // Always logged: an unwalkable directory otherwise only shows up as a missing count.
                     log.error("Thumbnail scan of directory {} failed", dir, e);
@@ -224,86 +206,73 @@ public class ThumbnailScanWorker {
                 log.error("Thumbnail scan could not access {} configured director(ies): {} — add folder access permission for the FlyNarwhal server in fnOS",
                         inaccessible.size(), inaccessible);
             }
+            int needed = countItems(runId, null);
+            markGenerating(runId, matched, needed);
             scannedFiles = matched;
-            // The scan half is done; the run now waits for the sprites it queued.
-            markGenerating(runId, matched, needed, queuedGuids);
-            awaitGeneration(runId, matched, needed,
-                    errors.isEmpty() ? null : String.join("; ", errors), inaccessible);
+            boolean timedOut = awaitGeneration(runId);
+            int generated = countItems(runId, ThumbnailScanRunItem.STATUS_GENERATED);
+            int failed = countItems(runId, ThumbnailScanRunItem.STATUS_FAILED);
+            String error = errors.isEmpty() ? null : String.join("; ", errors);
+            if (timedOut) {
+                String timeout = "timed out waiting for sprite generation";
+                error = error == null ? timeout : error + "; " + timeout;
+            }
+            markRunFinished(runId, timedOut ? ThumbnailScanRun.STATUS_FAILED : ThumbnailScanRun.STATUS_SUCCESS,
+                    matched, needed, error, inaccessible);
             log.info("Thumbnail scan finished in {}ms (source={}): {} matched, {} need sprites, {} generated, {} failed, {} dir error(s)",
                     System.currentTimeMillis() - startedAt, request.source(), matched, needed,
-                    generatedCount, failedCount, errors.size());
+                    generated, failed, errors.size());
         } catch (Exception e) {
             log.error("Thumbnail scan failed (source={})", request.source(), e);
-            synchronized (generationLock) {
-                generatingRunId = null;
-                generatingGuids = new HashSet<>();
-                markRunFinished(runId, ThumbnailScanRun.STATUS_FAILED, matched, needed,
-                        e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(),
-                        inaccessible, generatedCount, failedCount);
-            }
+            markRunFinished(runId, ThumbnailScanRun.STATUS_FAILED, matched, countItems(runId, null),
+                    e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(), inaccessible);
         }
     }
 
     /**
-     * Records the generation half of the run and blocks the worker until every
-     * sprite job this run queued has finished. The row already shows SCANNING
-     * counts, so the client sees progress while waiting; a job from an older
-     * run (or any other request) is ignored by run id.
+     * Records the walk totals and moves the row to GENERATING. Only the walk's
+     * own columns are written here: the derived counters belong to
+     * {@link #writeDerivedCounters}, which the job thread also writes.
      */
-    private void markGenerating(Long runId, int matched, int needed, List<String> queuedGuids) {
-        synchronized (generationLock) {
-            generatedCount = 0;
-            failedCount = 0;
-            Set<String> pending = new LinkedHashSet<>();
-            for (String guid : queuedGuids) {
-                Boolean early = completedBeforeArmed.remove(guid);
-                if (early == null) {
-                    pending.add(guid);
-                } else if (early) {
-                    generatedCount++;
-                } else {
-                    failedCount++;
-                }
-            }
-            generatingRunId = pending.isEmpty() ? null : runId;
-            generatingGuids = pending;
-            ThumbnailScanRun run = new ThumbnailScanRun();
-            run.setPhase(ThumbnailScanRun.PHASE_GENERATING);
-            run.setSourcedCount(matched);
-            run.setQueuedCount(needed);
-            run.setGeneratedCount(generatedCount);
-            run.setFailedCount(failedCount);
-            scanRunMapper.update(run, new QueryWrapper<ThumbnailScanRun>()
-                    .eq("ID", runId)
-                    .eq("PROGRESS_MARKER", 1));
-        }
+    private void markGenerating(Long runId, int matched, int needed) {
+        ThumbnailScanRun run = new ThumbnailScanRun();
+        run.setPhase(ThumbnailScanRun.PHASE_GENERATING);
+        run.setSourcedCount(matched);
+        run.setQueuedCount(needed);
+        scanRunMapper.update(run, new QueryWrapper<ThumbnailScanRun>()
+                .eq("ID", runId)
+                .eq("STATUS", ThumbnailScanRun.STATUS_RUNNING));
+        writeDerivedCounters(runId);
     }
 
-    /** Waits for this run's outstanding jobs, then closes the row. */
-    private void awaitGeneration(Long runId, int matched, int needed, String error,
-                                 List<String> inaccessible) {
-        synchronized (generationLock) {
-            long deadline = System.currentTimeMillis() + generationWaitTimeoutMs;
-            while (generatingRunId != null && !generatingGuids.isEmpty()
-                    && System.currentTimeMillis() < deadline) {
-                try {
-                    generationLock.wait(2000);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
+    /**
+     * Waits until the run has no outstanding item, or the ceiling is reached.
+     * The ledger is the database, so a completion can never be missed by this
+     * loop regardless of which guid the job ran under.
+     *
+     * @return true when the wait gave up with work still outstanding
+     */
+    private boolean awaitGeneration(Long runId) {
+        long deadline = System.currentTimeMillis() + generationWaitTimeoutMs;
+        while (true) {
+            if (countItems(runId, ThumbnailScanRunItem.STATUS_QUEUED) == 0) {
+                return false;
             }
-            generatingRunId = null;
-            // Counts were written by markGenerating and refined per job; the
-            // closing write only settles status, phase and the report.
-            markRunFinished(runId, ThumbnailScanRun.STATUS_SUCCESS, matched, needed, error,
-                    inaccessible, generatedCount, failedCount);
+            if (System.currentTimeMillis() >= deadline) {
+                return true;
+            }
+            try {
+                Thread.sleep(GENERATION_POLL_INTERVAL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return true;
+            }
         }
     }
 
     /** Test seam: feeds a completion the way the job thread would. */
-    void onJobFinishedForTest(String guid, boolean succeeded, boolean queued, Long runId) {
-        onGenerationJobFinished(guid, succeeded, queued, runId);
+    void onJobFinishedForTest(String guid, String filePath, boolean succeeded, Long runId) {
+        onGenerationJobFinished(guid, filePath, succeeded, runId);
     }
 
     /** Test seam: overrides the generation wait ceiling. */
@@ -313,42 +282,88 @@ public class ThumbnailScanWorker {
 
     private volatile long generationWaitTimeoutMs = GENERATION_WAIT_TIMEOUT_MS;
 
-    /** Called from ThumbnailService's job thread; never blocks it. */
-    private void onGenerationJobFinished(String guid, boolean succeeded, boolean queuedByTrigger, Long runId) {
-        if (!queuedByTrigger) {
-            // A state probe, not a job this run queued: it counts as neither
-            // progress nor a failure.
-            return;
-        }
-        synchronized (generationLock) {
-            if (generatingRunId == null || !generatingGuids.contains(guid)) {
-                // Not this run's outstanding job (yet): remember the outcome only
-                // if this run queued it, so markGenerating can count it.
-                if (runId != null) {
-                    completedBeforeArmed.put(guid, succeeded);
+    /**
+     * Called from ThumbnailService's job thread. Takes no monitor and calls no
+     * service: only mapper I/O, so it can never invert a lock order against the
+     * scan thread or an HTTP request holding the ThumbnailService monitor.
+     *
+     * <p>Settlement is keyed by the path hash, which playback adopting the task
+     * onto a real guid does not change. A job this run did not create (the file
+     * already had a queued real-guid row when the scan asked for it) carries no
+     * run id, so it falls back to the guid recorded on the item.
+     */
+    private void onGenerationJobFinished(String guid, String filePath, boolean succeeded, Long runId) {
+        String outcome = succeeded ? ThumbnailScanRunItem.STATUS_GENERATED : ThumbnailScanRunItem.STATUS_FAILED;
+        try {
+            Long settledRunId = runId;
+            int updated = 0;
+            if (runId != null) {
+                updated = settleItem(new UpdateWrapper<ThumbnailScanRunItem>()
+                        .eq("RUN_ID", runId)
+                        .eq("SCAN_GUID", ThumbnailService.syntheticGuid(filePath)), outcome);
+            }
+            if (updated == 0) {
+                ThumbnailScanRunItem item = itemMapper.selectOne(new QueryWrapper<ThumbnailScanRunItem>()
+                        .eq("TASK_GUID", guid)
+                        .eq("STATUS", ThumbnailScanRunItem.STATUS_QUEUED)
+                        .orderByDesc("RUN_ID")
+                        .last("LIMIT 1"));
+                if (item == null) {
+                    return;
                 }
-                return;
+                settledRunId = item.getRunId();
+                updated = settleItem(new UpdateWrapper<ThumbnailScanRunItem>().eq("ID", item.getId()), outcome);
             }
-            // Attribute by run when the caller labelled the job; otherwise (a
-            // request that queued this guid without a run) fall back to guid.
-            boolean mine = runId != null ? runId.equals(generatingRunId) : true;
-            if (!mine) {
-                return;
+            if (updated > 0 && settledRunId != null) {
+                writeDerivedCounters(settledRunId);
             }
-            generatingGuids.remove(guid);
-            if (succeeded) {
-                generatedCount++;
-            } else {
-                failedCount++;
-            }
-            ThumbnailScanRun run = new ThumbnailScanRun();
-            run.setGeneratedCount(generatedCount);
-            run.setFailedCount(failedCount);
-            scanRunMapper.update(run, new QueryWrapper<ThumbnailScanRun>()
-                    .eq("ID", generatingRunId)
-                    .eq("PROGRESS_MARKER", 1));
-            generationLock.notifyAll();
+        } catch (Exception e) {
+            log.warn("Could not settle thumbnail scan item for {}: {}", guid, e.getMessage());
         }
+    }
+
+    /**
+     * Settles an outstanding item. The STATUS guard makes it idempotent: a
+     * duplicate completion updates nothing.
+     */
+    private int settleItem(UpdateWrapper<ThumbnailScanRunItem> match, String status) {
+        return itemMapper.update(null, match
+                .eq("STATUS", ThumbnailScanRunItem.STATUS_QUEUED)
+                .set("STATUS", status)
+                .set("UPDATE_TIME", LocalDateTime.now()));
+    }
+
+    private int countItems(Long runId, String status) {
+        QueryWrapper<ThumbnailScanRunItem> query = new QueryWrapper<ThumbnailScanRunItem>().eq("RUN_ID", runId);
+        if (status != null) {
+            query.eq("STATUS", status);
+        }
+        Long count = itemMapper.selectCount(query);
+        return count == null ? 0 : count.intValue();
+    }
+
+    /**
+     * Writes the run's derived counters in one statement, so the scan thread and
+     * the job thread can both call it without a read-modify-write race. The
+     * generating/waiting split is read from the live task rows, not guessed.
+     */
+    private void writeDerivedCounters(Long runId) {
+        scanRunMapper.update(null, new UpdateWrapper<ThumbnailScanRun>()
+                .eq("ID", runId)
+                .eq("STATUS", ThumbnailScanRun.STATUS_RUNNING)
+                .setSql("GENERATED_COUNT = " + itemCountSql(runId, ThumbnailScanRunItem.STATUS_GENERATED))
+                .setSql("FAILED_COUNT = " + itemCountSql(runId, ThumbnailScanRunItem.STATUS_FAILED))
+                .setSql("WAITING_COUNT = " + itemCountSql(runId, ThumbnailScanRunItem.STATUS_QUEUED))
+                .setSql("GENERATING_COUNT = (SELECT COUNT(*) FROM THUMBNAIL_SCAN_RUN_ITEMS i"
+                        + " JOIN THUMBNAIL_TASKS t ON t.GUID = COALESCE(i.TASK_GUID, i.SCAN_GUID)"
+                        + " WHERE i.RUN_ID = " + runId + " AND i.STATUS = 'QUEUED'"
+                        + " AND t.STATUS = '" + ThumbnailStatus.IN_PROGRESS.name() + "')"));
+    }
+
+    /** runId is a database-generated Long, never caller text. */
+    private static String itemCountSql(Long runId, String status) {
+        return "(SELECT COUNT(*) FROM THUMBNAIL_SCAN_RUN_ITEMS WHERE RUN_ID = " + runId
+                + " AND STATUS = '" + status + "')";
     }
 
     /**
@@ -388,25 +403,28 @@ public class ThumbnailScanWorker {
 
     /**
      * Closes the run row: status, counts and the report land in one write, so
-     * the row is never half-updated from the client's point of view. Only rows
-     * still marked as the in-flight run are updated, making it idempotent.
+     * the row is never half-updated from the client's point of view. Only a row
+     * still in flight is updated, making it idempotent. PROGRESS_MARKER is
+     * cleared through the wrapper — an entity update would skip the null and
+     * leave the run looking in-flight forever.
      */
     private void markRunFinished(Long runId, String status, int matched, int needed, String error,
-                                 List<String> inaccessibleDirs, int generated, int failed) {
-        ThumbnailScanRun run = new ThumbnailScanRun();
-        run.setFinishTime(LocalDateTime.now());
-        run.setStatus(status);
-        run.setPhase(status);
-        run.setSourcedCount(matched);
-        run.setQueuedCount(needed);
-        run.setGeneratedCount(generated);
-        run.setFailedCount(failed);
-        run.setError(truncate(error, 2048));
-        run.setInaccessibleDirs(inaccessibleDirs.isEmpty() ? null : truncate(writeJson(inaccessibleDirs), 2048));
-        run.setProgressMarker(null);
-        scanRunMapper.update(run, new QueryWrapper<ThumbnailScanRun>()
+                                 List<String> inaccessibleDirs) {
+        scanRunMapper.update(null, new UpdateWrapper<ThumbnailScanRun>()
                 .eq("ID", runId)
-                .eq("PROGRESS_MARKER", 1));
+                .in("STATUS", ThumbnailScanRun.STATUS_QUEUED, ThumbnailScanRun.STATUS_RUNNING)
+                .set("FINISH_TIME", LocalDateTime.now())
+                .set("STATUS", status)
+                .set("PHASE", status)
+                .set("SOURCED_COUNT", matched)
+                .set("QUEUED_COUNT", needed)
+                .set("ERROR", truncate(error, 2048))
+                .set("INACCESSIBLE_DIRS", inaccessibleDirs.isEmpty() ? null : truncate(writeJson(inaccessibleDirs), 2048))
+                .set("PROGRESS_MARKER", null)
+                .setSql("GENERATED_COUNT = " + itemCountSql(runId, ThumbnailScanRunItem.STATUS_GENERATED))
+                .setSql("FAILED_COUNT = " + itemCountSql(runId, ThumbnailScanRunItem.STATUS_FAILED))
+                .setSql("WAITING_COUNT = " + itemCountSql(runId, ThumbnailScanRunItem.STATUS_QUEUED))
+                .setSql("GENERATING_COUNT = 0"));
     }
 
     private String writeJson(List<String> dirs) {
@@ -422,11 +440,7 @@ public class ThumbnailScanWorker {
         return value != null && value.length() > maxChars ? value.substring(0, maxChars) : value;
     }
 
-    /** {@code scanned}: videos matched; {@code needed}: those without usable sprites. */
-    private record ScanOutcome(int scanned, int needed) {
-    }
-
-    private ScanOutcome scanDirectory(String dir, List<String> queuedGuids, Long runId) throws IOException {
+    private int scanDirectory(String dir, Long runId) throws IOException {
         Path root = listRoot(Path.of(dir));
         List<String> videos = new ArrayList<>();
         Files.walkFileTree(root, new SimpleFileVisitor<>() {
@@ -458,25 +472,53 @@ public class ThumbnailScanWorker {
         // The videos this run puts on the generation queue: those without
         // usable sprites (no task, failed, or the file changed since the last
         // generation) that the trigger actually accepted.
-        int queued = 0;
         for (List<String> chunk : partition(videos, QUERY_CHUNK_SIZE)) {
             Map<String, ThumbnailTask> byPath = loadTasksByPath(chunk);
             for (String path : chunk) {
                 if (!needsGeneration(byPath.get(path), path)) {
                     continue;
                 }
-                String guid = ThumbnailService.syntheticGuid(path);
-                ThumbnailStatusResponse response = thumbnailService.trigger(
-                        guid, path, false, true, runId);
-                // A file whose generation an earlier run still has in flight
-                // needs nothing from this run and is not counted for it.
-                if (ThumbnailStatus.PENDING.name().equals(response.getStatus())) {
-                    queued++;
-                    queuedGuids.add(guid);
-                }
+                queueItem(runId, path);
             }
         }
-        return new ScanOutcome(videos.size(), queued);
+        return videos.size();
+    }
+
+    /**
+     * Adds one file to the run's ledger and asks for its sprites. The item row
+     * is inserted BEFORE the trigger so a job that finishes immediately always
+     * finds something to settle — the race the in-memory ledger used to lose.
+     */
+    private void queueItem(Long runId, String path) {
+        String guid = ThumbnailService.syntheticGuid(path);
+        LocalDateTime now = LocalDateTime.now();
+        ThumbnailScanRunItem item = new ThumbnailScanRunItem();
+        item.setRunId(runId);
+        item.setScanGuid(guid);
+        item.setFilePath(path);
+        item.setStatus(ThumbnailScanRunItem.STATUS_QUEUED);
+        item.setCreateTime(now);
+        item.setUpdateTime(now);
+        itemMapper.insert(item);
+
+        ThumbnailStatusResponse response = thumbnailService.trigger(guid, path, false, true, runId);
+
+        // The job may run under a row that already existed for this path (a real
+        // client guid). Record it for attribution; never touch STATUS here, the
+        // job may already have settled the item.
+        String effective = response.getGuid();
+        if (effective != null && !effective.isBlank() && !effective.equals(guid)) {
+            itemMapper.update(null, new UpdateWrapper<ThumbnailScanRunItem>()
+                    .eq("ID", item.getId())
+                    .set("TASK_GUID", effective)
+                    .set("UPDATE_TIME", LocalDateTime.now()));
+        }
+        if (!ThumbnailStatus.PENDING.name().equals(response.getStatus())) {
+            // A synchronous outcome queues no job, so nothing will report back.
+            boolean failed = ThumbnailStatus.FAILED.name().equals(response.getStatus());
+            settleItem(new UpdateWrapper<ThumbnailScanRunItem>().eq("ID", item.getId()),
+                    failed ? ThumbnailScanRunItem.STATUS_FAILED : ThumbnailScanRunItem.STATUS_SKIPPED);
+        }
     }
 
     /**

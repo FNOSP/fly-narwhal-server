@@ -67,22 +67,23 @@ public class ThumbnailService {
     private final BlockingDeque<ThumbnailJob> jobQueue = new LinkedBlockingDeque<>();
 
     /**
-     * Notified after every job finishes (success or failure) with the job's
-     * guid. The scan worker subscribes so it can count the sprites this run
-     * actually produced, instead of re-deriving it from task rows that other
-     * requests may have created too.
+     * Notified after every job finishes (success or failure). The scan worker
+     * subscribes so it can count the sprites this run actually produced,
+     * instead of re-deriving it from task rows that other requests may have
+     * created too.
      */
     private volatile JobCompletionListener jobCompletionListener;
 
     /**
      * Completion report of one sprite job.
      *
-     * @param queued whether a real trigger queued it (a pure state probe is false)
-     * @param runId  the scan run that queued it, or null for client requests
+     * @param guid     the guid the job ran under; playback may have adopted it
+     * @param filePath normalized media path — the identity that never drifts
+     * @param runId    the scan run that queued it, or null for client requests
      */
     @FunctionalInterface
     public interface JobCompletionListener {
-        void onJobFinished(String guid, boolean succeeded, boolean queued, Long runId);
+        void onJobFinished(String guid, String filePath, boolean succeeded, Long runId);
     }
 
     public void setJobCompletionListener(JobCompletionListener listener) {
@@ -92,11 +93,12 @@ public class ThumbnailService {
     /** Reports a finished job; listener failures must never break the queue. */
     private void notifyJobCompletion(String guid, boolean succeeded, ThumbnailJob job) {
         JobCompletionListener listener = jobCompletionListener;
-        if (listener == null) {
+        if (listener == null || !job.queued()) {
+            // A pure state probe is neither progress nor a failure for any run.
             return;
         }
         try {
-            listener.onJobFinished(guid, succeeded, job.queued(), job.runId());
+            listener.onJobFinished(guid, job.filePath(), succeeded, job.runId());
         } catch (Exception e) {
             log.warn("Thumbnail job completion listener failed for {}: {}", guid, e.getMessage());
         }
@@ -276,6 +278,8 @@ public class ThumbnailService {
         }
         if (isScanGuid(guid) && !isScanGuid(byPath.getGuid())) {
             // The file already has a task under its real client guid; work on that one.
+            // The run's item is keyed by the path hash, so the completion is attributed
+            // back to it even though the job runs under the real guid.
             return new Reconciliation(null, trigger(byPath.getGuid(), normalizedPath, force, countForRun, runId));
         }
         if (!isScanGuid(guid) && isScanGuid(byPath.getGuid())) {
@@ -362,10 +366,13 @@ public class ThumbnailService {
 
     private void runJob(ThumbnailJob job) {
         String guid = job.guid();
-        markInProgress(guid);
-        int generation = nextGeneration(guid);
-        Path tmpDir = fileStore.tmpDir(guid, generation);
+        // Everything is inside the try: a failure before ffmpeg starts must still
+        // report a completion, or the scan run waits for an item that never settles.
+        Path tmpDir = null;
         try {
+            markInProgress(guid);
+            int generation = nextGeneration(guid);
+            tmpDir = fileStore.tmpDir(guid, generation);
             MediaStat stat = readMediaStat(job.filePath());
             if (stat == null) {
                 throw new IllegalStateException("media file not found or unreadable: " + job.filePath());
@@ -400,7 +407,9 @@ public class ThumbnailService {
             notifyJobCompletion(guid, true, job);
         } catch (Exception e) {
             log.error("Thumbnail generation failed for {}", guid, e);
-            fileStore.deleteRecursively(tmpDir);
+            if (tmpDir != null) {
+                fileStore.deleteRecursively(tmpDir);
+            }
             markFailed(thumbnailTaskMapper.selectById(guid), guid, job.filePath(), describe(e));
             finishAdoption(guid);
             notifyJobCompletion(guid, false, job);
@@ -438,10 +447,16 @@ public class ThumbnailService {
             return already != null ? toResponse(already, staleOf(already)) : ThumbnailStatusResponse.none(realGuid);
         }
         ThumbnailTask existingReal = thumbnailTaskMapper.selectById(realGuid);
-        if (existingReal != null) {
+        if (existingReal != null && hasCompleteSheets(existingReal)) {
+            // Only discard the scan row when the real one already holds a full
+            // generation; otherwise its sheets are the newer work and must win.
             thumbnailTaskMapper.deleteById(current.getGuid());
             fileStore.deleteRecursively(fileStore.guidDir(current.getGuid()));
             return toResponse(existingReal, staleOf(existingReal));
+        }
+        if (existingReal != null) {
+            thumbnailTaskMapper.deleteById(existingReal.getGuid());
+            fileStore.deleteRecursively(fileStore.guidDir(existingReal.getGuid()));
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -516,7 +531,9 @@ public class ThumbnailService {
 
     private ThumbnailTask findFirstByAdoptGuid(String guid) {
         List<ThumbnailTask> rows = thumbnailTaskMapper.selectList(
-                new QueryWrapper<ThumbnailTask>().eq("adopt_guid", guid));
+                new QueryWrapper<ThumbnailTask>().eq("adopt_guid", guid)
+                        .orderByDesc("update_time")
+                        .last("LIMIT 1"));
         return rows.isEmpty() ? null : rows.get(0);
     }
 

@@ -274,4 +274,33 @@ class ThumbnailServiceAdoptionTest {
         assertEquals(ThumbnailStatusResponse.STATUS_NONE, second.getStatus());
         assertEquals(List.of("guid-a"), rows.keySet().stream().filter(k -> !k.equals(scanGuid)).toList());
     }
+
+    /**
+     * A real row that promises sheets it does not have must not win over a scan
+     * row that just produced them: adopting used to delete the fresh generation.
+     */
+    @Test
+    void adoptionKeepsTheFreshSheetsWhenTheRealRowIsIncomplete() throws Exception {
+        long mtime = Files.getLastModifiedTime(mediaFile).toMillis();
+        ThumbnailTask scan = scanRow(ThumbnailStatus.PENDING, mtime);
+        // A real guid already claimed this scan row while it was still generating.
+        scan.setAdoptGuid("guid-stale");
+        rows.put(scanGuid, scan);
+        ThumbnailTask stale = scanRow(ThumbnailStatus.COMPLETED, mtime);
+        stale.setGuid("guid-stale");
+        rows.put("guid-stale", stale);
+        // The scan row's generation is on disk; the real row's is not.
+        when(store.isGenerationComplete(any(), anyInt(), anyInt()))
+                .thenAnswer(inv -> scanGuid.equals(inv.getArgument(0)));
+        // runJob finished the scan row, then completes the delayed claim.
+        scan.setStatus(ThumbnailStatus.COMPLETED);
+        rows.remove("guid-stale");
+
+        ThumbnailStatusResponse response = service.getStatus("guid-stale", path);
+
+        assertEquals(ThumbnailStatus.COMPLETED.name(), response.getStatus());
+        assertEquals(2, response.getGeneration(), "the scan row's generation survives");
+        verify(store).adoptDirectory(scanGuid, "guid-stale");
+        assertNull(rows.get(scanGuid), "the scan row is still re-keyed away");
+    }
 }

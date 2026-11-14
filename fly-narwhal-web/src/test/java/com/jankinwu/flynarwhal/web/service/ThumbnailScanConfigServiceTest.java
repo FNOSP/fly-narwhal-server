@@ -5,6 +5,7 @@ import com.jankinwu.flynarwhal.core.dto.response.CronPreviewResponse;
 import com.jankinwu.flynarwhal.core.dto.response.ThumbnailScanConfigResponse;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanConfig;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRun;
+import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRunItem;
 import com.jankinwu.flynarwhal.web.mapper.ThumbnailScanConfigMapper;
 import com.jankinwu.flynarwhal.web.mapper.ThumbnailScanRunMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -33,6 +35,7 @@ class ThumbnailScanConfigServiceTest {
 
     private ThumbnailScanConfigMapper mapper;
     private ThumbnailScanRunMapper runMapper;
+    private FakeRunItemLedger ledger;
     private ThumbnailScanWorker worker;
     private ApplicationEventPublisher publisher;
     private ThumbnailScanConfigService service;
@@ -41,10 +44,12 @@ class ThumbnailScanConfigServiceTest {
     void setUp() {
         mapper = mock(ThumbnailScanConfigMapper.class);
         runMapper = mock(ThumbnailScanRunMapper.class);
+        ledger = new FakeRunItemLedger();
         worker = mock(ThumbnailScanWorker.class);
         publisher = mock(ApplicationEventPublisher.class);
         when(worker.progress()).thenReturn(ThumbnailScanWorker.Progress.idle());
-        service = new ThumbnailScanConfigService(mapper, runMapper, new ObjectMapper(), worker, publisher);
+        service = new ThumbnailScanConfigService(mapper, runMapper, ledger.mapper,
+                new ObjectMapper(), worker, publisher);
     }
 
     private ThumbnailScanConfig existingRow() {
@@ -221,5 +226,60 @@ class ThumbnailScanConfigServiceTest {
 
         verify(runMapper, org.mockito.Mockito.never()).delete(any());
         verify(runMapper).insert(any(ThumbnailScanRun.class));
+    }
+
+    /** The closing write must clear PROGRESS_MARKER through the wrapper, not the entity. */
+    private com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<ThumbnailScanRun> capturedClose() {
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<ThumbnailScanRun>> captor =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper.class);
+        verify(runMapper).update(eq(null), captor.capture());
+        return captor.getValue();
+    }
+
+    private static boolean writesNull(com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<ThumbnailScanRun> w,
+                                      String column) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile(column + "=#\\{ew\\.paramNameValuePairs\\.(MPGENVAL\\d+)}")
+                .matcher(w.getSqlSet());
+        return matcher.find() && w.getParamNameValuePairs().get(matcher.group(1)) == null;
+    }
+
+    @Test
+    void anInterruptedRunningRunIsClosedAndItsPendingItemsDiscarded() {
+        ThumbnailScanRun run = new ThumbnailScanRun();
+        run.setId(7L);
+        run.setStatus(ThumbnailScanRun.STATUS_RUNNING);
+        when(runMapper.selectOne(any())).thenReturn(run);
+        ThumbnailScanRunItem item = new ThumbnailScanRunItem();
+        item.setRunId(7L);
+        item.setScanGuid("scan:abc");
+        item.setStatus(ThumbnailScanRunItem.STATUS_QUEUED);
+        ledger.mapper.insert(item);
+
+        service.resetInterruptedRun();
+
+        assertEquals(ThumbnailScanRunItem.STATUS_SKIPPED, ledger.all().get(0).getStatus());
+        assertTrue(writesNull(capturedClose(), "PROGRESS_MARKER"),
+                "a closed run must not keep looking in-flight");
+    }
+
+    /** A crash between opening the row and the worker picking it up leaves a QUEUED ghost. */
+    @Test
+    void anInterruptedQueuedRunIsAlsoClosed() {
+        ThumbnailScanRun run = new ThumbnailScanRun();
+        run.setId(8L);
+        run.setStatus(ThumbnailScanRun.STATUS_QUEUED);
+        when(runMapper.selectOne(any())).thenReturn(run);
+
+        service.resetInterruptedRun();
+
+        assertTrue(writesNull(capturedClose(), "PROGRESS_MARKER"));
+    }
+
+    @Test
+    void abandoningARunClearsItsInFlightMarker() {
+        service.abandonRun(9L);
+
+        assertTrue(writesNull(capturedClose(), "PROGRESS_MARKER"));
     }
 }

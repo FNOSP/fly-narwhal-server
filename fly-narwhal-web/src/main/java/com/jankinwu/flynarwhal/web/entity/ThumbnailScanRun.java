@@ -60,6 +60,10 @@ public class ThumbnailScanRun {
     /** Queued videos whose generation failed in this run. */
     private Integer failedCount;
 
+    /** Queued videos whose generation is running / still waiting, at write time. */
+    private Integer generatingCount;
+    private Integer waitingCount;
+
     /** Per-directory failures, semicolon-joined; null when the run had none. */
     private String error;
 

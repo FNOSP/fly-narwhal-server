@@ -57,6 +57,9 @@ public class ThumbnailScanConfigResponse {
     private Integer lastQueuedCount;
     private Integer lastGeneratedCount;
     private Integer lastFailedCount;
+    /** Of the queued videos, how many are generating / waiting right now (GENERATING only). */
+    private Integer lastGeneratingCount;
+    private Integer lastWaitingCount;
 
     private String lastError;
 

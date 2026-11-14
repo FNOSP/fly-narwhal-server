@@ -1,5 +1,5 @@
 appname               = FlyNarwhalDev
-version               = 2.1.0
+version               = 2.1.2
 display_name          = 飞鲸影视（开发版）
 desc                  = """<p>飞鲸影视服务端的<strong>开发版</strong>，与正式版 <code>App.Native.flyNarwhalServer</code> 相互独立，可同时安装（默认端口 <code>5367</code>），数据与日志分别存放在本应用自己的共享目录中。<br />仅用于联调与验证新功能，请勿替代正式版使用。项目地址：<a href="https://github.com/FNOSP/FlyNarwhal" target="_blank" rel="noopener">FNOSP/FlyNarwhal</a></p>"""
 platform              = x86

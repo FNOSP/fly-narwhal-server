@@ -1,13 +1,16 @@
 package com.jankinwu.flynarwhal.web.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jankinwu.flynarwhal.core.dto.response.CronPreviewResponse;
 import com.jankinwu.flynarwhal.core.dto.response.ThumbnailScanConfigResponse;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanConfig;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRun;
+import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRunItem;
 import com.jankinwu.flynarwhal.web.mapper.ThumbnailScanConfigMapper;
+import com.jankinwu.flynarwhal.web.mapper.ThumbnailScanRunItemMapper;
 import com.jankinwu.flynarwhal.web.mapper.ThumbnailScanRunMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +45,7 @@ public class ThumbnailScanConfigService {
 
     private final ThumbnailScanConfigMapper mapper;
     private final ThumbnailScanRunMapper scanRunMapper;
+    private final ThumbnailScanRunItemMapper scanRunItemMapper;
     private final ObjectMapper objectMapper;
     private final ThumbnailScanWorker worker;
     private final ApplicationEventPublisher eventPublisher;
@@ -136,11 +140,21 @@ public class ThumbnailScanConfigService {
         return run;
     }
 
-    /** Closes the given row (only while it is still the in-flight run). */
-    private void runMapperUpdate(ThumbnailScanRun update, Long runId) {
-        scanRunMapper.update(update, new QueryWrapper<ThumbnailScanRun>()
+    /**
+     * Closes the given row while it is still in flight. PROGRESS_MARKER is
+     * cleared through the wrapper, not the entity: an entity update skips null
+     * fields (MyBatis-Plus' default NOT_NULL strategy), which would leave the
+     * marker at 1 forever.
+     */
+    private void closeRun(Long runId, String error) {
+        scanRunMapper.update(null, new UpdateWrapper<ThumbnailScanRun>()
                 .eq("ID", runId)
-                .eq("PROGRESS_MARKER", 1));
+                .in("STATUS", ThumbnailScanRun.STATUS_QUEUED, ThumbnailScanRun.STATUS_RUNNING)
+                .set("FINISH_TIME", LocalDateTime.now())
+                .set("STATUS", ThumbnailScanRun.STATUS_FAILED)
+                .set("PHASE", ThumbnailScanRun.STATUS_FAILED)
+                .set("ERROR", error)
+                .set("PROGRESS_MARKER", null));
     }
 
     /** Drops the oldest runs until one more insert fits under the cap. */
@@ -164,6 +178,14 @@ public class ThumbnailScanConfigService {
             // says otherwise (concurrent trim); let the next run retry.
             return;
         }
+        // No foreign keys in this schema: the items of a dropped run go first.
+        List<Long> dropIds = scanRunMapper.selectList(new QueryWrapper<ThumbnailScanRun>()
+                        .select("ID")
+                        .notIn("ID", keepIds))
+                .stream().map(ThumbnailScanRun::getId).toList();
+        if (!dropIds.isEmpty()) {
+            scanRunItemMapper.delete(new QueryWrapper<ThumbnailScanRunItem>().in("RUN_ID", dropIds));
+        }
         int removed = scanRunMapper.delete(new QueryWrapper<ThumbnailScanRun>()
                 .notIn("ID", keepIds));
         log.info("Thumbnail scan history pruned: {} row(s) dropped (cap {})", removed, MAX_RUN_HISTORY);
@@ -182,35 +204,38 @@ public class ThumbnailScanConfigService {
                 .lastQueuedCount(run == null ? null : run.getQueuedCount())
                 .lastGeneratedCount(run == null ? null : run.getGeneratedCount())
                 .lastFailedCount(run == null ? null : run.getFailedCount())
+                .lastGeneratingCount(run == null ? null : run.getGeneratingCount())
+                .lastWaitingCount(run == null ? null : run.getWaitingCount())
                 .lastError(run == null ? null : run.getError())
                 .lastInaccessibleDirs(readInaccessibleDirs(run))
                 .build();
     }
 
     /**
-     * Startup recovery: a run left RUNNING by a crash can never finish. Closing
-     * it here (rather than at run start) keeps the closing write on the run row
-     * itself, so nothing stale survives on the config row.
+     * Startup recovery: a run left in flight by a crash can never finish —
+     * including one still QUEUED, which the worker never picked up. Its
+     * outstanding items are discarded with it so no pending row survives.
      */
     public void resetInterruptedRun() {
         try {
             ThumbnailScanRun run = latestRun();
-            if (run == null || !ThumbnailScanRun.STATUS_RUNNING.equals(run.getStatus())) {
+            if (run == null || !(ThumbnailScanRun.STATUS_RUNNING.equals(run.getStatus())
+                    || ThumbnailScanRun.STATUS_QUEUED.equals(run.getStatus()))) {
                 return;
             }
-            ThumbnailScanRun closed = new ThumbnailScanRun();
-            closed.setFinishTime(LocalDateTime.now());
-            closed.setStatus(ThumbnailScanRun.STATUS_FAILED);
-            closed.setPhase(ThumbnailScanRun.STATUS_FAILED);
-            closed.setError("interrupted by server restart");
-            runMapperUpdate(closed, run.getId());
+            scanRunItemMapper.update(null, new UpdateWrapper<ThumbnailScanRunItem>()
+                    .eq("RUN_ID", run.getId())
+                    .eq("STATUS", ThumbnailScanRunItem.STATUS_QUEUED)
+                    .set("STATUS", ThumbnailScanRunItem.STATUS_SKIPPED)
+                    .set("UPDATE_TIME", LocalDateTime.now()));
+            closeRun(run.getId(), "interrupted by server restart");
         } catch (Exception e) {
             log.warn("Could not reset interrupted thumbnail scan run: {}", e.getMessage());
         }
     }
 
     /**
-     * Closes a run row; a no-op once the row is no longer the in-flight run.
+     * Closes a run row; a no-op once the row is no longer in flight.
      * Public so a trigger that never reaches the worker can abandon the row it
      * just opened instead of leaving a permanently QUEUED record.
      */
@@ -218,14 +243,7 @@ public class ThumbnailScanConfigService {
         if (runId == null) {
             return;
         }
-        ThumbnailScanRun run = new ThumbnailScanRun();
-        run.setFinishTime(LocalDateTime.now());
-        run.setStatus(ThumbnailScanRun.STATUS_FAILED);
-        run.setPhase(ThumbnailScanRun.STATUS_FAILED);
-        run.setError("not queued: a scan was already running");
-        scanRunMapper.update(run, new QueryWrapper<ThumbnailScanRun>()
-                .eq("ID", runId)
-                .eq("PROGRESS_MARKER", 1));
+        closeRun(runId, "not queued: a scan was already running");
     }
 
     /** Directories of a config row; empty list on missing/corrupt JSON. */
@@ -315,6 +333,8 @@ public class ThumbnailScanConfigService {
                 .lastQueuedCount(lastRun == null ? null : lastRun.getQueuedCount())
                 .lastGeneratedCount(lastRun == null ? null : lastRun.getGeneratedCount())
                 .lastFailedCount(lastRun == null ? null : lastRun.getFailedCount())
+                .lastGeneratingCount(lastRun == null ? null : lastRun.getGeneratingCount())
+                .lastWaitingCount(lastRun == null ? null : lastRun.getWaitingCount())
                 .lastError(lastRun == null ? null : lastRun.getError())
                 .lastInaccessibleDirs(readInaccessibleDirs(lastRun))
                 .build();

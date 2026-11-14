@@ -1,8 +1,10 @@
 package com.jankinwu.flynarwhal.web.service;
 
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.jankinwu.flynarwhal.core.data.ThumbnailStatus;
 import com.jankinwu.flynarwhal.core.dto.response.ThumbnailStatusResponse;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRun;
+import com.jankinwu.flynarwhal.web.entity.ThumbnailScanRunItem;
 import com.jankinwu.flynarwhal.web.entity.ThumbnailTask;
 import com.jankinwu.flynarwhal.web.mapper.ThumbnailScanRunMapper;
 import com.jankinwu.flynarwhal.web.mapper.ThumbnailTaskMapper;
@@ -22,7 +24,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -41,23 +42,49 @@ class ThumbnailScanWorkerTest {
     private ThumbnailService thumbnailService;
     private ThumbnailTaskMapper taskMapper;
     private ThumbnailScanRunMapper scanRunMapper;
+    private FakeRunItemLedger ledger;
     private com.jankinwu.flynarwhal.web.storage.ThumbnailFileStore fileStore;
     private ThumbnailScanWorker worker;
 
-    /** The last captured update that carries a terminal status (the closing write). */
-    private ThumbnailScanRun lastClosingUpdate(ArgumentCaptor<ThumbnailScanRun> captor) {
+    /**
+     * The closing write, which goes through an UpdateWrapper so its null
+     * PROGRESS_MARKER actually lands. Read back as the SET fragment it produces.
+     */
+    private String lastClosingSql() {
+        ArgumentCaptor<UpdateWrapper<ThumbnailScanRun>> captor = ArgumentCaptor.forClass(UpdateWrapper.class);
+        verify(scanRunMapper, org.mockito.Mockito.atLeastOnce()).update(eq(null), captor.capture());
         return captor.getAllValues().stream()
-                .filter(r -> ThumbnailScanRun.STATUS_SUCCESS.equals(r.getStatus())
-                        || ThumbnailScanRun.STATUS_FAILED.equals(r.getStatus()))
+                .map(UpdateWrapper::getSqlSet)
+                .filter(set -> set != null && set.contains("FINISH_TIME="))
+                .reduce((first, second) -> second)
+                .orElseThrow(() -> new AssertionError("no closing update captured"));
+    }
+
+    /** Value bound to {@code COLUMN=?} in a SET fragment, resolved through the wrapper. */
+    private static Object setValue(UpdateWrapper<ThumbnailScanRun> wrapper, String column) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile(column + "=#\\{ew\\.paramNameValuePairs\\.(MPGENVAL\\d+)}")
+                .matcher(wrapper.getSqlSet());
+        if (!matcher.find()) {
+            throw new AssertionError("column not written: " + column + " in " + wrapper.getSqlSet());
+        }
+        return wrapper.getParamNameValuePairs().get(matcher.group(1));
+    }
+
+    private UpdateWrapper<ThumbnailScanRun> lastClosingWrapper() {
+        ArgumentCaptor<UpdateWrapper<ThumbnailScanRun>> captor = ArgumentCaptor.forClass(UpdateWrapper.class);
+        verify(scanRunMapper, org.mockito.Mockito.atLeastOnce()).update(eq(null), captor.capture());
+        return captor.getAllValues().stream()
+                .filter(w -> w.getSqlSet() != null && w.getSqlSet().contains("FINISH_TIME="))
                 .reduce((first, second) -> second)
                 .orElseThrow(() -> new AssertionError("no closing update captured"));
     }
 
     /** The trigger the scan uses, answering PENDING (a queued job). */
-    private ThumbnailStatusResponse answerTrigger(String guid, Long runId) {
+    private ThumbnailStatusResponse answerTrigger(String guid, String path, Long runId) {
         // A stub never runs a queue, so the job finishes right here — before the
-        // run arms its generation set. The worker must still count it.
-        worker.onJobFinishedForTest(guid, true, true, runId);
+        // walk has even finished. The ledger row already exists, so it counts.
+        worker.onJobFinishedForTest(guid, path, true, runId);
         return ThumbnailStatusResponse.builder()
                 .guid(guid)
                 .status(ThumbnailStatus.PENDING.name())
@@ -69,10 +96,11 @@ class ThumbnailScanWorkerTest {
         thumbnailService = mock(ThumbnailService.class);
         taskMapper = mock(ThumbnailTaskMapper.class);
         scanRunMapper = mock(ThumbnailScanRunMapper.class);
+        ledger = new FakeRunItemLedger();
         fileStore = new com.jankinwu.flynarwhal.web.storage.ThumbnailFileStore(
                 tempDir.resolve("thumbnails").toString());
         fileStore.init();
-        worker = new ThumbnailScanWorker(thumbnailService, taskMapper, scanRunMapper, fileStore,
+        worker = new ThumbnailScanWorker(thumbnailService, taskMapper, scanRunMapper, ledger.mapper, fileStore,
                 new com.fasterxml.jackson.databind.ObjectMapper());
 
         // The worker opens a run row per scan; give it a dangling update handle.
@@ -85,7 +113,8 @@ class ThumbnailScanWorkerTest {
         // finished before returning, as if the queue thread had run it already.
         worker.setGenerationWaitTimeoutMs(500);
         when(thumbnailService.trigger(anyString(), anyString(), anyBoolean(), anyBoolean(), any()))
-                .thenAnswer(invocation -> answerTrigger(invocation.getArgument(0), invocation.getArgument(4)));
+                .thenAnswer(invocation -> answerTrigger(invocation.getArgument(0),
+                        invocation.getArgument(1), invocation.getArgument(4)));
     }
 
     private Path video(String name) throws Exception {
@@ -135,12 +164,11 @@ class ThumbnailScanWorkerTest {
         verify(thumbnailService).trigger(ThumbnailService.syntheticGuid(show.toString()), show.toString(), false, true, 1L);
         verify(thumbnailService, org.mockito.Mockito.times(2)).trigger(anyString(), anyString(), eq(false), eq(true), any());
 
-        ArgumentCaptor<ThumbnailScanRun> finished = ArgumentCaptor.forClass(ThumbnailScanRun.class);
-        verify(scanRunMapper, org.mockito.Mockito.atLeastOnce()).update(finished.capture(), any());
-        ThumbnailScanRun last = lastClosingUpdate(finished);
-        assertEquals(ThumbnailScanRun.STATUS_SUCCESS, last.getStatus());
-        assertEquals(2, last.getSourcedCount(), "both videos matched");
-        assertEquals(2, last.getQueuedCount(), "both needed sprites");
+        UpdateWrapper<ThumbnailScanRun> closed = lastClosingWrapper();
+        assertEquals(ThumbnailScanRun.STATUS_SUCCESS, setValue(closed, "STATUS"));
+        assertEquals(2, setValue(closed, "SOURCED_COUNT"), "both videos matched");
+        assertEquals(2, setValue(closed, "QUEUED_COUNT"), "both needed sprites");
+        assertNull(setValue(closed, "PROGRESS_MARKER"), "a finished run must clear the in-flight marker");
     }
 
     /** A same-size edit whose mtime was preserved must still be caught by the recorded size. */
@@ -265,12 +293,12 @@ class ThumbnailScanWorkerTest {
                 List.of(tempDir.resolve("missing").toString(), tempDir.toString())));
 
         verify(thumbnailService).trigger(ThumbnailService.syntheticGuid(movie.toString()), movie.toString(), false, true, 1L);
-        ArgumentCaptor<ThumbnailScanRun> finished = ArgumentCaptor.forClass(ThumbnailScanRun.class);
-        verify(scanRunMapper, org.mockito.Mockito.atLeastOnce()).update(finished.capture(), any());
-        ThumbnailScanRun last = lastClosingUpdate(finished);
-        assertEquals(ThumbnailScanRun.STATUS_SUCCESS, last.getStatus(), "partial failures still complete the run");
-        assertTrue(last.getError().contains("missing"), "the broken directory is reported: " + last.getError());
-        assertEquals(1, last.getSourcedCount());
+        UpdateWrapper<ThumbnailScanRun> closed = lastClosingWrapper();
+        assertEquals(ThumbnailScanRun.STATUS_SUCCESS, setValue(closed, "STATUS"),
+                "partial failures still complete the run");
+        String error = (String) setValue(closed, "ERROR");
+        assertTrue(error.contains("missing"), "the broken directory is reported: " + error);
+        assertEquals(1, setValue(closed, "SOURCED_COUNT"));
     }
 
     @Test
@@ -287,19 +315,14 @@ class ThumbnailScanWorkerTest {
                 return;
             }
             // The denied folder is persisted with the run result, as JSON.
-            ArgumentCaptor<ThumbnailScanRun> finished = ArgumentCaptor.forClass(ThumbnailScanRun.class);
-            verify(scanRunMapper, org.mockito.Mockito.atLeastOnce()).update(finished.capture(), any());
-            assertEquals("[\"" + locked + "\"]", lastClosingUpdate(finished).getInaccessibleDirs());
+            assertEquals("[\"" + locked + "\"]", setValue(lastClosingWrapper(), "INACCESSIBLE_DIRS"));
             verify(thumbnailService, never()).trigger(anyString(), anyString(), eq(false), eq(true), any());
 
-            // Every run is its own row; assert on the latest captured update.
-            finished = ArgumentCaptor.forClass(ThumbnailScanRun.class);
+            // Every run is its own row; assert on the latest closing write.
             video("movie.mp4");
             worker.runScan(new ThumbnailScanWorker.ScanRequest(
                     ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of(tempDir.toString())));
-            verify(scanRunMapper, org.mockito.Mockito.atLeast(2))
-                    .update(finished.capture(), any());
-            assertNull(lastClosingUpdate(finished).getInaccessibleDirs());
+            assertNull(setValue(lastClosingWrapper(), "INACCESSIBLE_DIRS"));
         } finally {
             locked.toFile().setReadable(true, false);
         }
@@ -307,18 +330,137 @@ class ThumbnailScanWorkerTest {
 
     @Test
     void finishedRunRecountsOnlyThisRunsGeneration() throws Exception {
-        video("movie.mp4");
+        Path movie = video("movie.mp4");
 
         worker.runScan(new ThumbnailScanWorker.ScanRequest(
                 ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of(tempDir.toString())));
 
-        ArgumentCaptor<ThumbnailScanRun> updates = ArgumentCaptor.forClass(ThumbnailScanRun.class);
-        verify(scanRunMapper, org.mockito.Mockito.atLeastOnce()).update(updates.capture(), any());
-        ThumbnailScanRun last = lastClosingUpdate(updates);
-        assertEquals(ThumbnailScanRun.STATUS_SUCCESS, last.getStatus());
-        assertEquals(ThumbnailScanRun.STATUS_SUCCESS, last.getPhase(), "a closed run reports its terminal phase");
-        assertEquals(1, last.getGeneratedCount(), "the job queued and finished by this run counts once");
-        assertEquals(0, last.getFailedCount());
+        UpdateWrapper<ThumbnailScanRun> closed = lastClosingWrapper();
+        assertEquals(ThumbnailScanRun.STATUS_SUCCESS, setValue(closed, "STATUS"));
+        assertEquals(ThumbnailScanRun.STATUS_SUCCESS, setValue(closed, "PHASE"),
+                "a closed run reports its terminal phase");
+        assertEquals(ThumbnailScanRunItem.STATUS_GENERATED, ledger.forPath(movie.toString()).getStatus(),
+                "the job queued and finished by this run counts once");
+        assertTrue(lastClosingSql().contains("GENERATED_COUNT = (SELECT COUNT(*)"),
+                "the closing write derives the count from the ledger");
+    }
+
+    @Test
+    void completionUnderARealGuidStillFinishesTheRun() throws Exception {
+        Path movie = video("movie.mp4");
+        // The file already has a row under a real client guid, so the scan's
+        // synthetic trigger runs (and reports) under that guid. The run must
+        // count that completion, or its wait never ends and the row stays
+        // GENERATING with done == queued.
+        String realGuid = "1b80f0ecfe9049659b19045782ceb991";
+        when(thumbnailService.trigger(anyString(), anyString(), anyBoolean(), anyBoolean(), any()))
+                .thenAnswer(invocation -> {
+                    worker.onJobFinishedForTest(realGuid, invocation.getArgument(1),
+                            true, invocation.getArgument(4));
+                    return ThumbnailStatusResponse.builder()
+                            .guid(realGuid)
+                            .status(ThumbnailStatus.PENDING.name())
+                            .build();
+                });
+        worker.setGenerationWaitTimeoutMs(2000);
+
+        worker.runScan(new ThumbnailScanWorker.ScanRequest(
+                ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of(tempDir.toString())));
+
+        UpdateWrapper<ThumbnailScanRun> closed = lastClosingWrapper();
+        assertEquals(ThumbnailScanRun.STATUS_SUCCESS, setValue(closed, "STATUS"),
+                "the wait ended instead of hanging");
+        assertEquals(1, setValue(closed, "QUEUED_COUNT"));
+        assertEquals(ThumbnailScanRunItem.STATUS_GENERATED, ledger.forPath(movie.toString()).getStatus());
+        assertEquals(realGuid, ledger.forPath(movie.toString()).getTaskGuid(),
+                "the guid the job ran under is recorded for attribution");
+    }
+
+    /**
+     * The job was already on the queue under a real guid before the scan asked
+     * for the file, so it carries no run id at all. Only the guid recorded on
+     * the item can attribute it — the case the in-memory ledger could not cover.
+     */
+    @Test
+    void aCompletionWithoutARunIdSettlesByTheRecordedTaskGuid() throws Exception {
+        Path movie = video("movie.mp4");
+        String realGuid = "1b80f0ecfe9049659b19045782ceb991";
+        when(thumbnailService.trigger(anyString(), anyString(), anyBoolean(), anyBoolean(), any()))
+                .thenReturn(ThumbnailStatusResponse.builder()
+                        .guid(realGuid)
+                        .status(ThumbnailStatus.PENDING.name())
+                        .build());
+        worker.setGenerationWaitTimeoutMs(2000);
+
+        Thread jobThread = new Thread(() -> {
+            try {
+                Thread.sleep(150);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            worker.onJobFinishedForTest(realGuid, movie.toString(), true, null);
+        });
+        jobThread.start();
+        worker.runScan(new ThumbnailScanWorker.ScanRequest(
+                ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of(tempDir.toString())));
+        jobThread.join();
+
+        assertEquals(ThumbnailScanRun.STATUS_SUCCESS, setValue(lastClosingWrapper(), "STATUS"));
+        assertEquals(ThumbnailScanRunItem.STATUS_GENERATED, ledger.forPath(movie.toString()).getStatus());
+    }
+
+    /** A duplicate completion must not settle a second item or double-count. */
+    @Test
+    void settlingTheSameItemTwiceIsIdempotent() throws Exception {
+        Path movie = video("movie.mp4");
+        Path other = video("other.mp4");
+
+        worker.runScan(new ThumbnailScanWorker.ScanRequest(
+                ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of(tempDir.toString())));
+        worker.onJobFinishedForTest(ThumbnailService.syntheticGuid(other.toString()),
+                other.toString(), false, 1L);
+
+        assertEquals(ThumbnailScanRunItem.STATUS_GENERATED, ledger.forPath(movie.toString()).getStatus());
+        assertEquals(ThumbnailScanRunItem.STATUS_GENERATED, ledger.forPath(other.toString()).getStatus(),
+                "an already-settled item keeps its first outcome");
+    }
+
+    /** A trigger that fails outright queues no job, so nothing will report back. */
+    @Test
+    void aSynchronousTriggerFailureDoesNotStallTheRun() throws Exception {
+        Path movie = video("movie.mp4");
+        when(thumbnailService.trigger(anyString(), anyString(), anyBoolean(), anyBoolean(), any()))
+                .thenReturn(ThumbnailStatusResponse.builder()
+                        .guid(ThumbnailService.syntheticGuid(movie.toString()))
+                        .status(ThumbnailStatus.FAILED.name())
+                        .build());
+
+        worker.runScan(new ThumbnailScanWorker.ScanRequest(
+                ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of(tempDir.toString())));
+
+        assertEquals(ThumbnailScanRunItem.STATUS_FAILED, ledger.forPath(movie.toString()).getStatus());
+        assertEquals(ThumbnailScanRun.STATUS_SUCCESS, setValue(lastClosingWrapper(), "STATUS"),
+                "the run closes promptly instead of waiting out the ceiling");
+    }
+
+    /** Giving up on outstanding work is a failure, not a success. */
+    @Test
+    void aWaitThatTimesOutClosesTheRunAsFailed() throws Exception {
+        Path movie = video("movie.mp4");
+        when(thumbnailService.trigger(anyString(), anyString(), anyBoolean(), anyBoolean(), any()))
+                .thenAnswer(invocation -> ThumbnailStatusResponse.builder()
+                        .guid(invocation.getArgument(0))
+                        .status(ThumbnailStatus.PENDING.name())
+                        .build());
+        worker.setGenerationWaitTimeoutMs(100);
+
+        worker.runScan(new ThumbnailScanWorker.ScanRequest(
+                ThumbnailScanWorker.ScanRequest.SOURCE_MANUAL, List.of(tempDir.toString())));
+
+        UpdateWrapper<ThumbnailScanRun> closed = lastClosingWrapper();
+        assertEquals(ThumbnailScanRun.STATUS_FAILED, setValue(closed, "STATUS"));
+        assertTrue(((String) setValue(closed, "ERROR")).contains("timed out"));
+        assertEquals(ThumbnailScanRunItem.STATUS_QUEUED, ledger.forPath(movie.toString()).getStatus());
     }
 
     @Test
