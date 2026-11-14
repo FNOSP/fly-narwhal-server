@@ -20,6 +20,7 @@ export default {
         homeAria: '飛鯨影視首頁',
         logoAria: '飛鯨影視',
         linksAria: '頁面導覽',
+        menuAria: '展開選單',
         links: {
             renew: '2.0 煥新',
             screenshots: '介面預覽',

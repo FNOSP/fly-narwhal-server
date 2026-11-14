@@ -17,6 +17,7 @@ export default {
         homeAria: 'Fly Narwhal home',
         logoAria: 'Fly Narwhal',
         linksAria: 'Page navigation',
+        menuAria: 'Open menu',
         links: {
             renew: 'What’s new in 2.0',
             screenshots: 'Screenshots',

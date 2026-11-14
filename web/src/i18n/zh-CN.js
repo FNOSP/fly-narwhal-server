@@ -17,6 +17,7 @@ export default {
         homeAria: '飞鲸影视首页',
         logoAria: '飞鲸影视',
         linksAria: '页面导航',
+        menuAria: '展开菜单',
         links: {
             renew: '2.0 焕新',
             screenshots: '界面预览',
