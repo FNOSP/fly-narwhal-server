@@ -16,6 +16,7 @@ const chapters = computed(() => {
         { id: 'guide-server', toc: g.toc.server, ...g.server },
         { id: 'guide-smart-skip', toc: g.toc.smartSkip, ...g.smartSkip },
         { id: 'guide-danmaku', toc: g.toc.danmaku, ...g.danmaku },
+        { id: 'guide-thumbnail', toc: g.toc.thumbnail, ...g.thumbnail },
     ]
 })
 

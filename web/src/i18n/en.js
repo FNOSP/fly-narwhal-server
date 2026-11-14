@@ -501,7 +501,7 @@ export default {
         crumb: 'Fly Narwhal · User guide',
         eyebrow: 'User guide',
         title: 'Set it up once, watch smarter.',
-        lede: 'From connecting the Fly Narwhal server, to smart intro/outro analysis and skipping, to danmaku display and sources — this guide walks you through every related setting in the Fly Narwhal client.',
+        lede: 'From connecting the Fly Narwhal server, to smart intro/outro analysis and skipping, danmaku display and sources, and video thumbnail generation — this guide walks you through every related setting in the Fly Narwhal client.',
         backHome: 'Back to home',
         backToHome: 'Back to the Fly Narwhal home page',
         tocAria: 'Table of contents',
@@ -509,6 +509,7 @@ export default {
             server: 'Server setup',
             smartSkip: 'Smart intro/outro skip',
             danmaku: 'Danmaku setup',
+            thumbnail: 'Video thumbnails',
         },
         server: {
             title: 'Enable and configure the Fly Narwhal server',
@@ -613,6 +614,37 @@ export default {
             tips: [
                 'Direct sources such as bilibili, iQiyi and Migu are aggregated by the server; the client has no per-platform switches.',
                 'If loading fails you will see “Danmaku request failed, please check the Fly Narwhal server configuration” — revisit chapter 1 first.',
+            ],
+        },
+        thumbnail: {
+            title: 'Video thumbnail generation',
+            lead: 'The server uses ffmpeg to sample frames from your local videos into preview sprite sheets, so hovering the progress bar during playback shows a thumbnail of that exact moment — making it easier to scrub to the right scene. Generate thumbnails for a single video from its detail page, or turn on the scheduled scan to fill in thumbnails across your whole library automatically.',
+            prereq: 'Prerequisite: the server connection from chapter 1 is set up; the scheduled-scan entry only appears on server version ≥ 2.1.0.',
+            sections: [
+                {
+                    title: 'Step 1 · Configure the scheduled scan',
+                    points: [
+                        'Open “Settings” → “Server” → “Video thumbnails” in the client and click “Configure” to open the settings dialog.',
+                        'Turn on “Enable scheduled scan” to make the schedule and scan folders below editable; turning it off pauses automatic scanning without affecting thumbnails already generated.',
+                        '“Schedule” takes a cron expression (once a day at 3 AM by default); if you are not familiar with cron syntax, click “Generator” next to it to pick second/minute/hour/day/month/weekday options one by one — it builds the expression for you and previews the next run time.',
+                        'Click the folder picker to choose which NAS folders to scan; multiple folders can be selected, and an enabled schedule cannot be saved without at least one folder.',
+                        'The hint icon next to the folder list explains: grant this app access to the folder first under fnOS “System settings” → “Apps” → “Fly Narwhal”, otherwise the scan fails on folders it cannot read; if access is still denied after granting it, click the “script” link in the hint to download a repair script and run it as root over SSH on the NAS.',
+                        'Click “OK” to save; you can also click “Scan now” at any time to trigger a scan immediately instead of waiting for the next cycle — if you have unsaved folder edits, it first asks whether to save them before scanning or discard them.',
+                        'The status card at the bottom of the dialog shows live progress (scanning / generating thumbnails: N/M done); once finished it summarizes how many videos were found, queued, succeeded and failed this run. You can also close the dialog — a toast reports the outcome once the scan finishes.',
+                    ],
+                },
+                {
+                    title: 'Step 2 · See thumbnails while playing',
+                    points: [
+                        'On a movie’s detail page, click “⋯ More actions” → “Generate thumbnails” to submit a generation task for just that title, without waiting for the scheduled scan; once done, the menu item changes to “Regenerate thumbnails”.',
+                        'While playing a movie, hover the mouse over the player’s progress bar to see a thumbnail of that exact moment above the cursor, making it easy to jump to the right scene.',
+                        'Hover thumbnails currently work for movies only; TV episodes are not wired up yet — even if the scheduled scan has already generated their thumbnail files, the player will not show them for now.',
+                    ],
+                },
+            ],
+            tips: [
+                'The scheduled scan recognizes local videos by file extension regardless of whether they are movies or episodes; cloud-drive or STRM files are outside its scope.',
+                'If some videos failed to generate in the last scan, a red badge appears next to the settings row; open the dialog and click “Failure reason” to see why each file failed (unreadable file, too short, decode failure, etc.).',
             ],
         },
     },
