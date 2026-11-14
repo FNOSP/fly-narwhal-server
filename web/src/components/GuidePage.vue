@@ -26,6 +26,20 @@ const chapters = computed(() => {
 function scrollToChapter(id) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
+
+// A point may be a plain string, or { text, linkLabel, href, download } to
+// render one word as a real download link (e.g. the ACL repair script). The
+// text is split around linkLabel at render time instead of v-html, so locale
+// copy stays plain data and can never inject markup.
+function linkPointParts(p) {
+    const index = p.text.indexOf(p.linkLabel)
+    if (index < 0) return { before: p.text, label: '', after: '' }
+    return {
+        before: p.text.slice(0, index),
+        label: p.linkLabel,
+        after: p.text.slice(index + p.linkLabel.length),
+    }
+}
 </script>
 
 <template>
@@ -101,7 +115,14 @@ function scrollToChapter(id) {
                             <section v-for="s in c.sections" :key="s.title" class="gpage__section">
                                 <h3 class="gpage__section-title">{{ s.title }}</h3>
                                 <ul class="gpage__points">
-                                    <li v-for="p in s.points" :key="p">{{ p }}</li>
+                                    <li v-for="p in s.points" :key="typeof p === 'string' ? p : p.text">
+                                        <template v-if="typeof p === 'string'">{{ p }}</template>
+                                        <template v-else>{{ linkPointParts(p).before }}<a
+                                            class="gpage__point-link"
+                                            :href="p.href"
+                                            :download="p.download"
+                                        >{{ linkPointParts(p).label }}</a>{{ linkPointParts(p).after }}</template>
+                                    </li>
                                 </ul>
                             </section>
                         </div>
@@ -410,6 +431,18 @@ function scrollToChapter(id) {
     opacity: 0.55;
 }
 
+.gpage__point-link {
+    color: var(--brand-deep);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    transition: color 0.2s var(--ease);
+}
+
+.gpage__point-link:hover {
+    color: var(--brand);
+}
+
 /* ---------- tips ---------- */
 
 .gpage__tips {
@@ -463,7 +496,8 @@ function scrollToChapter(id) {
 
 @media (prefers-reduced-motion: reduce) {
     .gpage__toc-chip,
-    .gpage__back {
+    .gpage__back,
+    .gpage__point-link {
         transition: none;
     }
 }

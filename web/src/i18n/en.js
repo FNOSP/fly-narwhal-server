@@ -631,7 +631,12 @@ export default {
                         'Turn on “Enable scheduled scan” to make the schedule and scan folders below editable; turning it off pauses automatic scanning without affecting thumbnails already generated.',
                         '“Schedule” takes a cron expression (once a day at 3 AM by default); if you are not familiar with cron syntax, click “Generator” next to it to pick second/minute/hour/day/month/weekday options one by one — it builds the expression for you and previews the next run time.',
                         'Click the folder picker to choose which NAS folders to scan; multiple folders can be selected, and an enabled schedule cannot be saved without at least one folder.',
-                        'The hint icon next to the folder list explains: grant this app access to the folder first under fnOS “System settings” → “Apps” → “Fly Narwhal”, otherwise the scan fails on folders it cannot read; if access is still denied after granting it, click the “script” link in the hint to download a repair script and run it as root over SSH on the NAS.',
+                        {
+                            text: 'The hint icon next to the folder list explains: grant this app access to the folder first under fnOS “System settings” → “Apps” → “Fly Narwhal”, otherwise the scan fails on folders it cannot read; if access is still denied after granting it, download the repair script here and run it as root over SSH on the NAS.',
+                            linkLabel: 'download the repair script here',
+                            href: './scripts/fnos-media-acl-fix.sh',
+                            download: 'fnos-media-acl-fix.sh',
+                        },
                         'Click “OK” to save; you can also click “Scan now” at any time to trigger a scan immediately instead of waiting for the next cycle — if you have unsaved folder edits, it first asks whether to save them before scanning or discard them.',
                         'The status card at the bottom of the dialog shows live progress (scanning / generating thumbnails: N/M done); once finished it summarizes how many videos were found, queued, succeeded and failed this run. You can also close the dialog — a toast reports the outcome once the scan finishes.',
                     ],
