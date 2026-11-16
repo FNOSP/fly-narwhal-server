@@ -56,6 +56,14 @@ graalvmNative {
         main {
             imageName = "fly-narwhal-server-${project.version}"
             buildArgs = [
+                // GraalVM marks x86-64 CPUs with AVX/AVX2/BMI/FMA as its "minimum supported
+                // level" and emits x86-64-v3 machine code by default, regardless of the build
+                // host. Celeron/Pentium NAS chips (Intel masks AVX on those dies) and the
+                // Atom J/N series then refuse to start with "The current machine does not
+                // support all of the following CPU features that are required by the image".
+                // compatibility builds for the plain x86-64 baseline instead; only GraalVM's
+                // own runtime and C intrinsics lose SIMD here, Java code is unaffected.
+                '-march=compatibility',
                 // MyBatis LogFactory resolves its logger impl reflectively in a static
                 // initializer. Under native AOT that init runs at build time, the Slf4jImpl
                 // constructor's own reflective method lookup fails (LocationAwareLogger#log

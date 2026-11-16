@@ -128,6 +128,14 @@ jobs:
           NAME="fly-narwhal-server-linux-${{ matrix.arch }}-${VERSION}"
           mkdir -p dist/native
 
+          # Guard against the amd64 image silently going back to x86-64-v3. GraalVM bakes the
+          # feature gate into the binary; if this string shows up with AVX2 in it, every
+          # Celeron/Pentium/Atom NAS refuses to boot (issue #162). Never publish such a build.
+          if grep -aq 'AVX2, BMI1, BMI2, FMA' "$NATIVE_DIR/fly-narwhal-server"; then
+            echo "::error::native image requires AVX2 (x86-64-v3); expected -march=compatibility" >&2
+            exit 1
+          fi
+
           # Only the archive is published: the binary needs its sibling lib*.so next to it,
           # so a lone executable would not run. tar also preserves the executable bit.
           # run.sh.example rides along so downloaders get the memory flags and the
