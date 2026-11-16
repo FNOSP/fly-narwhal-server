@@ -249,6 +249,37 @@ export default {
         ],
     },
 
+    thumbnails: {
+        eyebrow: 'Video thumbnails',
+        h2Line1: 'See every frame on the seek bar',
+        h2Line2: 'before you jump to it',
+        lede: 'Generate seek-bar previews for your videos — one click per title on the detail page, or a scheduled scan across the whole library; then hover the player’s progress bar to preview any moment.',
+        alt: 'Player seek-bar hover preview: a thumbnail of Pearl Harbor at 42:01',
+        caption: 'Hovering the player’s progress bar: an instant preview of the frame and timestamp — click to jump straight there.',
+        items: [
+            {
+                tag: 'Generate',
+                title: 'One title, or the whole library on a schedule',
+                desc: '“Generate thumbnails” in the detail page’s More menu shows live queued / generating / done status; or set a cron schedule and NAS folders and the server fills in every video that lacks previews.',
+            },
+            {
+                tag: 'Preview',
+                title: 'Frames appear as you hover',
+                desc: 'Glide along the progress bar and the thumbnail plus timestamp follow in real time; fast sweeps stay smooth because neighboring frames are loaded in the background before you reach them.',
+            },
+            {
+                tag: 'Performance',
+                title: 'Built to stay out of the way',
+                desc: 'Preview images load on demand and are kept on your device, so replaying a title never re-downloads them — and previewing never interrupts playback.',
+            },
+            {
+                tag: 'Smart',
+                title: 'New source? Previews follow',
+                desc: 'The server records each media file’s modification time and size; a replaced file marks its old previews stale — scheduled scans regenerate them automatically, and the detail page offers one-click regeneration, so previews always match what actually plays.',
+            },
+        ],
+    },
+
     more: {
         eyebrow: 'More capabilities',
         h2Line1: 'Every detail,',

@@ -8,6 +8,7 @@ import FeatureSection from './components/FeatureSection.vue'
 import PlayerSection from './components/PlayerSection.vue'
 import DanmuSection from './components/DanmuSection.vue'
 import SkipSection from './components/SkipSection.vue'
+import ThumbnailSection from './components/ThumbnailSection.vue'
 import MoreFeaturesSection from './components/MoreFeaturesSection.vue'
 import SecuritySection from './components/SecuritySection.vue'
 import ServerSection from './components/ServerSection.vue'
@@ -117,6 +118,7 @@ function scrollToDownload() {
             <PlayerSection />
             <DanmuSection />
             <SkipSection />
+            <ThumbnailSection />
             <MoreFeaturesSection />
             <SecuritySection />
             <ServerSection />
