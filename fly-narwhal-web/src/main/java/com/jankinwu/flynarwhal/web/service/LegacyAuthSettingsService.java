@@ -44,23 +44,22 @@ public class LegacyAuthSettingsService {
     /** Legacy-mode activity in the last 24 hours, for the admin overview. */
     public LegacyStats recentLegacyStats() {
         LocalDateTime since = LocalDateTime.now().minusHours(24);
-        Long rows = accessLogMapper.selectCount(new QueryWrapper<ClientAccessLog>()
-                .eq("AUTH_MODE", ClientAccessLog.MODE_LEGACY)
-                .ge("LAST_TIME", since));
-        // Sum HIT_COUNT over the aggregated rows; distinct IPs via a grouped select.
-        java.util.List<java.util.Map<String, Object>> sums = accessLogMapper.selectMaps(
+        // Row-wise aggregation in Java: selectMaps needs HashMap reflection that
+        // the native image does not register, and the row count here is bounded
+        // by the aggregation buckets (one per ip/event/5min).
+        java.util.List<ClientAccessLog> rows = accessLogMapper.selectList(
                 new QueryWrapper<ClientAccessLog>()
-                        .select("COALESCE(SUM(HIT_COUNT), 0) AS TOTAL, COUNT(DISTINCT CLIENT_IP) AS IPS")
                         .eq("AUTH_MODE", ClientAccessLog.MODE_LEGACY)
                         .ge("LAST_TIME", since));
         long hits = 0;
-        long ips = 0;
-        if (sums != null && !sums.isEmpty()) {
-            java.util.Map<String, Object> row = sums.get(0);
-            hits = row.get("TOTAL") instanceof Number n ? n.longValue() : 0;
-            ips = row.get("IPS") instanceof Number n ? n.longValue() : 0;
+        java.util.Set<String> ips = new java.util.HashSet<>();
+        for (ClientAccessLog row : rows) {
+            hits += row.getHitCount() == null ? 0 : row.getHitCount();
+            if (row.getClientIp() != null) {
+                ips.add(row.getClientIp());
+            }
         }
-        return new LegacyStats(hits, ips, rows == null ? 0 : rows);
+        return new LegacyStats(hits, ips.size(), rows.size());
     }
 
     public record LegacyStats(long requests24h, long distinctIps24h, long aggregatedRows24h) {
