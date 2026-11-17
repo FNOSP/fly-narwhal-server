@@ -100,10 +100,17 @@ public class GatewaySocketBridge {
 
     private static void restrictPermissions(Path path) {
         try {
+            // The fnOS gateway (nginx) connects as www-data, not the app user,
+            // so the socket must be connectable by others. The process-lifetime
+            // token — not filesystem permissions — is the security boundary:
+            // only the gateway receives it, and /api/admin/** rejects anything
+            // without it.
             Files.setPosixFilePermissions(path, Set.of(
-                    PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+                    PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE,
+                    PosixFilePermission.GROUP_READ, PosixFilePermission.GROUP_WRITE,
+                    PosixFilePermission.OTHERS_READ, PosixFilePermission.OTHERS_WRITE));
         } catch (Throwable t) {
-            log.warn("Could not restrict gateway socket permissions: {}", t.toString());
+            log.warn("Could not set gateway socket permissions: {}", t.toString());
         }
     }
 

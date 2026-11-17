@@ -15,7 +15,7 @@
             "protocol": "",
             "gatewayPrefix": "/app/flynarwhal",
             "gatewaySocket": "app.sock",
-            "url": "/app/flynarwhal/#/admin",
+            "url": "/app/flynarwhal/index.html#/admin",
             "allUsers": false
         }
     }
