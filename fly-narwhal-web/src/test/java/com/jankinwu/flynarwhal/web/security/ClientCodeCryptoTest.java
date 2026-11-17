@@ -45,6 +45,16 @@ class ClientCodeCryptoTest {
     }
 
     @Test
+    void matchesFixedCrossLanguageVectors() {
+        // Vectors shared with the Flutter client test (fly_narwhal_client_code_test.dart).
+        assertEquals("FNK2_AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8", CODE);
+        assertEquals("37f6f553f9e85803c404acc6dcf7542ef336d9ff6154faaa5240ac2d9e238f8e",
+                ClientCodeCrypto.keyIdHex(CODE));
+        assertEquals("21cde7c1a2ace9e0c92c0d769fbcb2c484f03412016769710d50e73fea58fb0e",
+                java.util.HexFormat.of().formatHex(ClientCodeCrypto.deriveSignKey(SECRET)));
+    }
+
+    @Test
     void signKeyDerivationIsStable() {
         byte[] a = ClientCodeCrypto.deriveSignKey(SECRET);
         byte[] b = ClientCodeCrypto.deriveSignKey(SECRET);
