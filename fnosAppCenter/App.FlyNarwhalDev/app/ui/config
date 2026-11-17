@@ -7,6 +7,16 @@
             "protocol": "",
             "url": "/cgi/ThirdParty/FlyNarwhalDev/index.cgi/",
             "allUsers": false
+        },
+        "FlyNarwhalDev.Admin": {
+            "title": "飞鲸影视管理（开发版）",
+            "icon": "images/icon_{0}.png",
+            "type": "iframe",
+            "protocol": "",
+            "gatewayPrefix": "/app/flynarwhaldev",
+            "gatewaySocket": "app.sock",
+            "url": "/app/flynarwhaldev/#/admin",
+            "allUsers": false
         }
     }
 }

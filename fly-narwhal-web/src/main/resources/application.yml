@@ -52,6 +52,15 @@ logging:
 fly-narwhal:
   data-dir: ${FN_DATA_DIR:/var/apps/App.Native.flyNarwhalServer/shares/data}
   api-secret: ${FLY_NARWHAL_API_SECRET:16CCEB3D-AB42-077D-36A1-F355324E4237}
+  # Legacy Authx/Signx authorization for released clients. Compatibility-first
+  # default; the admin page can disable it once every client has migrated.
+  legacy-auth:
+    enabled: ${FLY_NARWHAL_LEGACY_AUTH_ENABLED:true}
+  # fnOS unified-gateway bridge. Empty socket path disables the bridge; the
+  # fnOS package's cmd/main passes the real path via system properties.
+  gateway:
+    socket-path: ${FLY_NARWHAL_GATEWAY_SOCKET:}
+    path-prefix: ${FLY_NARWHAL_GATEWAY_PREFIX:}
   client-version:
     # Minimum client version required for non-/api/config endpoints.
     # Clients below this version receive a 4001 code with an upgrade prompt;

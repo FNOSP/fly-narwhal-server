@@ -78,12 +78,38 @@ public class ResultEncryptionAdvice implements ResponseBodyAdvice<Object> {
             if (path != null && path.startsWith("/api/config/auth-code")) {
                 return body;
             }
+            // Admin responses go to a browser that cannot decrypt them.
+            if (path != null && path.startsWith("/api/admin/")) {
+                return body;
+            }
         }
         if (result.getEncrypted() != null && result.getEncrypted()) {
             return body;
         }
         if (result.getData() == null) {
             return body;
+        }
+
+        // v2: per-client code path. The AES key derives from the code's sign key
+        // and the client's random Keyx — no server keypair is stored per code.
+        if (servletRequest != null) {
+            Object attr = servletRequest.getAttribute(ClientCodeAttributes.CLIENT_CODE);
+            if (attr instanceof com.jankinwu.flynarwhal.web.entity.ClientAuthCode clientCode) {
+                String keyx = servletRequest.getHeader("Keyx");
+                if (keyx == null || keyx.isBlank()) {
+                    return body;
+                }
+                try {
+                    String dataJson = objectMapper.writeValueAsString(result.getData());
+                    String encrypted = encryptResponseV2(dataJson, clientCode.getSignKey(), keyx.trim());
+                    if (encrypted != null) {
+                        result.setData(encrypted);
+                        result.setEncrypted(true);
+                    }
+                } catch (Exception ignored) {
+                }
+                return body;
+            }
         }
 
         String authCode = fnAuthService.getResponseAuthCodeOrNull();
@@ -132,6 +158,30 @@ public class ResultEncryptionAdvice implements ResponseBodyAdvice<Object> {
             return servlet.getServletRequest();
         }
         return null;
+    }
+
+    /** v2 envelope: 0x02 || IV(12) || AES-GCM(ciphertext+tag), key from HKDF(signKey, resp_v2||keyx). */
+    private static String encryptResponseV2(String plaintextJson, String signKeyBase64, String keyxBase64Url) {
+        try {
+            byte[] signKey = Base64.getDecoder().decode(signKeyBase64);
+            byte[] keyx = base64UrlDecodeNoPadding(keyxBase64Url);
+            if (signKey.length != 32 || keyx.length != 32) {
+                return null;
+            }
+            byte[] aesKey = ClientCodeCrypto.deriveResponseKey(signKey, keyx);
+            byte[] iv = new byte[GCM_IV_LEN];
+            new SecureRandom().nextBytes(iv);
+            Cipher cipher = Cipher.getInstance(AES_TRANSFORM);
+            cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(aesKey, "AES"), new GCMParameterSpec(GCM_TAG_BITS, iv));
+            byte[] ct = cipher.doFinal(plaintextJson.getBytes(StandardCharsets.UTF_8));
+            byte[] payload = new byte[1 + iv.length + ct.length];
+            payload[0] = 2;
+            System.arraycopy(iv, 0, payload, 1, iv.length);
+            System.arraycopy(ct, 0, payload, 1 + iv.length, ct.length);
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(payload);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private static String encryptResponseInternal(String plaintextJson, String authCode, String privateKeyBase64, String keyxBase64Url) {

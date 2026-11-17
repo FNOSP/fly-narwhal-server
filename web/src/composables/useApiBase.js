@@ -7,8 +7,15 @@
  * only forwards paths after `index.cgi` to the server — an absolute `/api/...`
  * would hit fnOS itself (port 5666) and come back as "invalid token". Keep the
  * prefix so every request travels the same proxied route as the assets.
+ *
+ * The admin page is served through the fnOS unified gateway under /app/<name>;
+ * the browser URL keeps that prefix, and the gateway forwards it (the server's
+ * socket bridge strips it defensively), so API calls must carry it too.
  */
 export function apiBase() {
-    const m = location.pathname.match(/^(\/cgi\/ThirdParty\/[^/]+\/index\.cgi)/)
-    return m ? m[1] : ''
+    const cgi = location.pathname.match(/^(\/cgi\/ThirdParty\/[^/]+\/index\.cgi)/)
+    if (cgi) return cgi[1]
+    const gateway = location.pathname.match(/^(\/app\/[^/]+)/)
+    if (gateway) return gateway[1]
+    return ''
 }

@@ -96,6 +96,10 @@ start_process() {
 
     # 开发版不打包外置 authx 验证器（构建未设 FLY_NARWHAL_BUILD_AUTHX_VERIFIER，
     # 镜像内走内置验证路径），所以不传 -Dfly-narwhal.external-authx.bin。
+    # 统一网关管理入口：socket 放在 target 目录（网关按 gatewaySocket 文件名寻址），
+    # 前缀用无点自定义子路径（appname 含点不符合网关公开路径规则）。
+    local gateway_sock="${APPDEST}/app.sock"
+    rm -f "${gateway_sock}"
     # 二进制从自身目录 dlopen lib*.so，并以进程 CWD 解析相对路径，所以必须 cd 到 server 目录
     (
         cd "${SERVER_DIR}" || exit 1
@@ -107,6 +111,8 @@ start_process() {
             -Ddanmu.cache.dir="${data_dir}/danmu-cache" \
             -Dfly-narwhal.thumbnail.dir="${data_dir}/thumbnails" \
             -DFN_DB_URL="jdbc:h2:file:${data_dir}/fly-narwhal;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CACHE_SIZE=8192" \
+            -Dfly-narwhal.gateway.socket-path="${gateway_sock}" \
+            -Dfly-narwhal.gateway.path-prefix="/app/flynarwhaldev" \
             --server.port="${port}" \
             >> "${STDOUT_LOG}" 2>&1 < /dev/null &
         echo $! > "${PID_FILE}"
@@ -137,6 +143,7 @@ start_process() {
 
 stop_process() {
     log_msg "Stopping process ..."
+    rm -f "${APPDEST}/app.sock"
 
     if [ -r "${PID_FILE}" ]; then
         local pid count=0

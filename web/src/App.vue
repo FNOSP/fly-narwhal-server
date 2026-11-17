@@ -21,6 +21,7 @@ import TimelinePage from './components/TimelinePage.vue'
 import CreditsPage from './components/CreditsPage.vue'
 import GuidePage from './components/GuidePage.vue'
 import SupportPage from './components/SupportPage.vue'
+import AdminPage from './components/admin/AdminPage.vue'
 import SiteFooter from './components/SiteFooter.vue'
 import AuthCodeModal from './components/AuthCodeModal.vue'
 import { useRelease } from './composables/useRelease'
@@ -40,6 +41,7 @@ function routeFromHash() {
     if (hash.startsWith('#/credits')) return 'credits'
     if (hash.startsWith('#/guide')) return 'guide'
     if (hash.startsWith('#/support')) return 'support'
+    if (hash.startsWith('#/admin')) return 'admin'
     return 'home'
 }
 
@@ -106,6 +108,7 @@ function scrollToDownload() {
     <CreditsPage v-else-if="route === 'credits'" />
     <GuidePage v-else-if="route === 'guide'" />
     <SupportPage v-else-if="route === 'support'" />
+    <AdminPage v-else-if="route === 'admin'" />
 
     <template v-else>
         <SiteNav :solid="navSolid" :progress="docProgress" @download="scrollToDownload" @auth="auth.request" />

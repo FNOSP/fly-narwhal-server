@@ -9,5 +9,7 @@
   { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.ThumbnailScanRunItemMapper" ] },
   { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.ThumbnailTaskMapper" ] },
   { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.TvSeasonInfoMapper" ] },
-  { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.UserSmartSkipConfigMapper" ] }
+  { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.UserSmartSkipConfigMapper" ] },
+  { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.ClientAuthCodeMapper" ] },
+  { "interfaces": [ "com.jankinwu.flynarwhal.web.mapper.ClientAccessLogMapper" ] }
 ]

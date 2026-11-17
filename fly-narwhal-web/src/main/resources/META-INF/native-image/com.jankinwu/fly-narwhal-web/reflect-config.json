@@ -60,6 +60,8 @@
   { "name": "com.jankinwu.flynarwhal.web.entity.UserSmartSkipConfig", "allDeclaredFields": true, "allPublicFields": true, "allDeclaredMethods": true, "allDeclaredConstructors": true, "queryAllDeclaredMethods": true },
   { "name": "com.jankinwu.flynarwhal.web.entity.DanmuPlatformUrl", "allDeclaredFields": true, "allPublicFields": true, "allDeclaredMethods": true, "allDeclaredConstructors": true, "queryAllDeclaredMethods": true },
   { "name": "com.jankinwu.flynarwhal.web.entity.DanmuSourceConfig", "allDeclaredFields": true, "allPublicFields": true, "allDeclaredMethods": true, "allDeclaredConstructors": true, "queryAllDeclaredMethods": true },
+  { "name": "com.jankinwu.flynarwhal.web.entity.ClientAuthCode", "allDeclaredFields": true, "allPublicFields": true, "allDeclaredMethods": true, "allDeclaredConstructors": true, "queryAllDeclaredMethods": true },
+  { "name": "com.jankinwu.flynarwhal.web.entity.ClientAccessLog", "allDeclaredFields": true, "allPublicFields": true, "allDeclaredMethods": true, "allDeclaredConstructors": true, "queryAllDeclaredMethods": true },
   { "name": "com.jankinwu.flynarwhal.web.entity.DanmuPlatformUrl", "allDeclaredFields": true, "allPublicFields": true, "allDeclaredMethods": true, "allDeclaredConstructors": true, "queryAllDeclaredMethods": true },
   { "name": "com.jankinwu.flynarwhal.web.mapper.CommercialSegmentMapper", "allDeclaredMethods": true, "allDeclaredConstructors": true },
   { "name": "com.jankinwu.flynarwhal.web.mapper.DbVersionMapper", "allDeclaredMethods": true, "allDeclaredConstructors": true },
@@ -72,5 +74,7 @@
   { "name": "com.jankinwu.flynarwhal.web.mapper.UserSmartSkipConfigMapper", "allDeclaredMethods": true, "allDeclaredConstructors": true },
   { "name": "com.jankinwu.flynarwhal.web.mapper.DanmuPlatformUrlMapper", "allDeclaredMethods": true, "allDeclaredConstructors": true },
   { "name": "com.jankinwu.flynarwhal.web.mapper.DanmuSourceConfigMapper", "allDeclaredMethods": true, "allDeclaredConstructors": true },
+  { "name": "com.jankinwu.flynarwhal.web.mapper.ClientAuthCodeMapper", "allDeclaredMethods": true, "allDeclaredConstructors": true },
+  { "name": "com.jankinwu.flynarwhal.web.mapper.ClientAccessLogMapper", "allDeclaredMethods": true, "allDeclaredConstructors": true },
   { "name": "com.jankinwu.flynarwhal.web.mapper.DanmuPlatformUrlMapper", "allDeclaredMethods": true, "allDeclaredConstructors": true }
 ]

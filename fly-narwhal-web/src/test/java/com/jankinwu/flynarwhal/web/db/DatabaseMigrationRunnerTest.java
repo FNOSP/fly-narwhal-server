@@ -165,6 +165,67 @@ class DatabaseMigrationRunnerTest {
         return new JdbcTemplate(ds);
     }
 
+    /**
+     * The per-client auth tables ride the same unreleased 2.1.0 batch: a fresh
+     * database and a 2.0.0 upgrade both get them, and replaying the batch is a
+     * no-op.
+     */
+    @Test
+    void createsClientAuthTablesOnFreshAndUpgradedDatabases() throws Exception {
+        DriverManagerDataSource fresh = freshDatabase();
+        new DatabaseMigrationRunner(fresh).run(null);
+        assertClientAuthSchema(jdbc(fresh));
+        // Idempotent replay: running the chain again must not fail or duplicate.
+        new DatabaseMigrationRunner(fresh).run(null);
+        assertClientAuthSchema(jdbc(fresh));
+
+        DriverManagerDataSource upgraded = freshDatabase();
+        recordVersion(jdbc(upgraded), "2.0.0");
+        new DatabaseMigrationRunner(upgraded).run(null);
+        assertClientAuthSchema(jdbc(upgraded));
+    }
+
+    /**
+     * Documents the trap the dev NAS hits: a database that already recorded
+     * 2.1.0 skips the whole directory, so the appended auth script never runs
+     * there. Those installs must be wiped and reinstalled (the user-confirmed
+     * dev workflow); released <=2.0.0 installs are unaffected.
+     */
+    @Test
+    void appendedScriptDoesNotRunOnADatabaseAlreadyRecordedAt210() throws Exception {
+        DriverManagerDataSource ds = freshDatabase();
+        JdbcTemplate jdbc = jdbc(ds);
+        recordVersion(jdbc, "2.1.0");
+
+        new DatabaseMigrationRunner(ds).run(null);
+
+        assertTrue(!hasColumn(jdbc, "CLIENT_AUTH_CODE", "id"),
+                "a database already at 2.1.0 must skip the appended script (wipe+reinstall required)");
+    }
+
+    private static void assertClientAuthSchema(JdbcTemplate jdbc) {
+        for (String column : new String[]{"id", "name", "code_hash", "sign_key", "status",
+                "scope", "expire_time", "bound_device_id", "bound_device_label", "bound_time",
+                "last_used_time", "last_used_ip", "last_used_version", "create_time", "update_time"}) {
+            assertTrue(hasColumn(jdbc, "CLIENT_AUTH_CODE", column),
+                    "CLIENT_AUTH_CODE." + column + " is missing");
+        }
+        for (String column : new String[]{"id", "code_id", "code_name", "auth_mode",
+                "client_ip", "client_version", "device_id", "event", "hit_count",
+                "first_time", "last_time", "bucket_key", "create_time", "update_time"}) {
+            assertTrue(hasColumn(jdbc, "CLIENT_ACCESS_LOG", column),
+                    "CLIENT_ACCESS_LOG." + column + " is missing");
+        }
+        for (String index : new String[]{"IDX_CLIENT_AUTH_CODE_HASH",
+                "IDX_CLIENT_ACCESS_LOG_BUCKET", "IDX_CLIENT_ACCESS_LOG_CODE_TIME",
+                "IDX_CLIENT_ACCESS_LOG_TIME"}) {
+            Integer count = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.indexes WHERE index_name=?",
+                    Integer.class, index);
+            assertTrue(count != null && count > 0, index + " is missing");
+        }
+    }
+
     private static String version(JdbcTemplate jdbc) {
         return jdbc.queryForObject("SELECT version FROM DB_VERSION WHERE id=1", String.class);
     }
