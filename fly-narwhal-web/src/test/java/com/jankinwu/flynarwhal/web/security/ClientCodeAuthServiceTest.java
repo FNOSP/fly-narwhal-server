@@ -78,7 +78,8 @@ class ClientCodeAuthServiceTest {
     void rejectsWrongSignature() {
         String ts = Long.toString(System.currentTimeMillis());
         String h = header(ts, "0123456789abcdef0123456789abcdef", "GET", "/api/danmu/get", "device-a");
-        h = h.replaceAll("sig=.", "sig=0");
+        char last = h.charAt(h.length() - 1);
+        h = h.substring(0, h.length() - 1) + (last == '0' ? '1' : '0');
         ClientCodeAuthService.Outcome outcome = verify(h, "device-a");
         assertFalse(outcome.ok());
         assertEquals(ResultCodes.CODE_INVALID, outcome.errorCode());
@@ -150,7 +151,12 @@ class ClientCodeAuthServiceTest {
         String ts = Long.toString(System.currentTimeMillis());
         for (int i = 0; i < 20; i++) {
             String nonce = String.format("%032x", i);
-            verify(header(ts, nonce, "GET", "/api/danmu/get", "d").replaceAll("sig=.", "sig=0"), "d");
+            // Flip the last hex char deterministically (sig=0 would be a no-op
+            // for the ~1/16 of signatures already ending in 0).
+            String bad = header(ts, nonce, "GET", "/api/danmu/get", "d");
+            char last = bad.charAt(bad.length() - 1);
+            bad = bad.substring(0, bad.length() - 1) + (last == '0' ? '1' : '0');
+            verify(bad, "d");
         }
         ClientCodeAuthService.Outcome outcome = verify(header(ts, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "GET", "/api/danmu/get", "d"), "d");
         assertEquals(ResultCodes.CODE_RATE_LIMITED, outcome.errorCode());
