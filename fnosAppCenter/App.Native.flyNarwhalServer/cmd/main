@@ -91,8 +91,9 @@ start_process() {
 
     log_msg "Starting native server: port=${port} max_heap=${max_heap}"
 
-    # 统一网关管理入口：socket 放在 target 目录（网关按 gatewaySocket 文件名寻址），
-    # 前缀用无点自定义子路径（appname 含点不符合网关公开路径规则）。
+    # 统一网关管理入口：socket 放在 target 目录（网关按 gatewaySocket 文件名寻址）。
+    # 前缀必须精确等于 /app/<appname>——app_center 安装时校验前缀与 appname 一致，
+    # 不一致会静默丢弃 gateway 字段（日志 "has socket prefix ... but it is not valid"）。
     local gateway_sock="${APPDEST}/app.sock"
     rm -f "${gateway_sock}"
 
@@ -105,7 +106,7 @@ start_process() {
             -XX:StackSize=524288 \
             -Dfly-narwhal.external-authx.bin="${VERIFIER}" \
             -Dfly-narwhal.gateway.socket-path="${gateway_sock}" \
-            -Dfly-narwhal.gateway.path-prefix="/app/flynarwhal" \
+            -Dfly-narwhal.gateway.path-prefix="/app/App.Native.flyNarwhalServer" \
             --server.port="${port}" \
             >> "${STDOUT_LOG}" 2>&1 < /dev/null &
         echo $! > "${PID_FILE}"

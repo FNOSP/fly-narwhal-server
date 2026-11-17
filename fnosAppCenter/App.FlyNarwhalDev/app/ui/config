@@ -11,11 +11,11 @@
         "FlyNarwhalDev.Admin": {
             "title": "飞鲸影视管理（开发版）",
             "icon": "images/icon_{0}.png",
-            "type": "iframe",
+            "type": "url",
             "protocol": "",
-            "gatewayPrefix": "/app/flynarwhaldev",
+            "gatewayPrefix": "/app/FlyNarwhalDev",
             "gatewaySocket": "app.sock",
-            "url": "/app/flynarwhaldev/index.html#/admin",
+            "url": "/app/FlyNarwhalDev/index.html#/admin",
             "allUsers": false
         }
     }

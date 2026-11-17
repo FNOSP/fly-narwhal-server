@@ -11,11 +11,11 @@
         "App.Native.flyNarwhalServer.Admin": {
             "title": "飞鲸影视管理",
             "icon": "images/icon_{0}.png",
-            "type": "iframe",
+            "type": "url",
             "protocol": "",
-            "gatewayPrefix": "/app/flynarwhal",
+            "gatewayPrefix": "/app/App.Native.flyNarwhalServer",
             "gatewaySocket": "app.sock",
-            "url": "/app/flynarwhal/index.html#/admin",
+            "url": "/app/App.Native.flyNarwhalServer/index.html#/admin",
             "allUsers": false
         }
     }
