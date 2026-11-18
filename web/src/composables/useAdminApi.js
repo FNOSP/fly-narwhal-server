@@ -55,7 +55,6 @@ export function useAdminApi() {
             request(`/api/admin/codes/${id}/status`, { method: 'POST', body: { enabled } }),
         setScope: (id, scope) =>
             request(`/api/admin/codes/${id}/scope`, { method: 'POST', body: { scope } }),
-        unbind: (id) => request(`/api/admin/codes/${id}/unbind`, { method: 'POST' }),
         deleteCode: (id) => request(`/api/admin/codes/${id}`, { method: 'DELETE' }),
         accessLogs: (codeId, limit = 200) =>
             request(`/api/admin/access/logs?limit=${limit}${codeId != null ? `&codeId=${codeId}` : ''}`),

@@ -34,6 +34,9 @@ const onceCopied = ref(false)
 // Delete confirmation
 const deleteTarget = ref(null)
 
+// Status confirmation: only disabling asks, since re-enabling restores access.
+const statusTarget = ref(null)
+
 const expiryOptions = computed(() => [
     { value: '7', label: t.value.admin.expiry7 },
     { value: '30', label: t.value.admin.expiry30 },
@@ -223,7 +226,7 @@ const toggleLegacy = () => run(async () => {
                                     <th>{{ t.admin.colScope }}</th>
                                     <th>{{ t.admin.colStatus }}</th>
                                     <th>{{ t.admin.colExpiry }}</th>
-                                    <th>{{ t.admin.colDevice }}</th>
+                                    <th>{{ t.admin.colInstance }}</th>
                                     <th>{{ t.admin.colLastUsed }}</th>
                                     <th>{{ t.admin.colActions }}</th>
                                 </tr>
@@ -238,19 +241,18 @@ const toggleLegacy = () => run(async () => {
                                     </td>
                                     <td>{{ codeStatus(code) }}</td>
                                     <td>{{ code.permanent ? t.admin.expiryPermanent : fmtTime(code.expireTime) }}</td>
-                                    <td>{{ code.boundDeviceLabel || code.boundDeviceId || t.admin.unbound }}</td>
+                                    <td>{{ code.boundInstanceLabel || code.boundInstanceId || t.admin.unbound }}</td>
                                     <td>
                                         <template v-if="code.lastUsedTime">{{ fmtTime(code.lastUsedTime) }}<br /><span class="adpage__muted">{{ code.lastUsedIp }}</span></template>
                                         <template v-else>—</template>
                                     </td>
                                     <td class="adpage__actions">
-                                        <button type="button" @click="run(() => api.setStatus(code.id, code.status === 'DISABLED'))">
+                                        <button type="button" @click="code.status === 'DISABLED' ? run(() => api.setStatus(code.id, true)) : (statusTarget = code)">
                                             {{ code.status === 'DISABLED' ? t.admin.enable : t.admin.disable }}
                                         </button>
                                         <button type="button" @click="run(() => api.setScope(code.id, code.scope === 'READ_ONLY' ? 'READ_WRITE' : 'READ_ONLY'))">
                                             {{ code.scope === 'READ_ONLY' ? t.admin.makeReadWrite : t.admin.makeReadOnly }}
                                         </button>
-                                        <button type="button" :disabled="!code.boundDeviceId" @click="run(() => api.unbind(code.id))">{{ t.admin.unbind }}</button>
                                         <button type="button" class="adpage__danger" @click="deleteTarget = code">{{ t.admin.delete }}</button>
                                     </td>
                                 </tr>
@@ -358,6 +360,29 @@ const toggleLegacy = () => run(async () => {
                                 <button class="btn adpage__danger-btn" type="button"
                                     @click="run(() => api.deleteCode(deleteTarget.id)).then(() => { deleteTarget = null })">
                                     {{ t.admin.delete }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
+
+        <!-- Disable confirmation -->
+        <Teleport to="body">
+            <Transition name="modal">
+                <div v-if="statusTarget" class="overlay" @click.self="statusTarget = null">
+                    <div class="modal" role="dialog" aria-modal="true">
+                        <header class="modal__head">
+                            <h2 class="modal__title">{{ t.admin.disable }}</h2>
+                        </header>
+                        <div class="modal__body">
+                            <p class="modal__desc">{{ t.admin.disableConfirm.replace('{name}', statusTarget.name) }}</p>
+                            <div class="adpage__form-actions">
+                                <button class="btn" type="button" @click="statusTarget = null">{{ t.admin.cancel }}</button>
+                                <button class="btn adpage__danger-btn" type="button"
+                                    @click="run(() => api.setStatus(statusTarget.id, false)).then(() => { statusTarget = null })">
+                                    {{ t.admin.disable }}
                                 </button>
                             </div>
                         </div>
