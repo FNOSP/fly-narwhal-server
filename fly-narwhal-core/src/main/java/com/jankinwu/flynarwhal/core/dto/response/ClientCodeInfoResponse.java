@@ -13,8 +13,8 @@ public class ClientCodeInfoResponse {
     private boolean permanent;
     private String status;
     private String scope;
-    private String boundDeviceId;
-    private String boundDeviceLabel;
+    private String boundInstanceId;
+    private String boundInstanceLabel;
     /** Server clock so the client can sanity-check its own timestamp window. */
     private long serverTime;
 }

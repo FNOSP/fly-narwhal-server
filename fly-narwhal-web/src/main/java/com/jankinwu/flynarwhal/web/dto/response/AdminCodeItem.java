@@ -16,8 +16,8 @@ public class AdminCodeItem {
     private LocalDateTime expireTime;
     private boolean permanent;
     private LocalDateTime createTime;
-    private String boundDeviceId;
-    private String boundDeviceLabel;
+    private String boundInstanceId;
+    private String boundInstanceLabel;
     private LocalDateTime boundTime;
     private LocalDateTime lastUsedTime;
     private String lastUsedIp;

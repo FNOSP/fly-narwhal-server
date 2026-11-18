@@ -38,18 +38,18 @@ public class ClientActivationController {
         if (code == null) {
             return Result.error(com.jankinwu.flynarwhal.core.dto.response.ResultCodes.CODE_INVALID, "授权码无效");
         }
-        // The interceptor already bound the device on first use; persist the label too.
-        if (request.getDeviceLabel() != null && !request.getDeviceLabel().isBlank()
-                && code.getBoundDeviceId() != null) {
-            String label = request.getDeviceLabel().trim();
+        // The interceptor already bound the instance on first use; persist the label too.
+        if (request.getInstanceLabel() != null && !request.getInstanceLabel().isBlank()
+                && code.getBoundInstanceId() != null) {
+            String label = request.getInstanceLabel().trim();
             if (label.length() > 256) {
                 label = label.substring(0, 256);
             }
             codeMapper.update(null, new UpdateWrapper<ClientAuthCode>()
                     .eq("ID", code.getId())
-                    .set("BOUND_DEVICE_LABEL", label)
+                    .set("BOUND_INSTANCE_LABEL", label)
                     .set("UPDATE_TIME", LocalDateTime.now()));
-            code.setBoundDeviceLabel(label);
+            code.setBoundInstanceLabel(label);
         }
         return Result.success(toInfo(code));
     }
@@ -60,7 +60,7 @@ public class ClientActivationController {
         if (code == null) {
             return Result.error(com.jankinwu.flynarwhal.core.dto.response.ResultCodes.CODE_INVALID, "授权码无效");
         }
-        // Re-read so admin-side changes (disable/scope/unbind) surface immediately.
+        // Re-read so admin-side changes (disable/scope) surface immediately.
         ClientAuthCode fresh = codeMapper.selectById(code.getId());
         if (fresh == null) {
             return Result.error(com.jankinwu.flynarwhal.core.dto.response.ResultCodes.CODE_INVALID, "授权码无效");
@@ -77,8 +77,8 @@ public class ClientActivationController {
                 .permanent(code.getExpireTime() == null)
                 .status(code.getStatus())
                 .scope(code.getScope())
-                .boundDeviceId(code.getBoundDeviceId())
-                .boundDeviceLabel(code.getBoundDeviceLabel())
+                .boundInstanceId(code.getBoundInstanceId())
+                .boundInstanceLabel(code.getBoundInstanceLabel())
                 .serverTime(System.currentTimeMillis())
                 .build();
     }

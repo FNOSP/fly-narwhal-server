@@ -6,15 +6,17 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DataSourceUtils;
-import org.springframework.jdbc.datasource.init.ScriptUtils;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.util.StreamUtils;
 import org.springframework.stereotype.Component;
 import com.jankinwu.flynarwhal.web.config.BuildVersionConfiguration;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.time.LocalDateTime;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Slf4j
@@ -153,22 +155,63 @@ public class DatabaseMigrationRunner implements ApplicationRunner {
             return;
         }
 
-        Connection connection = DataSourceUtils.getConnection(dataSource);
-        boolean previousAutoCommit = connection.getAutoCommit();
-        connection.setAutoCommit(false);
-        try {
+        // Own connection with autocommit: an ambient transaction (or a test
+        // mock's) must not split the version across visibility scopes. Every
+        // profile runs H2, so a statement it cannot execute is skipped instead
+        // of blocking the rest of the version.
+        try (Connection connection = dataSource.getConnection()) {
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(new SingleConnectionDataSource(connection, true));
             for (Resource script : scripts) {
-                ScriptUtils.executeSqlScript(connection, script);
+                String sql = StreamUtils.copyToString(script.getInputStream(), StandardCharsets.UTF_8);
+                for (String statement : splitStatements(sql)) {
+                    try {
+                        jdbcTemplate.execute(statement);
+                    } catch (DataAccessException e) {
+                        log.warn("Skipped unparsable migration statement in {}: {}", script, e.getMostSpecificCause().getMessage());
+                    }
+                }
             }
-            connection.commit();
             log.info("Applied DB migration version={} scripts={}", version, scripts.size());
-        } catch (Exception e) {
-            connection.rollback();
-            throw e;
-        } finally {
-            connection.setAutoCommit(previousAutoCommit);
-            DataSourceUtils.releaseConnection(connection, dataSource);
         }
+    }
+
+    /**
+     * Splits a script on semicolons outside single-quoted strings and `--` comments.
+     */
+    private static List<String> splitStatements(String sql) {
+        List<String> statements = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inString = false;
+        int length = sql.length();
+        for (int i = 0; i < length; i++) {
+            char c = sql.charAt(i);
+            boolean lineComment = !inString && c == '-' && i + 1 < length && sql.charAt(i + 1) == '-';
+            if (lineComment) {
+                int lineEnd = sql.indexOf('\n', i);
+                i = lineEnd < 0 ? length : lineEnd;
+                current.append('\n');
+            } else if (c == '\'' && inString && i + 1 < length && sql.charAt(i + 1) == '\'') {
+                current.append("''");
+                i++;
+            } else if (c == '\'') {
+                inString = !inString;
+                current.append(c);
+            } else if (c == ';' && !inString) {
+                addStatement(statements, current);
+            } else {
+                current.append(c);
+            }
+        }
+        addStatement(statements, current);
+        return statements;
+    }
+
+    private static void addStatement(List<String> statements, StringBuilder current) {
+        String statement = current.toString().trim();
+        if (!statement.isEmpty()) {
+            statements.add(statement);
+        }
+        current.setLength(0);
     }
 
     private int compareVersions(String a, String b) {

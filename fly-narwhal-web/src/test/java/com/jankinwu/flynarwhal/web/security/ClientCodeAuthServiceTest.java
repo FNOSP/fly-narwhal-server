@@ -54,33 +54,33 @@ class ClientCodeAuthServiceTest {
         when(mapper.update(any(), any())).thenReturn(1);
     }
 
-    private String header(String ts, String nonce, String method, String url, String deviceId) {
+    private String header(String ts, String nonce, String method, String url, String instanceId) {
         String sig = ClientCodeCrypto.requestSignature(signKey, method, url, ts, nonce,
-                AuthCanonicalization.dataJsonMd5(null, null), deviceId);
+                AuthCanonicalization.dataJsonMd5(null, null), instanceId);
         return "keyid=" + stored.getCodeHash() + "&ts=" + ts + "&nonce=" + nonce + "&sig=" + sig;
     }
 
-    private ClientCodeAuthService.Outcome verify(String header, String deviceId) {
+    private ClientCodeAuthService.Outcome verify(String header, String instanceId) {
         return service.verify(header, "GET", "/api/danmu/get", new HashMap<>(), null,
-                deviceId, "10.0.0.1", "2.4.0");
+                instanceId, "10.0.0.1", "2.4.0");
     }
 
     @Test
     void acceptsValidSignatureAndBindsDeviceOnFirstUse() {
         String ts = Long.toString(System.currentTimeMillis());
         String nonce = "0123456789abcdef0123456789abcdef";
-        ClientCodeAuthService.Outcome outcome = verify(header(ts, nonce, "GET", "/api/danmu/get", "device-a"), "device-a");
+        ClientCodeAuthService.Outcome outcome = verify(header(ts, nonce, "GET", "/api/danmu/get", "macos-arm64-fn-aaaaaaaaaaaaaaaa"), "macos-arm64-fn-aaaaaaaaaaaaaaaa");
         assertTrue(outcome.ok());
-        assertEquals("device-a", outcome.code().getBoundDeviceId());
+        assertEquals("macos-arm64-fn-aaaaaaaaaaaaaaaa", outcome.code().getBoundInstanceId());
     }
 
     @Test
     void rejectsWrongSignature() {
         String ts = Long.toString(System.currentTimeMillis());
-        String h = header(ts, "0123456789abcdef0123456789abcdef", "GET", "/api/danmu/get", "device-a");
+        String h = header(ts, "0123456789abcdef0123456789abcdef", "GET", "/api/danmu/get", "macos-arm64-fn-aaaaaaaaaaaaaaaa");
         char last = h.charAt(h.length() - 1);
         h = h.substring(0, h.length() - 1) + (last == '0' ? '1' : '0');
-        ClientCodeAuthService.Outcome outcome = verify(h, "device-a");
+        ClientCodeAuthService.Outcome outcome = verify(h, "macos-arm64-fn-aaaaaaaaaaaaaaaa");
         assertFalse(outcome.ok());
         assertEquals(ResultCodes.CODE_INVALID, outcome.errorCode());
     }
@@ -126,9 +126,9 @@ class ClientCodeAuthServiceTest {
 
     @Test
     void rejectsMismatchedDeviceAfterBinding() {
-        stored.setBoundDeviceId("device-a");
+        stored.setBoundInstanceId("macos-arm64-fn-aaaaaaaaaaaaaaaa");
         String ts = Long.toString(System.currentTimeMillis());
-        ClientCodeAuthService.Outcome outcome = verify(header(ts, "0123456789abcdef0123456789abcdef", "GET", "/api/danmu/get", "device-b"), "device-b");
+        ClientCodeAuthService.Outcome outcome = verify(header(ts, "0123456789abcdef0123456789abcdef", "GET", "/api/danmu/get", "macos-arm64-fn-bbbbbbbbbbbbbbbb"), "macos-arm64-fn-bbbbbbbbbbbbbbbb");
         assertEquals(ResultCodes.CODE_DEVICE_MISMATCH, outcome.errorCode());
     }
 

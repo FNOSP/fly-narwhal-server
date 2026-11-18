@@ -94,9 +94,9 @@ public class ClientCodeAuthService {
      */
     public Outcome verify(String header, String method, String url,
                           Map<String, String[]> parameters, byte[] body,
-                          String deviceId, String ip, String clientVersion) {
+                          String instanceId, String ip, String clientVersion) {
         if (rateLimiter.isBlocked(ip)) {
-            accessLog.record(null, null, ClientAccessLog.MODE_CODE, ip, clientVersion, deviceId,
+            accessLog.record(null, null, ClientAccessLog.MODE_CODE, ip, clientVersion, instanceId,
                     ClientAccessLog.EVENT_RATE_LIMITED);
             return Outcome.fail(ResultCodes.CODE_RATE_LIMITED, ClientAccessLog.EVENT_RATE_LIMITED);
         }
@@ -108,18 +108,18 @@ public class ClientCodeAuthService {
         String sig = parts.get("sig");
         if (keyId == null || ts == null || nonce == null || sig == null
                 || keyId.length() != 64 || nonce.length() != 32) {
-            return failInvalid(ip, clientVersion, deviceId, null, null);
+            return failInvalid(ip, clientVersion, instanceId, null, null);
         }
 
         long tsMs;
         try {
             tsMs = Long.parseLong(ts);
         } catch (NumberFormatException e) {
-            return failInvalid(ip, clientVersion, deviceId, null, null);
+            return failInvalid(ip, clientVersion, instanceId, null, null);
         }
         long now = System.currentTimeMillis();
         if (Math.abs(now - tsMs) > TS_WINDOW_MS) {
-            accessLog.record(null, null, ClientAccessLog.MODE_CODE, ip, clientVersion, deviceId,
+            accessLog.record(null, null, ClientAccessLog.MODE_CODE, ip, clientVersion, instanceId,
                     ClientAccessLog.EVENT_REPLAYED);
             rateLimiter.recordFailure(ip);
             return Outcome.fail(ResultCodes.CODE_REPLAYED, ClientAccessLog.EVENT_REPLAYED);
@@ -128,17 +128,17 @@ public class ClientCodeAuthService {
         ClientAuthCode code = codeMapper.selectOne(
                 new QueryWrapper<ClientAuthCode>().eq("CODE_HASH", keyId));
         if (code == null) {
-            return failInvalid(ip, clientVersion, deviceId, null, null);
+            return failInvalid(ip, clientVersion, instanceId, null, null);
         }
 
         if (ClientAuthCode.STATUS_DISABLED.equals(code.getStatus())) {
-            accessLog.record(code.getId(), code.getName(), ClientAccessLog.MODE_CODE, ip, clientVersion, deviceId,
+            accessLog.record(code.getId(), code.getName(), ClientAccessLog.MODE_CODE, ip, clientVersion, instanceId,
                     ClientAccessLog.EVENT_DISABLED);
             rateLimiter.recordFailure(ip);
             return Outcome.fail(ResultCodes.CODE_DISABLED, ClientAccessLog.EVENT_DISABLED);
         }
         if (code.getExpireTime() != null && code.getExpireTime().isBefore(LocalDateTime.now())) {
-            accessLog.record(code.getId(), code.getName(), ClientAccessLog.MODE_CODE, ip, clientVersion, deviceId,
+            accessLog.record(code.getId(), code.getName(), ClientAccessLog.MODE_CODE, ip, clientVersion, instanceId,
                     ClientAccessLog.EVENT_EXPIRED);
             rateLimiter.recordFailure(ip);
             return Outcome.fail(ResultCodes.CODE_EXPIRED, ClientAccessLog.EVENT_EXPIRED);
@@ -149,56 +149,56 @@ public class ClientCodeAuthService {
             signKey = Base64.getDecoder().decode(code.getSignKey());
         } catch (IllegalArgumentException e) {
             log.error("Stored sign key for code {} is corrupt", code.getId());
-            return failInvalid(ip, clientVersion, deviceId, code.getId(), code.getName());
+            return failInvalid(ip, clientVersion, instanceId, code.getId(), code.getName());
         }
         String dataJsonMd5 = AuthCanonicalization.dataJsonMd5(parameters, body);
-        String expected = ClientCodeCrypto.requestSignature(signKey, method, url, ts, nonce, dataJsonMd5, deviceId);
+        String expected = ClientCodeCrypto.requestSignature(signKey, method, url, ts, nonce, dataJsonMd5, instanceId);
         if (!ClientCodeCrypto.constantTimeEquals(expected, sig)) {
-            return failInvalid(ip, clientVersion, deviceId, code.getId(), code.getName());
+            return failInvalid(ip, clientVersion, instanceId, code.getId(), code.getName());
         }
 
         if (!registerNonce(keyId, nonce, now)) {
-            accessLog.record(code.getId(), code.getName(), ClientAccessLog.MODE_CODE, ip, clientVersion, deviceId,
+            accessLog.record(code.getId(), code.getName(), ClientAccessLog.MODE_CODE, ip, clientVersion, instanceId,
                     ClientAccessLog.EVENT_REPLAYED);
             return Outcome.fail(ResultCodes.CODE_REPLAYED, ClientAccessLog.EVENT_REPLAYED);
         }
 
-        // First-use device binding: an unbound code adopts this device atomically.
-        if (code.getBoundDeviceId() == null || code.getBoundDeviceId().isBlank()) {
-            if (deviceId != null && !deviceId.isBlank()) {
+        // First-use instance binding: an unbound code adopts this instance atomically.
+        if (code.getBoundInstanceId() == null || code.getBoundInstanceId().isBlank()) {
+            if (instanceId != null && !instanceId.isBlank()) {
                 int updated = codeMapper.update(null, new UpdateWrapper<ClientAuthCode>()
                         .eq("ID", code.getId())
-                        .isNull("BOUND_DEVICE_ID")
-                        .set("BOUND_DEVICE_ID", deviceId)
+                        .isNull("BOUND_INSTANCE_ID")
+                        .set("BOUND_INSTANCE_ID", instanceId)
                         .set("BOUND_TIME", LocalDateTime.now())
                         .set("UPDATE_TIME", LocalDateTime.now()));
                 if (updated > 0) {
-                    code.setBoundDeviceId(deviceId);
+                    code.setBoundInstanceId(instanceId);
                 } else {
                     // Another request bound it first: re-read and fall through to the check.
                     ClientAuthCode fresh = codeMapper.selectById(code.getId());
                     if (fresh != null) {
-                        code.setBoundDeviceId(fresh.getBoundDeviceId());
+                        code.setBoundInstanceId(fresh.getBoundInstanceId());
                     }
                 }
             }
         }
-        if (code.getBoundDeviceId() != null && !code.getBoundDeviceId().isBlank()
-                && !code.getBoundDeviceId().equals(deviceId)) {
-            accessLog.record(code.getId(), code.getName(), ClientAccessLog.MODE_CODE, ip, clientVersion, deviceId,
+        if (code.getBoundInstanceId() != null && !code.getBoundInstanceId().isBlank()
+                && !code.getBoundInstanceId().equals(instanceId)) {
+            accessLog.record(code.getId(), code.getName(), ClientAccessLog.MODE_CODE, ip, clientVersion, instanceId,
                     ClientAccessLog.EVENT_DEVICE_MISMATCH);
             rateLimiter.recordFailure(ip);
             return Outcome.fail(ResultCodes.CODE_DEVICE_MISMATCH, ClientAccessLog.EVENT_DEVICE_MISMATCH);
         }
 
         rateLimiter.recordSuccess(ip);
-        accessLog.record(code.getId(), code.getName(), ClientAccessLog.MODE_CODE, ip, clientVersion, deviceId,
+        accessLog.record(code.getId(), code.getName(), ClientAccessLog.MODE_CODE, ip, clientVersion, instanceId,
                 ClientAccessLog.EVENT_OK);
         return Outcome.ok(code);
     }
 
-    private Outcome failInvalid(String ip, String clientVersion, String deviceId, Long codeId, String codeName) {
-        accessLog.record(codeId, codeName, ClientAccessLog.MODE_CODE, ip, clientVersion, deviceId,
+    private Outcome failInvalid(String ip, String clientVersion, String instanceId, Long codeId, String codeName) {
+        accessLog.record(codeId, codeName, ClientAccessLog.MODE_CODE, ip, clientVersion, instanceId,
                 ClientAccessLog.EVENT_BAD_SIGN);
         rateLimiter.recordFailure(ip);
         return Outcome.fail(ResultCodes.CODE_INVALID, ClientAccessLog.EVENT_BAD_SIGN);

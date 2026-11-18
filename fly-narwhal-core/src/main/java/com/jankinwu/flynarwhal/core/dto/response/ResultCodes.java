@@ -15,7 +15,7 @@ public final class ResultCodes {
     /** Per-client code was disabled by the administrator. */
     public static final int CODE_DISABLED = 4103;
 
-    /** Per-client code is bound to a different device; unbind it in the admin page to move devices. */
+    /** Per-client code is bound to a different instance; the binding cannot be moved, issue a new code. */
     public static final int CODE_DEVICE_MISMATCH = 4104;
 
     /** Too many failed auth attempts from this IP; retry after the cooldown. */

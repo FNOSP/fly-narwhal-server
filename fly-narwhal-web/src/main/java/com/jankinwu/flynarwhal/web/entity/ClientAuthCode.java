@@ -40,10 +40,10 @@ public class ClientAuthCode {
     /** Null means the code never expires. */
     private LocalDateTime expireTime;
 
-    /** First-use device binding; null until the first signed request binds it. */
-    private String boundDeviceId;
+    /** First-use instance binding; null until the first signed request binds it. */
+    private String boundInstanceId;
 
-    private String boundDeviceLabel;
+    private String boundInstanceLabel;
 
     private LocalDateTime boundTime;
 

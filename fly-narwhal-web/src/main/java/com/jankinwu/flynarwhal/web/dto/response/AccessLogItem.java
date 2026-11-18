@@ -15,7 +15,7 @@ public class AccessLogItem {
     private String authMode;
     private String clientIp;
     private String clientVersion;
-    private String deviceId;
+    private String instanceId;
     private String event;
     private Integer hitCount;
     private LocalDateTime firstTime;

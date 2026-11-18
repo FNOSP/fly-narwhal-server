@@ -71,11 +71,11 @@ public final class ClientCodeCrypto {
 
     /**
      * Request signature: HMAC-SHA256 over
-     * {@code FNK2_method_url_ts_nonce_dataJsonMd5_deviceId}, hex-encoded.
+     * {@code FNK2_method_url_ts_nonce_dataJsonMd5_instanceId}, hex-encoded.
      */
     public static String requestSignature(byte[] signKey, String method, String url,
-                                          String ts, String nonce, String dataJsonMd5, String deviceId) {
-        String message = String.join("_", "FNK2", method, url, ts, nonce, dataJsonMd5, deviceId == null ? "" : deviceId);
+                                          String ts, String nonce, String dataJsonMd5, String instanceId) {
+        String message = String.join("_", "FNK2", method, url, ts, nonce, dataJsonMd5, instanceId == null ? "" : instanceId);
         return hmacSha256Hex(signKey, message.getBytes(StandardCharsets.UTF_8));
     }
 

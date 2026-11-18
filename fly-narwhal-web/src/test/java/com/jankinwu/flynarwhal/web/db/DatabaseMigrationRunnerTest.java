@@ -8,6 +8,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -199,19 +200,55 @@ class DatabaseMigrationRunnerTest {
 
         new DatabaseMigrationRunner(ds).run(null);
 
-        assertTrue(!hasColumn(jdbc, "CLIENT_AUTH_CODE", "id"),
+        // The 2.1.0 install never got the auth tables; 2.1.1 must not rename
+        // columns of tables that were never created.
+        assertFalse(hasColumn(jdbc, "CLIENT_ACCESS_LOG", "bucket_key"),
                 "a database already at 2.1.0 must skip the appended script (wipe+reinstall required)");
+        assertFalse(hasColumn(jdbc, "CLIENT_ACCESS_LOG", "instance_id"),
+                "2.1.1 must leave a table-less database alone");
+    }
+
+    /**
+     * A released 2.1.0 install already has the auth tables with device-named
+     * columns; 2.1.1 renames them in place and keeps the bound values.
+     */
+    @Test
+    void renamesDeviceColumnsToInstanceOnAReleasedDatabase() throws Exception {
+        DriverManagerDataSource ds = freshDatabase();
+        JdbcTemplate jdbc = jdbc(ds);
+        recordVersion(jdbc, "2.1.0");
+        jdbc.execute("CREATE TABLE CLIENT_AUTH_CODE (ID BIGINT AUTO_INCREMENT PRIMARY KEY, NAME VARCHAR(128), "
+                + "CODE_HASH VARCHAR(64), SIGN_KEY VARCHAR(64), BOUND_DEVICE_ID VARCHAR(128), "
+                + "BOUND_DEVICE_LABEL VARCHAR(256))");
+        jdbc.execute("CREATE TABLE CLIENT_ACCESS_LOG (ID BIGINT AUTO_INCREMENT PRIMARY KEY, "
+                + "DEVICE_ID VARCHAR(128), BUCKET_KEY VARCHAR(160))");
+        jdbc.update("INSERT INTO CLIENT_AUTH_CODE (NAME, CODE_HASH, SIGN_KEY, BOUND_DEVICE_ID, BOUND_DEVICE_LABEL) "
+                + "VALUES ('c', 'h', 'k', 'flutter_abc', 'Studio')");
+
+        new DatabaseMigrationRunner(ds).run(null);
+
+        assertFalse(hasColumn(jdbc, "CLIENT_AUTH_CODE", "bound_device_id"),
+                "the old device column must be gone");
+        assertTrue(hasColumn(jdbc, "CLIENT_AUTH_CODE", "bound_instance_id"), "bound_instance_id is missing");
+        assertTrue(hasColumn(jdbc, "CLIENT_AUTH_CODE", "bound_instance_label"), "bound_instance_label is missing");
+        assertFalse(hasColumn(jdbc, "CLIENT_ACCESS_LOG", "device_id"), "the old log column must be gone");
+        assertTrue(hasColumn(jdbc, "CLIENT_ACCESS_LOG", "instance_id"), "instance_id is missing");
+        assertEquals("flutter_abc", jdbc.queryForObject(
+                "SELECT BOUND_INSTANCE_ID FROM CLIENT_AUTH_CODE WHERE NAME='c'", String.class));
+        assertEquals("Studio", jdbc.queryForObject(
+                "SELECT BOUND_INSTANCE_LABEL FROM CLIENT_AUTH_CODE WHERE NAME='c'", String.class));
+        assertEquals("2.1.1", version(jdbc));
     }
 
     private static void assertClientAuthSchema(JdbcTemplate jdbc) {
         for (String column : new String[]{"id", "name", "code_hash", "sign_key", "status",
-                "scope", "expire_time", "bound_device_id", "bound_device_label", "bound_time",
+                "scope", "expire_time", "bound_instance_id", "bound_instance_label", "bound_time",
                 "last_used_time", "last_used_ip", "last_used_version", "create_time", "update_time"}) {
             assertTrue(hasColumn(jdbc, "CLIENT_AUTH_CODE", column),
                     "CLIENT_AUTH_CODE." + column + " is missing");
         }
         for (String column : new String[]{"id", "code_id", "code_name", "auth_mode",
-                "client_ip", "client_version", "device_id", "event", "hit_count",
+                "client_ip", "client_version", "instance_id", "event", "hit_count",
                 "first_time", "last_time", "bucket_key", "create_time", "update_time"}) {
             assertTrue(hasColumn(jdbc, "CLIENT_ACCESS_LOG", column),
                     "CLIENT_ACCESS_LOG." + column + " is missing");

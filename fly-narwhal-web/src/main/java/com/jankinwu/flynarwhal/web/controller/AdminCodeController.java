@@ -107,17 +107,6 @@ public class AdminCodeController {
         return updated > 0 ? Result.success() : Result.error("授权码不存在");
     }
 
-    @PostMapping("/codes/{id}/unbind")
-    public Result<Void> unbind(@PathVariable("id") Long id) {
-        int updated = codeMapper.update(null, new UpdateWrapper<ClientAuthCode>()
-                .eq("ID", id)
-                .set("BOUND_DEVICE_ID", null)
-                .set("BOUND_DEVICE_LABEL", null)
-                .set("BOUND_TIME", null)
-                .set("UPDATE_TIME", LocalDateTime.now()));
-        return updated > 0 ? Result.success() : Result.error("授权码不存在");
-    }
-
     @DeleteMapping("/codes/{id}")
     public Result<Void> deleteCode(@PathVariable("id") Long id) {
         int removed = codeMapper.deleteById(id);
@@ -175,8 +164,8 @@ public class AdminCodeController {
                 .expireTime(code.getExpireTime())
                 .permanent(code.getExpireTime() == null)
                 .createTime(code.getCreateTime())
-                .boundDeviceId(code.getBoundDeviceId())
-                .boundDeviceLabel(code.getBoundDeviceLabel())
+                .boundInstanceId(code.getBoundInstanceId())
+                .boundInstanceLabel(code.getBoundInstanceLabel())
                 .boundTime(code.getBoundTime())
                 .lastUsedTime(code.getLastUsedTime())
                 .lastUsedIp(code.getLastUsedIp())
@@ -192,7 +181,7 @@ public class AdminCodeController {
                 .authMode(row.getAuthMode())
                 .clientIp(row.getClientIp())
                 .clientVersion(row.getClientVersion())
-                .deviceId(row.getDeviceId())
+                .instanceId(row.getInstanceId())
                 .event(row.getEvent())
                 .hitCount(row.getHitCount())
                 .firstTime(row.getFirstTime())

@@ -22,7 +22,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 public class ClientCodeAuthInterceptor implements HandlerInterceptor {
 
     public static final String FNAUTH_HEADER = "Fnauth";
-    public static final String DEVICE_HEADER = "X-Fn-Device-Id";
+    public static final String INSTANCE_HEADER = "X-Fn-Instance-Id";
 
     private final ClientCodeAuthService authService;
     private final ClientAccessLogService accessLog;
@@ -47,13 +47,13 @@ public class ClientCodeAuthInterceptor implements HandlerInterceptor {
         if (request instanceof CachedBodyHttpServletRequest cached) {
             body = cached.getCachedBody();
         }
-        String deviceId = request.getHeader(DEVICE_HEADER);
+        String instanceId = request.getHeader(INSTANCE_HEADER);
         String ip = request.getRemoteAddr();
         String version = request.getHeader(ClientVersionInterceptor.CLIENT_VERSION_HEADER);
 
         ClientCodeAuthService.Outcome outcome = authService.verify(
                 fnauth, request.getMethod(), request.getRequestURI(),
-                request.getParameterMap(), body, deviceId, ip, version);
+                request.getParameterMap(), body, instanceId, ip, version);
         if (!outcome.ok()) {
             writeBusinessError(response, outcome.errorCode());
             return false;
@@ -62,7 +62,7 @@ public class ClientCodeAuthInterceptor implements HandlerInterceptor {
         ClientAuthCode code = outcome.code();
         if (ClientAuthCode.SCOPE_READ_ONLY.equals(code.getScope())
                 && WriteConfigEndpoints.isWriteConfig(request.getMethod(), request.getRequestURI())) {
-            accessLog.record(code.getId(), code.getName(), ClientAccessLog.MODE_CODE, ip, version, deviceId,
+            accessLog.record(code.getId(), code.getName(), ClientAccessLog.MODE_CODE, ip, version, instanceId,
                     ClientAccessLog.EVENT_READ_ONLY_DENIED);
             writeBusinessError(response, com.jankinwu.flynarwhal.core.dto.response.ResultCodes.CODE_READ_ONLY);
             return false;

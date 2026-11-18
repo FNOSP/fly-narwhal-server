@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * Aggregated access-visibility row: one per (code, ip, event, version, device,
+ * Aggregated access-visibility row: one per (code, ip, event, version, instance,
  * 5-minute bucket), hit-counted by the in-memory flusher. {@code codeName} is a
  * snapshot so rows stay readable after the code is deleted.
  */
@@ -43,7 +43,7 @@ public class ClientAccessLog {
 
     private String clientVersion;
 
-    private String deviceId;
+    private String instanceId;
 
     private String event;
 

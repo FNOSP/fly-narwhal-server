@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Access visibility with zero per-request DB writes: events aggregate in
- * memory under (code, ip, event, version, device, 5-minute bucket) keys and a
+ * memory under (code, ip, event, version, instance, 5-minute bucket) keys and a
  * daemon thread flushes them every 30 seconds, upserting hit counts on the
  * unique BUCKET_KEY. Retention is trimmed inline on each flush (house style,
  * no @Scheduled in the native image).
@@ -66,11 +66,11 @@ public class ClientAccessLogService {
 
     /** Records one request outcome. Never touches the database. */
     public void record(Long codeId, String codeName, String authMode, String ip,
-                       String clientVersion, String deviceId, String event) {
+                       String clientVersion, String instanceId, String event) {
         long now = System.currentTimeMillis();
         long bucket = now / BUCKET_MS;
         String bucketKey = (codeId == null ? "L" : "C" + codeId) + "|" + safe(ip) + "|" + safe(event)
-                + "|" + safe(clientVersion) + "|" + safe(deviceId) + "|" + bucket;
+                + "|" + safe(clientVersion) + "|" + safe(instanceId) + "|" + bucket;
         if (pending.size() >= MAX_PENDING_KEYS && !pending.containsKey(bucketKey)) {
             // Drop the overflow rather than grow unbounded; visibility is best-effort.
             return;
@@ -82,7 +82,7 @@ public class ClientAccessLogService {
             sample.setAuthMode(authMode);
             sample.setClientIp(ip);
             sample.setClientVersion(clientVersion);
-            sample.setDeviceId(deviceId);
+            sample.setInstanceId(instanceId);
             sample.setEvent(event);
             sample.setBucketKey(k);
             return new Pending(sample);

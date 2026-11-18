@@ -70,10 +70,10 @@ class ClientCodeCryptoTest {
         byte[] signKey = ClientCodeCrypto.deriveSignKey(SECRET);
         String sig = ClientCodeCrypto.requestSignature(signKey, "GET", "/api/danmu/get",
                 "1700000000000", "0123456789abcdef0123456789abcdef",
-                AuthCanonicalization.md5Hex(""), "flutter_test-device");
+                AuthCanonicalization.md5Hex(""), "macos-arm64-fn-0123456789abcdef");
         // Independently computed HMAC over the joined message.
         String message = "FNK2_GET_/api/danmu/get_1700000000000_0123456789abcdef0123456789abcdef_"
-                + AuthCanonicalization.md5Hex("") + "_flutter_test-device";
+                + AuthCanonicalization.md5Hex("") + "_macos-arm64-fn-0123456789abcdef";
         String expected = ClientCodeCrypto.hmacSha256Hex(signKey, message.getBytes(StandardCharsets.UTF_8));
         assertEquals(expected, sig);
         assertEquals(64, sig.length());
