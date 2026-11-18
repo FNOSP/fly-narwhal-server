@@ -560,7 +560,7 @@ export default {
                 },
                 {
                     title: 'Fill in the auth code',
-                    desc: 'Click “Fill in auth code”. Open Fly Narwhal in fnOS, click “Get auth code” in the top-right corner, then copy the code into the dialog and press “OK”.',
+                    desc: 'Click “Fill in auth code”. Open Fly Narwhal on the fnOS desktop, click “Get auth code” to enter the admin page, generate a new code for this client (shown only once), then copy it into the dialog and press “OK”.',
                 },
                 {
                     title: 'Test the connection',
