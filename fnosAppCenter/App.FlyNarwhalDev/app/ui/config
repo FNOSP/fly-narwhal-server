@@ -3,19 +3,11 @@
         "FlyNarwhalDev.App": {
             "title": "飞鲸影视（开发版）",
             "icon": "images/icon_{0}.png",
-            "type": "iframe",
-            "protocol": "",
-            "url": "/cgi/ThirdParty/FlyNarwhalDev/index.cgi/",
-            "allUsers": false
-        },
-        "FlyNarwhalDev.Admin": {
-            "title": "飞鲸影视管理（开发版）",
-            "icon": "images/icon_{0}.png",
             "type": "url",
             "protocol": "",
             "gatewayPrefix": "/app/FlyNarwhalDev",
             "gatewaySocket": "app.sock",
-            "url": "/app/FlyNarwhalDev/index.html#/admin",
+            "url": "/app/FlyNarwhalDev/index.html",
             "allUsers": false
         }
     }

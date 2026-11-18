@@ -23,12 +23,15 @@ import GuidePage from './components/GuidePage.vue'
 import SupportPage from './components/SupportPage.vue'
 import AdminPage from './components/admin/AdminPage.vue'
 import SiteFooter from './components/SiteFooter.vue'
-import AuthCodeModal from './components/AuthCodeModal.vue'
 import { useRelease } from './composables/useRelease'
-import { useAuthCode } from './composables/useAuthCode'
 
 const { loading, tag, releaseUrl, platformGroups, versionLabel, publishedLabel, osRules } = useRelease()
-const auth = useAuthCode()
+
+// The old one-shot bootstrap code is gone; "获取授权码" now opens the admin
+// page (same SPA) where per-client codes are created.
+function openAdmin() {
+    window.location.hash = '#/admin'
+}
 
 // Standalone pages live behind `#/timeline` (full changelog), `#/credits`
 // (open-source acknowledgements), `#/guide` (usage guide) and `#/support`
@@ -111,10 +114,10 @@ function scrollToDownload() {
     <AdminPage v-else-if="route === 'admin'" />
 
     <template v-else>
-        <SiteNav :solid="navSolid" :progress="docProgress" @download="scrollToDownload" @auth="auth.request" />
+        <SiteNav :solid="navSolid" :progress="docProgress" @download="scrollToDownload" @auth="openAdmin" />
 
         <main>
-            <HeroSection :version-label="versionLabel" @download="scrollToDownload" @auth="auth.request" />
+            <HeroSection :version-label="versionLabel" @download="scrollToDownload" @auth="openAdmin" />
             <RenewSection />
             <ScreenshotSection />
             <FeatureSection />
@@ -136,19 +139,10 @@ function scrollToDownload() {
             />
             <ChangelogSection />
             <FaqSection />
-            <CtaSection @download="scrollToDownload" @auth="auth.request" />
+            <CtaSection @download="scrollToDownload" @auth="openAdmin" />
         </main>
 
         <SiteFooter />
 
-        <AuthCodeModal
-            :open="auth.open.value"
-            :title="auth.title.value"
-            :desc="auth.desc.value"
-            :code="auth.code.value"
-            :copied="auth.copied.value"
-            @close="auth.close"
-            @copy="auth.copy"
-        />
     </template>
 </template>

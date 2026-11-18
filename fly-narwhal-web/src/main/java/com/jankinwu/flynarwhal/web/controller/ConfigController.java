@@ -2,7 +2,6 @@ package com.jankinwu.flynarwhal.web.controller;
 
 import com.jankinwu.flynarwhal.core.dto.response.Result;
 import com.jankinwu.flynarwhal.web.config.BuildVersionConfiguration;
-import com.jankinwu.flynarwhal.web.security.FnAuthService;
 import com.jankinwu.flynarwhal.web.service.ConfigService;
 import com.jankinwu.flynarwhal.web.service.FnAuthConfigService;
 import lombok.RequiredArgsConstructor;
@@ -29,13 +28,7 @@ public class ConfigController {
         return configService.startUpdate(request.getDownloadUrl(), request.getHash(), request.getProxyUrl());
     }
 
-    private final FnAuthService fnAuthService;
 //    private final FnAuthConfigService fnAuthConfigService;
-
-    @PostMapping("/auth-code")
-    public Result<String> getAuthCode() {
-        return Result.success(fnAuthService.getOrGenerateAuthCode());
-    }
 
 //    @PostMapping("/fn-base-url")
 //    public Result<Void> setFnBaseUrl(@RequestBody SetFnBaseUrlRequest request, HttpServletRequest httpRequest) {

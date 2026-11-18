@@ -44,9 +44,6 @@ public class FnAuthInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull Object handler) throws Exception {
         String path = request.getRequestURI();
-        if (path.startsWith("/api/config/auth-code")) {
-            return true;
-        }
 
         // A request already authenticated by the per-client interceptor skips legacy auth.
         if (request.getAttribute(ClientCodeAttributes.CLIENT_CODE) != null) {
