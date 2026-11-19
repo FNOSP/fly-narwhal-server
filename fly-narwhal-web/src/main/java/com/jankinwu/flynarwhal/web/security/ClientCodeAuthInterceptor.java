@@ -22,6 +22,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 public class ClientCodeAuthInterceptor implements HandlerInterceptor {
 
     public static final String FNAUTH_HEADER = "Fnauth";
+    public static final String FNWB_HEADER = "Fnwb";
     public static final String INSTANCE_HEADER = "X-Fn-Instance-Id";
 
     private final ClientCodeAuthService authService;
@@ -52,7 +53,7 @@ public class ClientCodeAuthInterceptor implements HandlerInterceptor {
         String version = request.getHeader(ClientVersionInterceptor.CLIENT_VERSION_HEADER);
 
         ClientCodeAuthService.Outcome outcome = authService.verify(
-                fnauth, request.getMethod(), request.getRequestURI(),
+                fnauth, request.getHeader(FNWB_HEADER), request.getMethod(), request.getRequestURI(),
                 request.getParameterMap(), body, instanceId, ip, version);
         if (!outcome.ok()) {
             writeBusinessError(response, outcome.errorCode());
@@ -88,6 +89,7 @@ public class ClientCodeAuthInterceptor implements HandlerInterceptor {
             case com.jankinwu.flynarwhal.core.dto.response.ResultCodes.CODE_RATE_LIMITED -> "失败次数过多，请稍后再试";
             case com.jankinwu.flynarwhal.core.dto.response.ResultCodes.CODE_REPLAYED -> "请求已过期或重复，请重试";
             case com.jankinwu.flynarwhal.core.dto.response.ResultCodes.CODE_READ_ONLY -> "当前授权码为只读权限，无法修改服务端配置";
+            case com.jankinwu.flynarwhal.core.dto.response.ResultCodes.CODE_BUILD_REQUIRED -> "请使用正式发布版客户端";
             default -> "授权码无效";
         };
     }

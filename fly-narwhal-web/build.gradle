@@ -231,6 +231,7 @@ tasks.register('generateVersionConfig') {
         def baseVersion = project.ext.baseVersion?.toString() ?: project.version.toString()
         def version = project.version.toString()
         def buildAuthxVerifier = "1".equals(System.getenv("FLY_NARWHAL_BUILD_AUTHX_VERIFIER"))
+        def buildWbVerifier = "1".equals(System.getenv("FLY_NARWHAL_BUILD_WB_VERIFIER"))
         def isFnAppEnv = System.getenv("IS_FN_APP")
         def gitBranch = ""
         try {
@@ -253,6 +254,7 @@ tasks.register('generateVersionConfig') {
             "    public static final String BASE_VERSION = \"" + baseVersion + "\";\n" +
             "    public static final String BUILD_TIME = \"" + buildTime + "\";\n" +
             "    public static final boolean BUILD_AUTHX_VERIFIER = " + buildAuthxVerifier + ";\n" +
+            "    public static final boolean BUILD_WB_VERIFIER = " + buildWbVerifier + ";\n" +
             "    public static final boolean IS_FN_APP = " + isFnApp + ";\n" +
             "\n" +
             "    @Bean\n" +
@@ -478,6 +480,117 @@ tasks.register('verifyAuthxVerifierBinary') {
     }
 }
 
+// V2 white-box build proof (Fnwb). Mirrors the authx verifier pipeline, but the secret
+// feeds a compile-time code generator: the shipped binary contains only randomized AES
+// white-box lookup tables, never the key itself. Fail-closed at runtime — a release
+// server without a working flynarwhal-wb rejects FNK2 requests with 4108.
+def externalWbEnabled = (project.findProperty("externalWb")?.toString()?.toBoolean() ?: false) || "1".equals(System.getenv("FLY_NARWHAL_BUILD_WB_VERIFIER"))
+def whiteboxDirEnv = System.getenv("FLY_NARWHAL_WHITEBOX_DIR")
+def whiteboxSrcDir = whiteboxDirEnv ? file(whiteboxDirEnv) : null
+def whiteboxWorkDir = layout.buildDirectory.dir("whitebox/work")
+def whiteboxResDir = layout.buildDirectory.dir("generated-resources/whitebox")
+
+tasks.register('prepareWhitebox') {
+    onlyIf { externalWbEnabled && whiteboxSrcDir != null && whiteboxSrcDir.exists() }
+    doLast {
+        def workDir = whiteboxWorkDir.get().asFile
+        if (workDir.exists()) {
+            workDir.deleteDir()
+        }
+        fsOps.copy {
+            from(whiteboxSrcDir)
+            into(workDir)
+        }
+
+        def secret = System.getenv("FLY_NARWHAL_API_SECRET_V2")
+        if (secret == null || secret.trim().isEmpty()) {
+            throw new GradleException("FLY_NARWHAL_API_SECRET_V2 is required when building white-box verifier binaries")
+        }
+
+        execOps.exec {
+            workingDir(workDir)
+            environment("FLY_NARWHAL_API_SECRET_V2", secret.trim())
+            commandLine("go", "run", "./cmd/genwb")
+        }
+    }
+}
+
+// Same host-only selection as authxTargets: the release tarball ships one arch and
+// native-image only builds for the host. FLY_NARWHAL_WB_TARGETS overrides with a
+// comma-separated list of <os>_<arch> pairs.
+def wbTargets = {
+    def override = System.getenv("FLY_NARWHAL_WB_TARGETS")
+    if (override != null && !override.trim().isEmpty()) {
+        return override.split(",").collect { it.trim() }.findAll { !it.isEmpty() }.collect { spec ->
+            def parts = spec.split("_")
+            if (parts.length != 2) {
+                throw new GradleException("Invalid white-box verifier target '${spec}', expected <os>_<arch>")
+            }
+            [os: parts[0], arch: parts[1], ext: parts[0] == "windows" ? ".exe" : ""]
+        }
+    }
+    def os = hostGoOs()
+    def arch = hostGoArch()
+    return [[os: os, arch: arch, ext: os == "windows" ? ".exe" : ""]]
+}
+
+tasks.register('buildWbVerifierBinaries') {
+    onlyIf { externalWbEnabled && whiteboxSrcDir != null && whiteboxSrcDir.exists() }
+    dependsOn(tasks.named('prepareWhitebox'))
+    outputs.dir(whiteboxResDir)
+    doLast {
+        def workDir = whiteboxWorkDir.get().asFile
+        def outRoot = new File(whiteboxResDir.get().asFile, "native/wb")
+
+        for (def t : wbTargets()) {
+            def classifier = "${t.os}-${t.arch}".toString()
+            def outDir = new File(outRoot, classifier)
+            outDir.mkdirs()
+            def outFile = new File(outDir, "flynarwhal-wb${t.ext}".toString())
+
+            execOps.exec {
+                workingDir(workDir)
+                environment("CGO_ENABLED", "0")
+                environment("GOOS", t.os)
+                environment("GOARCH", t.arch)
+                commandLine("go", "build", "-tags", "wbgen", "-trimpath", "-ldflags", "-s -w", "-o", outFile.absolutePath, "./cmd/verifier")
+            }
+        }
+
+        // The generated tables embed the key-derived material; never leave them lying
+        // around in the work dir after the binaries are linked.
+        def tablesRoot = new File(workDir, "internal/tables")
+        if (tablesRoot.exists()) {
+            fileTree(tablesRoot) {
+                include("**/tables_gen.go")
+                include("**/aux_gen.go")
+            }.each { it.delete() }
+        }
+    }
+}
+
+tasks.register('verifyWbVerifierBinary') {
+    onlyIf { externalWbEnabled && whiteboxSrcDir != null && whiteboxSrcDir.exists() }
+    dependsOn(tasks.named('buildWbVerifierBinaries'))
+    doLast {
+        def osPart = hostGoOs()
+        def archPart = hostGoArch()
+        def ext = osPart == "windows" ? ".exe" : ""
+
+        def bin = new File(whiteboxResDir.get().asFile, "native/wb/${osPart}-${archPart}/flynarwhal-wb${ext}".toString())
+        if (!bin.exists()) {
+            throw new GradleException("Missing white-box verifier binary: " + bin.absolutePath)
+        }
+        bin.setExecutable(true)
+
+        // Groovy cannot recompute the CMAC without the key; the binary's own self-test
+        // signs and verifies a sample message with its compiled-in tables.
+        execOps.exec {
+            commandLine(bin.absolutePath, "--self-test")
+        }
+    }
+}
+
 tasks.named('processResources') {
     dependsOn(tasks.named('buildUpdaterBinaries'))
     from(updaterResDir) {
@@ -500,6 +613,18 @@ tasks.named('processResources') {
         // copy only feeds jar mode; embedding it in the native image would bloat every build
         // with unused cross-platform Go binaries.
         from(authxVerifierResDir) {
+            into("")
+            duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        }
+    }
+    if (externalWbEnabled && whiteboxSrcDir != null && whiteboxSrcDir.exists()) {
+        dependsOn(tasks.named('buildWbVerifierBinaries'))
+        // Deliberately NOT registered in META-INF/native-image/.../resource-config.json: the
+        // verifier ships as a standalone file next to the server binary and is located at
+        // runtime from that directory (ExternalWbVerifier.resolveExternalBinary). This
+        // copy only feeds jar mode; embedding it in the native image would bloat every build
+        // with unused cross-platform Go binaries.
+        from(whiteboxResDir) {
             into("")
             duplicatesStrategy = DuplicatesStrategy.EXCLUDE
         }

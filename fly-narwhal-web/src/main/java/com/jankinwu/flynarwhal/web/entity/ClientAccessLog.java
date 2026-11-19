@@ -28,6 +28,7 @@ public class ClientAccessLog {
     public static final String EVENT_REPLAYED = "REPLAYED";
     public static final String EVENT_RATE_LIMITED = "RATE_LIMITED";
     public static final String EVENT_READ_ONLY_DENIED = "READ_ONLY_DENIED";
+    public static final String EVENT_BUILD_PROOF_FAILED = "BUILD_PROOF_FAILED";
 
     @TableId(type = IdType.AUTO)
     private Long id;

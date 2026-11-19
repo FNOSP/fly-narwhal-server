@@ -1,0 +1,513 @@
+package com.jankinwu.flynarwhal.web.security;
+
+import com.jankinwu.flynarwhal.web.config.BuildVersionConfiguration;
+import lombok.extern.slf4j.Slf4j;
+
+import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.Duration;
+import java.util.Locale;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+/**
+ * Verifies the V2 white-box build proof ({@code Fnwb} header) through the external
+ * {@code flynarwhal-wb} daemon. Java only parses the header and forwards fields; the
+ * daemon recomputes the AES-128-CMAC over
+ * {@code FNWB2_{METHOD}_{url}_{ts}_{nonce}_{dataJsonMd5}_{instanceId}_{fnauthSig}}
+ * from its compiled-in white-box tables. The key never exists in this process.
+ *
+ * <p><b>FAIL-CLOSED, on purpose — do not "fix" this:</b> any execution error, timeout,
+ * missing binary or unavailable pool returns {@code null}, and the CALLER must reject
+ * the request (business code 4108). Unlike {@link ExternalAuthxVerifier}, there is NO
+ * in-Java fallback: a Java-side verification path would need the key in memory, which
+ * is exactly what the white-box design eliminates. A release build that cannot reach
+ * the daemon must refuse FNK2 requests rather than degrade to a weaker check.
+ */
+@Slf4j
+final class ExternalWbVerifier {
+    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(2);
+    private static final String DEFAULT_DATA_DIR = "/var/apps/App.Native.flyNarwhalServer/shares/data";
+    private static volatile Path extractedPath;
+    private static volatile boolean attempted;
+    private static volatile VerifierPool pool;
+
+    private ExternalWbVerifier() {
+    }
+
+    // Checks whether the external verifier executable exists for current OS/arch.
+    static boolean isAvailable() {
+        if (!isEnabled()) {
+            return false;
+        }
+        ensureExtracted();
+        ensurePoolStarted();
+        return extractedPath != null && pool != null && !pool.isClosed();
+    }
+
+    /**
+     * Returns true/false when verification was executed; returns null on execution
+     * errors. Fail-closed: the caller must treat anything but {@link Boolean#TRUE}
+     * as a rejected build proof.
+     */
+    static Boolean verify(String method, String url, String ts, String nonce,
+                          String dataMd5, String instanceId, String fnauthSig, String sig) {
+        if (!isEnabled()) {
+            return null;
+        }
+        // instanceId normalizes null -> "" exactly like ClientCodeCrypto.requestSignature.
+        String instance = instanceId == null ? "" : instanceId;
+        String[] fields = {method, url, ts, nonce, dataMd5, instance, fnauthSig, sig};
+        for (String f : fields) {
+            if (f == null || containsControlChars(f)) {
+                // A tab/newline inside a field would desync the line protocol; refuse
+                // instead of forwarding (the daemon would answer ERR anyway).
+                return null;
+            }
+        }
+        ensureExtracted();
+        ensurePoolStarted();
+        VerifierPool p = pool;
+        if (p == null || p.isClosed()) {
+            return null;
+        }
+
+        try {
+            long timeoutMs = Long.parseLong(System.getProperty(
+                    "fly-narwhal.external-wb.timeout-ms",
+                    Long.toString(DEFAULT_TIMEOUT.toMillis())
+            ));
+            String line = "WB2\t" + String.join("\t", fields) + "\n";
+            String resp = p.request(line, Duration.ofMillis(timeoutMs));
+            if ("OK".equals(resp)) {
+                return Boolean.TRUE;
+            }
+            if ("FAIL".equals(resp)) {
+                return Boolean.FALSE;
+            }
+            return null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    static void preload() {
+        if (!isEnabled()) {
+            return;
+        }
+        ensureExtracted();
+        ensurePoolStarted();
+        VerifierPool p = pool;
+        if (p == null || p.isClosed()) {
+            return;
+        }
+        try {
+            long timeoutMs = Long.parseLong(System.getProperty(
+                    "fly-narwhal.external-wb.timeout-ms",
+                    Long.toString(DEFAULT_TIMEOUT.toMillis())
+            ));
+            // Pool warm-up: the answer is irrelevant, the first process spawn is the cost.
+            p.request("PING\n", Duration.ofMillis(timeoutMs));
+        } catch (Throwable ignored) {
+        }
+    }
+
+    static void shutdown() {
+        VerifierPool p = pool;
+        pool = null;
+        if (p != null) {
+            p.close();
+        }
+        extractedPath = null;
+        attempted = false;
+    }
+
+    static boolean isExternalOnlyMode() {
+        return isEnabled();
+    }
+
+    static boolean isInternalOnlyMode() {
+        return !isEnabled();
+    }
+
+    private static boolean isEnabled() {
+        if (!BuildVersionConfiguration.BUILD_WB_VERIFIER) {
+            return false;
+        }
+        String enabled = System.getProperty("fly-narwhal.external-wb.enabled");
+        if (enabled == null || enabled.isBlank()) {
+            return true;
+        }
+        return Boolean.parseBoolean(enabled);
+    }
+
+    private static boolean containsControlChars(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c < 0x20 || c == 0x7f) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static synchronized void ensureExtracted() {
+        if (!isEnabled()) {
+            VerifierPool p = pool;
+            pool = null;
+            if (p != null) {
+                p.close();
+            }
+            attempted = false;
+            extractedPath = null;
+            return;
+        }
+
+        if (attempted && extractedPath != null) {
+            return;
+        }
+        attempted = true;
+
+        // An external binary next to the executable is used as-is: it is already an
+        // executable file, so copying it into the fnOS data dir would only add a
+        // filesystem dependency for no benefit.
+        Path external = resolveExternalBinary();
+        if (external != null) {
+            tryMakeExecutable(external);
+            extractedPath = external;
+            return;
+        }
+
+        String resourcePath = detectBinaryResourcePath();
+        if (resourcePath == null) {
+            log.warn("wb verifier not found: no external binary and no matching resource for this platform");
+            return;
+        }
+
+        Path temp = new File(resolveDataDir(), "flynarwhal-wb" + binarySuffix()).toPath();
+        try (InputStream in = ExternalWbVerifier.class.getClassLoader().getResourceAsStream(resourcePath)) {
+            if (in == null) {
+                log.warn("wb verifier resource {} is not readable (missing from the native image?)", resourcePath);
+                return;
+            }
+            temp.toFile().deleteOnExit();
+            Files.copy(in, temp, StandardCopyOption.REPLACE_EXISTING);
+            tryMakeExecutable(temp);
+            extractedPath = temp;
+        } catch (Throwable t) {
+            log.warn("Failed to extract wb verifier from resource {}: {}", resourcePath, t.toString());
+            extractedPath = null;
+        }
+    }
+
+    private static synchronized void ensurePoolStarted() {
+        if (!isEnabled()) {
+            VerifierPool p = pool;
+            pool = null;
+            if (p != null) {
+                p.close();
+            }
+            return;
+        }
+
+        Path bin = extractedPath;
+        if (bin == null) {
+            return;
+        }
+
+        VerifierPool p = pool;
+        if (p != null && !p.isClosed() && bin.equals(p.binPath)) {
+            return;
+        }
+
+        if (p != null) {
+            p.close();
+        }
+
+        int defaultSize = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors()));
+        int size;
+        try {
+            size = Integer.parseInt(System.getProperty("fly-narwhal.external-wb.pool-size", Integer.toString(defaultSize)));
+        } catch (Throwable ignored) {
+            size = defaultSize;
+        }
+        if (size <= 0) {
+            return;
+        }
+
+        pool = new VerifierPool(bin, size);
+    }
+
+    // Resolves the verifier shipped as a standalone file rather than embedded in the image.
+    // Checked before the classpath resource so a deployment can override the bundled copy
+    // without rebuilding the native image.
+    private static Path resolveExternalBinary() {
+        String configured = System.getProperty("fly-narwhal.external-wb.bin");
+        if (configured != null && !configured.isBlank()) {
+            File explicit = new File(configured.trim());
+            if (explicit.isFile()) {
+                return explicit.toPath();
+            }
+            log.warn("fly-narwhal.external-wb.bin points at a missing file: {}", configured);
+        }
+
+        File exeDir = currentExecutableDir();
+        if (exeDir == null) {
+            return null;
+        }
+        File sibling = new File(exeDir, "flynarwhal-wb" + binarySuffix());
+        return sibling.isFile() ? sibling.toPath() : null;
+    }
+
+    // The directory holding the running executable. A native image has no jar to locate, so
+    // resolve the process itself: /proc/self/exe is authoritative on Linux (it follows the
+    // path even after the file is replaced), with ProcessHandle as the portable fallback.
+    private static File currentExecutableDir() {
+        try {
+            File self = new File("/proc/self/exe").getCanonicalFile();
+            if (self.isFile()) {
+                return self.getParentFile();
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            return ProcessHandle.current().info().command()
+                    .map(cmd -> new File(cmd).getAbsoluteFile().getParentFile())
+                    .orElse(null);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static String detectBinaryResourcePath() {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+
+        String osPart;
+        if (os.contains("linux")) {
+            osPart = "linux";
+        } else if (os.contains("mac") || os.contains("darwin")) {
+            osPart = "darwin";
+        } else if (os.contains("windows")) {
+            osPart = "windows";
+        } else {
+            return null;
+        }
+
+        String archPart;
+        if (arch.contains("aarch64") || arch.contains("arm64")) {
+            archPart = "arm64";
+        } else if (arch.contains("x86_64") || arch.contains("amd64") || arch.contains("x64")) {
+            archPart = "amd64";
+        } else {
+            return null;
+        }
+
+        String fileName = "flynarwhal-wb" + binarySuffix();
+        return "native/wb/" + osPart + "-" + archPart + "/" + fileName;
+    }
+
+    // Read at use time (not injected) because this class is static. Native images return
+    // the default: system properties are fixed at build time, so the FN_DATA_DIR environment
+    // variable never overrides fly-narwhal.data-dir there (same as the H2 URL).
+    private static String resolveDataDir() {
+        String dir = System.getProperty("fly-narwhal.data-dir");
+        return dir == null || dir.isBlank() ? DEFAULT_DATA_DIR : dir.trim();
+    }
+
+    private static String binarySuffix() {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (os.contains("windows")) {
+            return ".exe";
+        }
+        return "";
+    }
+
+    private static void tryMakeExecutable(Path p) {
+        try {
+            p.toFile().setExecutable(true);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static final class VerifierPool {
+        private static final AtomicInteger THREAD_COUNTER = new AtomicInteger(0);
+
+        private final Path binPath;
+        private final BlockingQueue<Worker> workers;
+        private final ExecutorService executor;
+        private volatile boolean closed;
+
+        private VerifierPool(Path binPath, int size) {
+            this.binPath = binPath;
+            this.workers = new ArrayBlockingQueue<>(size);
+            this.executor = Executors.newFixedThreadPool(size, r -> {
+                Thread t = new Thread(r, "WbVerifierPool-" + THREAD_COUNTER.incrementAndGet());
+                t.setDaemon(true);
+                return t;
+            });
+            for (int i = 0; i < size; i++) {
+                Worker w = Worker.start(binPath);
+                if (w != null) {
+                    workers.offer(w);
+                }
+            }
+        }
+
+        private boolean isClosed() {
+            return closed;
+        }
+
+        private String request(String line, Duration timeout) throws Exception {
+            if (closed) {
+                return null;
+            }
+            AtomicReference<Worker> borrowed = new AtomicReference<>();
+            Callable<String> task = () -> {
+                Worker w = null;
+                try {
+                    w = workers.poll(timeout.toMillis(), TimeUnit.MILLISECONDS);
+                    if (w == null) {
+                        return null;
+                    }
+                    borrowed.set(w);
+                    String out = w.request(line);
+                    if (out == null) {
+                        w.close();
+                        w = Worker.start(binPath);
+                        out = null;
+                    }
+                    return out;
+                } finally {
+                    borrowed.set(null);
+                    if (w != null && !w.isClosed()) {
+                        workers.offer(w);
+                    } else if (!closed) {
+                        Worker replacement = Worker.start(binPath);
+                        if (replacement != null) {
+                            workers.offer(replacement);
+                        }
+                    }
+                }
+            };
+            Future<String> f = executor.submit(task);
+            try {
+                return f.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            } catch (Throwable t) {
+                f.cancel(true);
+                Worker w = borrowed.get();
+                if (w != null) {
+                    w.close();
+                }
+                return null;
+            }
+        }
+
+        private void close() {
+            closed = true;
+            executor.shutdownNow();
+            Worker w;
+            while ((w = workers.poll()) != null) {
+                w.close();
+            }
+        }
+    }
+
+    private static final class Worker {
+        private final Process process;
+        private final BufferedWriter stdin;
+        private final BufferedReader stdout;
+        private final Thread stderrDrainer;
+        private volatile boolean closed;
+
+        private Worker(Process process, BufferedWriter stdin, BufferedReader stdout, Thread stderrDrainer) {
+            this.process = process;
+            this.stdin = stdin;
+            this.stdout = stdout;
+            this.stderrDrainer = stderrDrainer;
+        }
+
+        private static Worker start(Path bin) {
+            try {
+                ProcessBuilder pb = new ProcessBuilder(bin.toAbsolutePath().toString(), "--daemon");
+                Process p = pb.start();
+
+                BufferedWriter stdin = new BufferedWriter(new OutputStreamWriter(p.getOutputStream()));
+                BufferedReader stdout = new BufferedReader(new InputStreamReader(p.getInputStream()));
+                Thread stderrDrainer = new Thread(() -> drain(p.getErrorStream()), "WbVerifier-stderr");
+                stderrDrainer.setDaemon(true);
+                stderrDrainer.start();
+
+                return new Worker(p, stdin, stdout, stderrDrainer);
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+
+        private static void drain(InputStream in) {
+            try (BufferedReader r = new BufferedReader(new InputStreamReader(in))) {
+                while (r.readLine() != null) {
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        private boolean isClosed() {
+            return closed;
+        }
+
+        private String request(String line) {
+            if (closed) {
+                return null;
+            }
+            try {
+                stdin.write(line);
+                if (!line.endsWith("\n")) {
+                    stdin.write('\n');
+                }
+                stdin.flush();
+                String out = stdout.readLine();
+                if (out == null) {
+                    close();
+                    return null;
+                }
+                return out;
+            } catch (Throwable ignored) {
+                close();
+                return null;
+            }
+        }
+
+        private void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            try {
+                stdin.close();
+            } catch (Throwable ignored) {
+            }
+            try {
+                stdout.close();
+            } catch (Throwable ignored) {
+            }
+            try {
+                process.destroy();
+            } catch (Throwable ignored) {
+            }
+            try {
+                process.destroyForcibly();
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+}

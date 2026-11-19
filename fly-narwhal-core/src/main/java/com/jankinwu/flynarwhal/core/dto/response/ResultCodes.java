@@ -27,6 +27,9 @@ public final class ResultCodes {
     /** A read-only code called an endpoint that edits server-side configuration. */
     public static final int CODE_READ_ONLY = 4107;
 
+    /** Release builds require a valid white-box build proof (Fnwb header); missing or invalid. */
+    public static final int CODE_BUILD_REQUIRED = 4108;
+
     private ResultCodes() {
     }
 }

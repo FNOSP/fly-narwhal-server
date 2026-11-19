@@ -4,7 +4,7 @@
 # 用法：
 #   fnosAppCenter/build-fpk.sh [--package DIR] [--arch amd64|arm64] [--platform x86|arm]
 #                              [--bin-dir DIR] [--authx FILE] [--out-dir DIR]
-#                              [--fnpack FILE] [--skip-check]
+#                              [--fnpack FILE] [--skip-check] [--wb FILE]
 #
 # 产物：<out-dir>/<appname>.<arch>.<version>.fpk（版本号取自 manifest）
 # --package 指定其它应用目录（例如从生产包复制出的 -dev 包），默认 App.Native.flyNarwhalServer
@@ -35,6 +35,7 @@ ARCH="${HOST_ARCH}"
 PLATFORM=""
 BIN_DIR="${REPO_ROOT}/fly-narwhal-web/build/native/nativeCompile"
 AUTHX=""
+WB=""
 OUT_DIR="${REPO_ROOT}/dist/fpk"
 FNPACK_BIN=""
 SKIP_CHECK=false
@@ -46,6 +47,7 @@ while [ $# -gt 0 ]; do
     --platform) PLATFORM="$2"; shift 2 ;;
     --bin-dir) BIN_DIR="$2"; shift 2 ;;
     --authx) AUTHX="$2"; shift 2 ;;
+    --wb) WB="$2"; shift 2 ;;
     --out-dir) OUT_DIR="$2"; shift 2 ;;
     --fnpack) FNPACK_BIN="$2"; shift 2 ;;
     --skip-check) SKIP_CHECK=true; shift ;;
@@ -79,6 +81,9 @@ BIN="${BIN_DIR}/fly-narwhal-server"
 if [ -z "${AUTHX}" ]; then
   AUTHX="${REPO_ROOT}/fly-narwhal-web/build/generated-resources/authx-verifier/native/authx/linux-${ARCH}/flynarwhal-authx"
 fi
+if [ -z "${WB}" ]; then
+  WB="${REPO_ROOT}/fly-narwhal-web/build/generated-resources/whitebox/native/wb/linux-${ARCH}/flynarwhal-wb"
+fi
 
 if [ "${SKIP_CHECK}" = false ]; then
   [ -x "${BIN}" ] || { echo "native binary missing or not executable: ${BIN} (run ./gradlew :fly-narwhal-web:linkNativeBinary first)" >&2; exit 1; }
@@ -89,6 +94,7 @@ if [ "${SKIP_CHECK}" = false ]; then
     [ ${#sos[@]} -gt 0 ] || { echo "no lib*.so next to ${BIN}; the native binary cannot run without them" >&2; exit 1; }
   fi
   [ -x "${AUTHX}" ] || { echo "authx verifier missing or not executable: ${AUTHX}" >&2; exit 1; }
+  [ -x "${WB}" ] || { echo "white-box verifier missing or not executable: ${WB}" >&2; exit 1; }
 fi
 
 resolve_fnpack() {
@@ -126,13 +132,14 @@ mkdir -p "${SERVER_DIR}"
 if [ "${SKIP_CHECK}" = false ]; then
   cp -p "${BIN}" "${SERVER_DIR}/fly-narwhal-server"
   cp -p "${AUTHX}" "${SERVER_DIR}/flynarwhal-authx"
+  cp -p "${WB}" "${SERVER_DIR}/flynarwhal-wb"
   if compgen -G "${BIN_DIR}/fly-narwhal-server-*" >/dev/null; then
     cp -p "${BIN_DIR}"/fly-narwhal-server-* "${SERVER_DIR}/"
   fi
   if [ "${OS}" = linux ]; then
     cp -p "${BIN_DIR}"/lib*.so "${SERVER_DIR}/"
   fi
-  chmod +x "${SERVER_DIR}/fly-narwhal-server" "${SERVER_DIR}/flynarwhal-authx"
+  chmod +x "${SERVER_DIR}/fly-narwhal-server" "${SERVER_DIR}/flynarwhal-authx" "${SERVER_DIR}/flynarwhal-wb"
 else
   echo "WARN: --skip-check, packing without server binaries (package will not start)" >&2
 fi

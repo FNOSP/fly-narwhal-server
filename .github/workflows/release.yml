@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag (e.g. v1.0.0)'
-        required: true
+        description: 'Release Tag (e.g. v1.0.0). Leave EMPTY to build artifacts only without publishing a release.'
+        required: false
       release_body:
-        description: 'Release Changelog (更新日志)'
-        required: true
+        description: 'Release Changelog (更新日志). Ignored when tag_name is empty.'
+        required: false
         type: string
 
 jobs:
@@ -44,6 +44,15 @@ jobs:
           repository: Jankin-Wu/fly-narwhal-authx-verifier
           token: ${{ secrets.AUTHX_VERIFIER_REPO_TOKEN }}
           path: authx-verifier
+
+      - name: Checkout white-box verifier (private)
+        uses: actions/checkout@v4
+        with:
+          repository: Jankin-Wu/fly-narwhal-whitebox
+          token: ${{ secrets.AUTHX_VERIFIER_REPO_TOKEN }}
+          path: whitebox
+          persist-credentials: false
+          fetch-depth: 1
 
       - name: Set up GraalVM JDK 21
         uses: graalvm/setup-graalvm@v1
@@ -91,9 +100,12 @@ jobs:
           FLY_NARWHAL_API_SECRET: ${{ secrets.FLY_NARWHAL_API_SECRET }}
           FLY_NARWHAL_BUILD_AUTHX_VERIFIER: '1'
           FLY_NARWHAL_AUTHX_VERIFIER_DIR: ${{ github.workspace }}/authx-verifier
+          FLY_NARWHAL_API_SECRET_V2: ${{ secrets.FLY_NARWHAL_API_SECRET_V2 }}
+          FLY_NARWHAL_BUILD_WB_VERIFIER: '1'
+          FLY_NARWHAL_WHITEBOX_DIR: ${{ github.workspace }}/whitebox
         # Unit tests are temporarily disabled in GitHub Actions.
-        # run: ./gradlew --stacktrace --info :fly-narwhal-web:test :fly-narwhal-web:linkNativeBinary :fly-narwhal-web:verifyAuthxVerifierBinary
-        run: ./gradlew --stacktrace --info :fly-narwhal-web:linkNativeBinary :fly-narwhal-web:verifyAuthxVerifierBinary
+        # run: ./gradlew --stacktrace --info :fly-narwhal-web:test :fly-narwhal-web:linkNativeBinary :fly-narwhal-web:verifyAuthxVerifierBinary :fly-narwhal-web:verifyWbVerifierBinary
+        run: ./gradlew --stacktrace --info :fly-narwhal-web:linkNativeBinary :fly-narwhal-web:verifyAuthxVerifierBinary :fly-narwhal-web:verifyWbVerifierBinary
 
       - name: Package artifacts
         run: |
@@ -125,6 +137,15 @@ jobs:
             exit 1
           fi
 
+          # Same shipping rule for the white-box verifier: a release tarball without it
+          # would reject every FNK2 request with 4108. Fail loudly instead.
+          WB_SRC="fly-narwhal-web/build/generated-resources/whitebox/native/wb/linux-${{ matrix.arch }}/flynarwhal-wb"
+          if [ ! -x "$WB_SRC" ]; then
+            echo "White-box verifier missing or not executable: $WB_SRC" >&2
+            find fly-narwhal-web/build/generated-resources/whitebox -type f 2>/dev/null >&2 || true
+            exit 1
+          fi
+
           NAME="fly-narwhal-server-linux-${{ matrix.arch }}-${VERSION}"
           mkdir -p dist/native
 
@@ -141,9 +162,10 @@ jobs:
           # run.sh.example rides along so downloaders get the memory flags and the
           # start/stop wrapper without having to fetch it from the repo separately.
           cp "$AUTHX_SRC" "$NATIVE_DIR/flynarwhal-authx"
+          cp "$WB_SRC" "$NATIVE_DIR/flynarwhal-wb"
           cp "$GITHUB_WORKSPACE/run.sh.example" "$NATIVE_DIR/run.sh.example"
           ( cd "$NATIVE_DIR" && tar -czf "$GITHUB_WORKSPACE/dist/native/${NAME}.tar.gz" \
-              fly-narwhal-server flynarwhal-authx run.sh.example lib*.so )
+              fly-narwhal-server flynarwhal-authx flynarwhal-wb run.sh.example lib*.so )
 
           echo "NAME=${NAME}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
@@ -164,6 +186,7 @@ jobs:
             --platform "${PLATFORM}" \
             --bin-dir fly-narwhal-web/build/native/nativeCompile \
             --authx "fly-narwhal-web/build/generated-resources/authx-verifier/native/authx/linux-${{ matrix.arch }}/flynarwhal-authx" \
+            --wb "fly-narwhal-web/build/generated-resources/whitebox/native/wb/linux-${{ matrix.arch }}/flynarwhal-wb" \
             --out-dir dist/fpk
 
       - name: Generate checksums
@@ -197,6 +220,10 @@ jobs:
   release:
     name: Publish release
     needs: native
+    # Build-only dispatch (empty tag_name) skips publishing entirely; the native
+    # job still builds and uploads artifacts for testing. Tag pushes and dispatch
+    # with a tag_name publish as before.
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name != '')
     runs-on: ubuntu-latest
     permissions:
       contents: write

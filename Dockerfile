@@ -18,6 +18,12 @@ COPY fly-narwhal-web/build/native/nativeCompile/ /app/
 # 构建时需带 FLY_NARWHAL_BUILD_AUTHX_VERIFIER=1，产物架构须与镜像一致。
 COPY fly-narwhal-web/build/generated-resources/authx-verifier/native/authx/linux-amd64/flynarwhal-authx /app/flynarwhal-authx
 
+# 白盒验签器同样以独立文件分发，运行时从二进制同目录解析
+# （见 ExternalWbVerifier.resolveExternalBinary），无需 -D 指定。
+# 构建时需带 FLY_NARWHAL_BUILD_WB_VERIFIER=1，产物架构须与镜像一致；
+# 缺失时 release 服务端会以 4108 拒绝所有 FNK2 请求（fail-closed）。
+COPY fly-narwhal-web/build/generated-resources/whitebox/native/wb/linux-amd64/flynarwhal-wb /app/flynarwhal-wb
+
 # 暴露端口
 EXPOSE 5365
 

@@ -1,12 +1,14 @@
 package com.jankinwu.flynarwhal.web.security;
 
 import com.jankinwu.flynarwhal.core.dto.response.ResultCodes;
+import com.jankinwu.flynarwhal.web.entity.ClientAccessLog;
 import com.jankinwu.flynarwhal.web.entity.ClientAuthCode;
 import com.jankinwu.flynarwhal.web.mapper.ClientAuthCodeMapper;
 import com.jankinwu.flynarwhal.web.service.ClientAccessLogService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
 
 import java.time.LocalDateTime;
 import java.util.Base64;
@@ -16,11 +18,14 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 class ClientCodeAuthServiceTest {
@@ -61,7 +66,11 @@ class ClientCodeAuthServiceTest {
     }
 
     private ClientCodeAuthService.Outcome verify(String header, String instanceId) {
-        return service.verify(header, "GET", "/api/danmu/get", new HashMap<>(), null,
+        return verify(header, null, instanceId);
+    }
+
+    private ClientCodeAuthService.Outcome verify(String header, String fnwb, String instanceId) {
+        return service.verify(header, fnwb, "GET", "/api/danmu/get", new HashMap<>(), null,
                 instanceId, "10.0.0.1", "2.4.0");
     }
 
@@ -185,5 +194,148 @@ class ClientCodeAuthServiceTest {
         when(mapper.insert(any(ClientAuthCode.class))).thenReturn(1);
         ClientCodeAuthService.CreatedCode created = service.createCode("perm", null, null);
         org.junit.jupiter.api.Assertions.assertNull(created.expireTime());
+    }
+
+    // ---- V2 white-box build proof (Fnwb / 4108) ----
+
+    private static final String VALID_WB = "v=2&sig=0123456789abcdef0123456789abcdef";
+
+    @Test
+    void releaseAcceptsValidBuildProof() {
+        String ts = Long.toString(System.currentTimeMillis());
+        String nonce = "0123456789abcdef0123456789abcdef";
+        String instance = "macos-arm64-fn-aaaaaaaaaaaaaaaa";
+        String h = header(ts, nonce, "GET", "/api/danmu/get", instance);
+        String fnauthSig = h.substring(h.lastIndexOf('=') + 1);
+        String dataMd5 = AuthCanonicalization.dataJsonMd5(new HashMap<>(), null);
+        try (MockedStatic<ExternalWbVerifier> wb = mockStatic(ExternalWbVerifier.class)) {
+            wb.when(ExternalWbVerifier::isExternalOnlyMode).thenReturn(true);
+            wb.when(() -> ExternalWbVerifier.verify(any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(Boolean.TRUE);
+            ClientCodeAuthService.Outcome outcome = verify(h, VALID_WB, instance);
+            assertTrue(outcome.ok());
+            // The daemon must receive the exact canonical fields, with the raw Fnauth sig.
+            wb.verify(() -> ExternalWbVerifier.verify(
+                    "GET", "/api/danmu/get", ts, nonce, dataMd5, instance, fnauthSig,
+                    "0123456789abcdef0123456789abcdef"));
+        }
+    }
+
+    @Test
+    void releaseRejectsMissingBuildProof() {
+        String ts = Long.toString(System.currentTimeMillis());
+        String h = header(ts, "0123456789abcdef0123456789abcdef", "GET", "/api/danmu/get", "d");
+        try (MockedStatic<ExternalWbVerifier> wb = mockStatic(ExternalWbVerifier.class)) {
+            wb.when(ExternalWbVerifier::isExternalOnlyMode).thenReturn(true);
+            ClientCodeAuthService.Outcome outcome = verify(h, null, "d");
+            assertEquals(ResultCodes.CODE_BUILD_REQUIRED, outcome.errorCode());
+            assertEquals(ClientAccessLog.EVENT_BUILD_PROOF_FAILED, outcome.event());
+            // A missing header must not even reach the daemon.
+            wb.verify(() -> ExternalWbVerifier.verify(any(), any(), any(), any(), any(), any(), any(), any()),
+                    never());
+        }
+    }
+
+    @Test
+    void releaseRejectsMalformedBuildProof() {
+        String ts = Long.toString(System.currentTimeMillis());
+        String h = header(ts, "0123456789abcdef0123456789abcdef", "GET", "/api/danmu/get", "d");
+        String[] malformed = {
+                "garbage",
+                "v=1&sig=0123456789abcdef0123456789abcdef",
+                "v=2&sig=0123456789ABCDEF0123456789ABCDEF",
+                "v=2&sig=0123456789abcdef",
+                "v=2&sig=0123456789abcdef0123456789abcdef0",
+                "sig=0123456789abcdef0123456789abcdef",
+                "v=2",
+        };
+        try (MockedStatic<ExternalWbVerifier> wb = mockStatic(ExternalWbVerifier.class)) {
+            wb.when(ExternalWbVerifier::isExternalOnlyMode).thenReturn(true);
+            for (String fnwb : malformed) {
+                assertEquals(ResultCodes.CODE_BUILD_REQUIRED, verify(h, fnwb, "d").errorCode(),
+                        "expected 4108 for: " + fnwb);
+            }
+            wb.verify(() -> ExternalWbVerifier.verify(any(), any(), any(), any(), any(), any(), any(), any()),
+                    never());
+        }
+    }
+
+    @Test
+    void releaseRejectsWhenDaemonSaysFail() {
+        String ts = Long.toString(System.currentTimeMillis());
+        String h = header(ts, "0123456789abcdef0123456789abcdef", "GET", "/api/danmu/get", "d");
+        try (MockedStatic<ExternalWbVerifier> wb = mockStatic(ExternalWbVerifier.class)) {
+            wb.when(ExternalWbVerifier::isExternalOnlyMode).thenReturn(true);
+            wb.when(() -> ExternalWbVerifier.verify(any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(Boolean.FALSE);
+            assertEquals(ResultCodes.CODE_BUILD_REQUIRED, verify(h, VALID_WB, "d").errorCode());
+        }
+    }
+
+    @Test
+    void releaseRejectsWhenDaemonUnavailable() {
+        String ts = Long.toString(System.currentTimeMillis());
+        String h = header(ts, "0123456789abcdef0123456789abcdef", "GET", "/api/danmu/get", "d");
+        try (MockedStatic<ExternalWbVerifier> wb = mockStatic(ExternalWbVerifier.class)) {
+            wb.when(ExternalWbVerifier::isExternalOnlyMode).thenReturn(true);
+            // Fail-closed: null (execution error / timeout / missing binary) rejects.
+            wb.when(() -> ExternalWbVerifier.verify(any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(null);
+            assertEquals(ResultCodes.CODE_BUILD_REQUIRED, verify(h, VALID_WB, "d").errorCode());
+        }
+    }
+
+    @Test
+    void devSkipsBuildProofEntirely() {
+        String ts = Long.toString(System.currentTimeMillis());
+        String h = header(ts, "0123456789abcdef0123456789abcdef", "GET", "/api/danmu/get", "d");
+        try (MockedStatic<ExternalWbVerifier> wb = mockStatic(ExternalWbVerifier.class)) {
+            wb.when(ExternalWbVerifier::isExternalOnlyMode).thenReturn(false);
+            assertTrue(verify(h, null, "d").ok());
+            wb.verify(() -> ExternalWbVerifier.verify(any(), any(), any(), any(), any(), any(), any(), any()),
+                    never());
+        }
+    }
+
+    @Test
+    void buildProofFailureConsumesNoNonceAndBindsNoInstance() {
+        String ts = Long.toString(System.currentTimeMillis());
+        String nonce = "0123456789abcdef0123456789abcdef";
+        String h = header(ts, nonce, "GET", "/api/danmu/get", "d");
+        try (MockedStatic<ExternalWbVerifier> wb = mockStatic(ExternalWbVerifier.class)) {
+            wb.when(ExternalWbVerifier::isExternalOnlyMode).thenReturn(true);
+            wb.when(() -> ExternalWbVerifier.verify(any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(Boolean.FALSE);
+            assertEquals(ResultCodes.CODE_BUILD_REQUIRED, verify(h, VALID_WB, "d").errorCode());
+
+            // No first-use binding UPDATE, no bound instance on the in-memory row.
+            org.mockito.Mockito.verify(mapper, never()).update(any(), any());
+            assertNull(stored.getBoundInstanceId());
+            org.mockito.Mockito.verify(accessLog).record(eq(1L), eq("test client"), eq(ClientAccessLog.MODE_CODE),
+                    eq("10.0.0.1"), eq("2.4.0"), eq("d"), eq(ClientAccessLog.EVENT_BUILD_PROOF_FAILED));
+
+            // The nonce was not consumed: the same request succeeds once the proof passes.
+            wb.when(() -> ExternalWbVerifier.verify(any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(Boolean.TRUE);
+            assertTrue(verify(h, VALID_WB, "d").ok());
+        }
+    }
+
+    @Test
+    void buildProofFailureRecordsRateLimiterFailure() {
+        AuthRateLimiter mockLimiter = mock(AuthRateLimiter.class);
+        ClientCodeAuthService svc = new ClientCodeAuthService(mapper, accessLog, mockLimiter);
+        String ts = Long.toString(System.currentTimeMillis());
+        String h = header(ts, "0123456789abcdef0123456789abcdef", "GET", "/api/danmu/get", "d");
+        try (MockedStatic<ExternalWbVerifier> wb = mockStatic(ExternalWbVerifier.class)) {
+            wb.when(ExternalWbVerifier::isExternalOnlyMode).thenReturn(true);
+            wb.when(() -> ExternalWbVerifier.verify(any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(Boolean.FALSE);
+            ClientCodeAuthService.Outcome outcome = svc.verify(h, VALID_WB, "GET", "/api/danmu/get",
+                    new HashMap<>(), null, "d", "10.0.0.1", "2.4.0");
+            assertEquals(ResultCodes.CODE_BUILD_REQUIRED, outcome.errorCode());
+            org.mockito.Mockito.verify(mockLimiter).recordFailure("10.0.0.1");
+            org.mockito.Mockito.verify(mockLimiter, never()).recordSuccess(anyString());
+        }
     }
 }

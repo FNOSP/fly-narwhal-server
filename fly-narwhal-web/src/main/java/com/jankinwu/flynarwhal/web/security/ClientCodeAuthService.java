@@ -7,6 +7,7 @@ import com.jankinwu.flynarwhal.web.entity.ClientAccessLog;
 import com.jankinwu.flynarwhal.web.entity.ClientAuthCode;
 import com.jankinwu.flynarwhal.web.mapper.ClientAuthCodeMapper;
 import com.jankinwu.flynarwhal.web.service.ClientAccessLogService;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -16,12 +17,15 @@ import java.util.Base64;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Issues and verifies per-client authorization codes (FNK2).
  *
  * <p>Verification order: timestamp window → keyid lookup → status/expiry →
- * HMAC (constant-time) → nonce replay → first-use device binding. Failures are
+ * HMAC (constant-time) → white-box build proof (release builds only) →
+ * nonce replay → first-use device binding. Failures are
  * values ({@link Outcome}), never exceptions, and every outcome feeds the
  * access log. The plaintext code exists only inside {@link #createCode}.
  */
@@ -31,6 +35,9 @@ public class ClientCodeAuthService {
 
     private static final long TS_WINDOW_MS = 5 * 60_000L;
     private static final int NONCE_MAX_PER_KEY = 8192;
+
+    /** Pinned Fnwb header shape: {@code v=2&sig=<32 lowercase hex>}. */
+    private static final Pattern WB_HEADER = Pattern.compile("v=2&sig=([0-9a-f]{32})");
 
     private final ClientAuthCodeMapper codeMapper;
     private final ClientAccessLogService accessLog;
@@ -46,6 +53,11 @@ public class ClientCodeAuthService {
         this.codeMapper = codeMapper;
         this.accessLog = accessLog;
         this.rateLimiter = rateLimiter;
+    }
+
+    @PostConstruct
+    public void initExternalWbVerifier() {
+        ExternalWbVerifier.preload();
     }
 
     /** Result of one verification: either the authenticated code or a business error. */
@@ -90,9 +102,10 @@ public class ClientCodeAuthService {
 
     /**
      * Verifies one Fnauth-signed request. {@code header} is the raw Fnauth value
-     * {@code keyid=..&ts=..&nonce=..&sig=..}.
+     * {@code keyid=..&ts=..&nonce=..&sig=..}; {@code fnwb} is the raw Fnwb build-proof
+     * value {@code v=2&sig=..} (required on release builds, ignored on dev builds).
      */
-    public Outcome verify(String header, String method, String url,
+    public Outcome verify(String header, String fnwb, String method, String url,
                           Map<String, String[]> parameters, byte[] body,
                           String instanceId, String ip, String clientVersion) {
         if (rateLimiter.isBlocked(ip)) {
@@ -155,6 +168,22 @@ public class ClientCodeAuthService {
         String expected = ClientCodeCrypto.requestSignature(signKey, method, url, ts, nonce, dataJsonMd5, instanceId);
         if (!ClientCodeCrypto.constantTimeEquals(expected, sig)) {
             return failInvalid(ip, clientVersion, instanceId, code.getId(), code.getName());
+        }
+
+        // White-box build proof, release builds only. Sits after the HMAC check and
+        // before any state mutation: a failed proof must not consume the nonce, bind
+        // the instance or clear the IP's failure history. Fail-closed — a null from
+        // the verifier (daemon down, timeout, missing binary) rejects too.
+        if (ExternalWbVerifier.isExternalOnlyMode()) {
+            String wbSig = parseWbSignature(fnwb);
+            Boolean proofOk = wbSig == null ? null
+                    : ExternalWbVerifier.verify(method, url, ts, nonce, dataJsonMd5, instanceId, sig, wbSig);
+            if (!Boolean.TRUE.equals(proofOk)) {
+                accessLog.record(code.getId(), code.getName(), ClientAccessLog.MODE_CODE, ip, clientVersion, instanceId,
+                        ClientAccessLog.EVENT_BUILD_PROOF_FAILED);
+                rateLimiter.recordFailure(ip);
+                return Outcome.fail(ResultCodes.CODE_BUILD_REQUIRED, ClientAccessLog.EVENT_BUILD_PROOF_FAILED);
+            }
         }
 
         if (!registerNonce(keyId, nonce, now)) {
@@ -220,6 +249,15 @@ public class ClientCodeAuthService {
             }
         }
         return seen.putIfAbsent(nonce, now) == null;
+    }
+
+    /** The 32-hex CMAC from a well-formed {@code v=2&sig=..} header, or null. */
+    private static String parseWbSignature(String fnwb) {
+        if (fnwb == null) {
+            return null;
+        }
+        Matcher m = WB_HEADER.matcher(fnwb.trim());
+        return m.matches() ? m.group(1) : null;
     }
 
     private static Map<String, String> parseHeader(String header) {
