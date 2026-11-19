@@ -489,6 +489,7 @@ def whiteboxDirEnv = System.getenv("FLY_NARWHAL_WHITEBOX_DIR")
 def whiteboxSrcDir = whiteboxDirEnv ? file(whiteboxDirEnv) : null
 def whiteboxWorkDir = layout.buildDirectory.dir("whitebox/work")
 def whiteboxResDir = layout.buildDirectory.dir("generated-resources/whitebox")
+def generatedWbSrcDir = layout.buildDirectory.dir("generated/sources/wb/java")
 
 tasks.register('prepareWhitebox') {
     onlyIf { externalWbEnabled && whiteboxSrcDir != null && whiteboxSrcDir.exists() }
@@ -567,6 +568,62 @@ tasks.register('buildWbVerifierBinaries') {
             }.each { it.delete() }
         }
     }
+}
+
+// Bake the SHA-256 of each built verifier binary into a Java constant compiled into the
+// native image, so ExternalWbVerifier can reject a replaced/stub sibling at runtime.
+// Always runs (even when WB is disabled) to emit a default empty-pin class so the main
+// source set compiles; when disabled, buildWbVerifierBinaries is skipped and no pins exist.
+tasks.register('generateWbVerifierHashes') {
+    dependsOn(tasks.named('buildWbVerifierBinaries'))
+    outputs.dir(generatedWbSrcDir)
+    outputs.upToDateWhen { false }
+    doLast {
+        def dir = generatedWbSrcDir.get().asFile
+        def packagePath = new File(dir, "com/jankinwu/flynarwhal/web/security")
+        packagePath.mkdirs()
+
+        def cases = new StringBuilder()
+        def wbRoot = new File(whiteboxResDir.get().asFile, "native/wb")
+        if (wbRoot.exists()) {
+            wbRoot.listFiles()?.findAll { it.isDirectory() }?.sort { it.name }?.each { platformDir ->
+                def bin = platformDir.listFiles()?.find { it.name.startsWith("flynarwhal-wb") }
+                if (bin != null && bin.isFile()) {
+                    def md = MessageDigest.getInstance("SHA-256")
+                    def hex = md.digest(bin.bytes).collect { String.format("%02x", it) }.join("")
+                    cases.append("            case \"").append(platformDir.name).append("\": return \"").append(hex).append("\";\n")
+                }
+            }
+        }
+
+        def file = new File(packagePath, "WbVerifierIntegrity.java")
+        file.text =
+            "package com.jankinwu.flynarwhal.web.security;\n" +
+            "\n" +
+            "/** Build-time SHA-256 pins for the white-box verifier binaries (generated; do not edit). */\n" +
+            "public final class WbVerifierIntegrity {\n" +
+            "    private WbVerifierIntegrity() {}\n" +
+            "\n" +
+            "    public static String expectedSha256(String osArch) {\n" +
+            "        switch (osArch) {\n" +
+            cases.toString() +
+            "            default: return null;\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n"
+    }
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir(generatedWbSrcDir)
+        }
+    }
+}
+
+tasks.named('compileJava') {
+    dependsOn(tasks.named('generateWbVerifierHashes'))
 }
 
 tasks.register('verifyWbVerifierBinary') {

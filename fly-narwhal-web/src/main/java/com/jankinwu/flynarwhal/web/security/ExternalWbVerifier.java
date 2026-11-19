@@ -4,10 +4,13 @@ import com.jankinwu.flynarwhal.web.config.BuildVersionConfiguration;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.Locale;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -32,6 +35,17 @@ import java.util.concurrent.atomic.AtomicReference;
  * in-Java fallback: a Java-side verification path would need the key in memory, which
  * is exactly what the white-box design eliminates. A release build that cannot reach
  * the daemon must refuse FNK2 requests rather than degrade to a weaker check.
+ *
+ * <p><b>Two hardening rules (do not relax):</b>
+ * <ol>
+ *   <li>The gate is governed solely by the build-time constant {@code BUILD_WB_VERIFIER}.
+ *       There is NO runtime {@code -D...enabled} kill-switch: honoring one would let anyone
+ *       with launch-argument control turn the build proof off on a release build.</li>
+ *   <li>The verifier binary is integrity-pinned. Its SHA-256 is baked into the native image
+ *       at build time ({@link WbVerifierIntegrity}); the resolved sibling/resource binary is
+ *       hashed before use and a mismatch (e.g. a stub that always answers OK) fails closed.
+ *       Removing the binary also fails closed — there is nothing to fall back to.</li>
+ * </ol>
  */
 @Slf4j
 final class ExternalWbVerifier {
@@ -140,14 +154,11 @@ final class ExternalWbVerifier {
     }
 
     private static boolean isEnabled() {
-        if (!BuildVersionConfiguration.BUILD_WB_VERIFIER) {
-            return false;
-        }
-        String enabled = System.getProperty("fly-narwhal.external-wb.enabled");
-        if (enabled == null || enabled.isBlank()) {
-            return true;
-        }
-        return Boolean.parseBoolean(enabled);
+        // The build-time constant is the sole authority. A release build (constant baked
+        // true into the native image) cannot be disabled at runtime: a -D kill-switch would
+        // let anyone with launch-argument control bypass the build proof. Dev builds have
+        // the constant false and never verify. Intentionally unlike ExternalAuthxVerifier.
+        return BuildVersionConfiguration.BUILD_WB_VERIFIER;
     }
 
     private static boolean containsControlChars(String s) {
@@ -182,6 +193,11 @@ final class ExternalWbVerifier {
         // filesystem dependency for no benefit.
         Path external = resolveExternalBinary();
         if (external != null) {
+            if (!integrityOk(external)) {
+                log.warn("wb verifier integrity check FAILED for external binary {} — refusing (possible stub substitution)", external);
+                extractedPath = null;
+                return;
+            }
             tryMakeExecutable(external);
             extractedPath = external;
             return;
@@ -201,6 +217,11 @@ final class ExternalWbVerifier {
             }
             temp.toFile().deleteOnExit();
             Files.copy(in, temp, StandardCopyOption.REPLACE_EXISTING);
+            if (!integrityOk(temp)) {
+                log.warn("wb verifier integrity check FAILED for extracted resource {} — refusing", resourcePath);
+                extractedPath = null;
+                return;
+            }
             tryMakeExecutable(temp);
             extractedPath = temp;
         } catch (Throwable t) {
@@ -288,7 +309,8 @@ final class ExternalWbVerifier {
         }
     }
 
-    private static String detectBinaryResourcePath() {
+    // "<os>-<arch>" classifier matching the build-time binary layout and integrity pins.
+    private static String currentOsArch() {
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
 
@@ -311,9 +333,48 @@ final class ExternalWbVerifier {
         } else {
             return null;
         }
+        return osPart + "-" + archPart;
+    }
 
-        String fileName = "flynarwhal-wb" + binarySuffix();
-        return "native/wb/" + osPart + "-" + archPart + "/" + fileName;
+    private static String detectBinaryResourcePath() {
+        String osArch = currentOsArch();
+        if (osArch == null) {
+            return null;
+        }
+        return "native/wb/" + osArch + "/flynarwhal-wb" + binarySuffix();
+    }
+
+    // Integrity pin: the binary about to be executed must match the SHA-256 baked into the
+    // native image at build time. A missing pin (unsupported platform) or a mismatch (stub
+    // substitution, tampering) fails closed. Package-private for testing.
+    static boolean integrityOk(Path binary) {
+        String osArch = currentOsArch();
+        String expected = osArch == null ? null : WbVerifierIntegrity.expectedSha256(osArch);
+        if (expected == null || expected.isBlank()) {
+            log.warn("wb verifier has no integrity pin for platform {} — refusing", osArch);
+            return false;
+        }
+        try {
+            String actual = sha256Hex(binary);
+            return MessageDigest.isEqual(
+                    expected.getBytes(StandardCharsets.UTF_8),
+                    actual.getBytes(StandardCharsets.UTF_8));
+        } catch (Throwable t) {
+            log.warn("wb verifier integrity hashing failed for {}: {}", binary, t.toString());
+            return false;
+        }
+    }
+
+    private static String sha256Hex(Path p) throws Exception {
+        MessageDigest md = MessageDigest.getInstance("SHA-256");
+        try (InputStream in = Files.newInputStream(p)) {
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) != -1) {
+                md.update(buf, 0, n);
+            }
+        }
+        return HexFormat.of().formatHex(md.digest());
     }
 
     // Read at use time (not injected) because this class is static. Native images return
