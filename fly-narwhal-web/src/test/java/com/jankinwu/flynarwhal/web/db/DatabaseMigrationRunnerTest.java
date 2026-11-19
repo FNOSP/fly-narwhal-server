@@ -63,9 +63,9 @@ class DatabaseMigrationRunnerTest {
 
     /**
      * A dev NAS that ran an intermediate build while it still reported 2.0.0: the
-     * thumbnail tables exist in an older shape, so CREATE TABLE IF NOT EXISTS
-     * leaves them alone and only the ALTERs can bring the newer columns. This is
-     * also why every COMMENT has to follow its ALTER.
+     * thumbnail tables exist in an older shape, and CREATE TABLE IF NOT EXISTS
+     * leaves them alone. This still has to converge on the released schema, so
+     * the comments must not name a column the dev table never had.
      */
     @Test
     void addsMissingColumnsToTablesLeftByADevBuild() throws Exception {
@@ -131,7 +131,7 @@ class DatabaseMigrationRunnerTest {
         assertEquals(BuildVersionConfiguration.BASE_VERSION, version(jdbc));
         assertFinalSchema(jdbc);
         assertTrue(hasColumn(jdbc, "THUMBNAIL_SCAN_CONFIG", "last_inaccessible_dirs"),
-                "the scan config's inaccessible-dir list must arrive on a dev database");
+                "the dev scan config already has the inaccessible-dir list");
         assertNull(jdbc.queryForObject(
                 "SELECT PROGRESS_MARKER FROM THUMBNAIL_SCAN_RUNS WHERE STATUS='SUCCESS'", Integer.class),
                 "finished runs must have their stale in-flight marker backfilled away");
@@ -167,9 +167,10 @@ class DatabaseMigrationRunnerTest {
     }
 
     /**
-     * The per-client auth tables ride the same unreleased 2.1.0 batch: a fresh
-     * database and a 2.0.0 upgrade both get them, and replaying the batch is a
-     * no-op.
+     * The per-client auth tables ride the same unreleased 2.1.0 batch, and a
+     * database that recorded 2.1.0 before the auth and instance scripts were
+     * appended skips the directory: those installs are wiped and reinstalled
+     * (the dev workflow), so released databases are always at or below 2.0.0.
      */
     @Test
     void createsClientAuthTablesOnFreshAndUpgradedDatabases() throws Exception {
@@ -187,57 +188,23 @@ class DatabaseMigrationRunnerTest {
     }
 
     /**
-     * Documents the trap the dev NAS hits: a database that already recorded
-     * 2.1.0 skips the whole directory, so the appended auth script never runs
-     * there. Those installs must be wiped and reinstalled (the user-confirmed
-     * dev workflow); released <=2.0.0 installs are unaffected.
+     * A dev NAS that ran a 2.1.0 build before the auth and instance columns were
+     * folded in: those databases already recorded 2.1.0, so the runner skips the
+     * batch and they have to be wiped and reinstalled. Released databases sit at
+     * 2.0.0 or below and always run it.
      */
     @Test
-    void appendedScriptDoesNotRunOnADatabaseAlreadyRecordedAt210() throws Exception {
+    void doesNotRunTheBatchOnADatabaseAlreadyRecordedAt210() throws Exception {
         DriverManagerDataSource ds = freshDatabase();
         JdbcTemplate jdbc = jdbc(ds);
         recordVersion(jdbc, "2.1.0");
 
         new DatabaseMigrationRunner(ds).run(null);
 
-        // The 2.1.0 install never got the auth tables; 2.1.1 must not rename
-        // columns of tables that were never created.
         assertFalse(hasColumn(jdbc, "CLIENT_ACCESS_LOG", "bucket_key"),
-                "a database already at 2.1.0 must skip the appended script (wipe+reinstall required)");
+                "a database already at 2.1.0 must skip the batch (wipe+reinstall required)");
         assertFalse(hasColumn(jdbc, "CLIENT_ACCESS_LOG", "instance_id"),
-                "2.1.1 must leave a table-less database alone");
-    }
-
-    /**
-     * A released 2.1.0 install already has the auth tables with device-named
-     * columns; 2.1.1 renames them in place and keeps the bound values.
-     */
-    @Test
-    void renamesDeviceColumnsToInstanceOnAReleasedDatabase() throws Exception {
-        DriverManagerDataSource ds = freshDatabase();
-        JdbcTemplate jdbc = jdbc(ds);
-        recordVersion(jdbc, "2.1.0");
-        jdbc.execute("CREATE TABLE CLIENT_AUTH_CODE (ID BIGINT AUTO_INCREMENT PRIMARY KEY, NAME VARCHAR(128), "
-                + "CODE_HASH VARCHAR(64), SIGN_KEY VARCHAR(64), BOUND_DEVICE_ID VARCHAR(128), "
-                + "BOUND_DEVICE_LABEL VARCHAR(256))");
-        jdbc.execute("CREATE TABLE CLIENT_ACCESS_LOG (ID BIGINT AUTO_INCREMENT PRIMARY KEY, "
-                + "DEVICE_ID VARCHAR(128), BUCKET_KEY VARCHAR(160))");
-        jdbc.update("INSERT INTO CLIENT_AUTH_CODE (NAME, CODE_HASH, SIGN_KEY, BOUND_DEVICE_ID, BOUND_DEVICE_LABEL) "
-                + "VALUES ('c', 'h', 'k', 'flutter_abc', 'Studio')");
-
-        new DatabaseMigrationRunner(ds).run(null);
-
-        assertFalse(hasColumn(jdbc, "CLIENT_AUTH_CODE", "bound_device_id"),
-                "the old device column must be gone");
-        assertTrue(hasColumn(jdbc, "CLIENT_AUTH_CODE", "bound_instance_id"), "bound_instance_id is missing");
-        assertTrue(hasColumn(jdbc, "CLIENT_AUTH_CODE", "bound_instance_label"), "bound_instance_label is missing");
-        assertFalse(hasColumn(jdbc, "CLIENT_ACCESS_LOG", "device_id"), "the old log column must be gone");
-        assertTrue(hasColumn(jdbc, "CLIENT_ACCESS_LOG", "instance_id"), "instance_id is missing");
-        assertEquals("flutter_abc", jdbc.queryForObject(
-                "SELECT BOUND_INSTANCE_ID FROM CLIENT_AUTH_CODE WHERE NAME='c'", String.class));
-        assertEquals("Studio", jdbc.queryForObject(
-                "SELECT BOUND_INSTANCE_LABEL FROM CLIENT_AUTH_CODE WHERE NAME='c'", String.class));
-        assertEquals("2.1.1", version(jdbc));
+                "the batch must leave a table-less database alone");
     }
 
     private static void assertClientAuthSchema(JdbcTemplate jdbc) {

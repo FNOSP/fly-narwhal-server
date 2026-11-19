@@ -1,19 +1,17 @@
--- 2.1.0 final release schema: trickplay sprite tasks plus the scheduled scan
--- that fills them.
+-- 2.1.0 final release schema: trickplay sprite tasks, the scheduled scan that
+-- fills them, and the per-client authorization codes with their access log.
 --
 -- Supersedes the 2.1.0 - 2.1.4 development migrations, which only ever shipped
--- as intermediate dev builds: every table is created in its final shape here
--- instead of replaying the add-column history (ADOPT_GUID, FILE_SIZE, PHASE and
--- the run counters, GENERATING_COUNT/WAITING_COUNT, ERROR_CODE).
+-- as intermediate dev builds: every table that 2.1.0 introduces is created in
+-- its final shape here instead of replaying the add-column history (ADOPT_GUID,
+-- FILE_SIZE, PHASE and the run counters, GENERATING_COUNT/WAITING_COUNT,
+-- ERROR_CODE), and the client code and access-log tables already carry their
+-- instance-id columns.
 --
--- THUMBNAIL_TASKS is created here even though 0.14.0 and the 2.0.0 consolidated
--- script also create it: neither ever reached a released install at or above
--- 2.0.0 (the v2.0.0 tag ships only 0.1.0, 0.4.0 and 2.0.0, none of which has the
--- table), so an upgrade from the released 2.0.0 has to build it from scratch.
---
--- The ALTERs below are for databases that ran one of those dev batches: they
--- already have the tables in an older shape, and CREATE TABLE IF NOT EXISTS
--- alone would leave the newer columns missing.
+-- THUMBNAIL_TASKS was introduced by 0.14.0 (still shipped, so it runs on a
+-- fresh install) and THUMBNAIL_SCAN_RUNS by an earlier 2.1.0 dev batch, both
+-- before some of their columns: each table gets the columns that arrived later
+-- right after its CREATE, and before every COMMENT that names them.
 
 -- Sprite generation tasks, one row per media guid. The layout columns persist
 -- what the generator produced, so config changes never invalidate sprites
@@ -38,9 +36,7 @@ CREATE TABLE IF NOT EXISTS THUMBNAIL_TASKS (
     CREATE_TIME   TIMESTAMP      DEFAULT CURRENT_TIMESTAMP,
     UPDATE_TIME   TIMESTAMP
 );
--- The ALTERs must precede every COMMENT: on a dev database the table already
--- exists in an older shape, and commenting a column that is not there yet aborts
--- the whole batch.
+-- 0.14.0 creates this table without these three.
 ALTER TABLE THUMBNAIL_TASKS ADD COLUMN IF NOT EXISTS FILE_SIZE BIGINT;
 ALTER TABLE THUMBNAIL_TASKS ADD COLUMN IF NOT EXISTS ERROR_CODE VARCHAR(64);
 ALTER TABLE THUMBNAIL_TASKS ADD COLUMN IF NOT EXISTS ADOPT_GUID VARCHAR(64);
@@ -82,6 +78,7 @@ CREATE TABLE IF NOT EXISTS THUMBNAIL_SCAN_CONFIG (
     LAST_INACCESSIBLE_DIRS VARCHAR(2048),
     UPDATE_TIME            TIMESTAMP
 );
+-- An earlier 2.1.0 dev batch created this table without the column.
 ALTER TABLE THUMBNAIL_SCAN_CONFIG ADD COLUMN IF NOT EXISTS LAST_INACCESSIBLE_DIRS VARCHAR(2048);
 
 COMMENT ON TABLE THUMBNAIL_SCAN_CONFIG IS '定时缩略图扫描配置(单行,id=1);运行瞬时进度只在内存';
@@ -116,6 +113,7 @@ CREATE TABLE IF NOT EXISTS THUMBNAIL_SCAN_RUNS (
     CREATE_TIME       TIMESTAMP      DEFAULT CURRENT_TIMESTAMP,
     UPDATE_TIME       TIMESTAMP
 );
+-- An earlier 2.1.0 dev batch created this table without the phase and counters.
 ALTER TABLE THUMBNAIL_SCAN_RUNS ADD COLUMN IF NOT EXISTS PHASE VARCHAR(32);
 ALTER TABLE THUMBNAIL_SCAN_RUNS ADD COLUMN IF NOT EXISTS SOURCED_COUNT INT;
 ALTER TABLE THUMBNAIL_SCAN_RUNS ADD COLUMN IF NOT EXISTS GENERATED_COUNT INT;
@@ -167,9 +165,68 @@ CREATE INDEX IF NOT EXISTS IDX_THUMBNAIL_RUN_ITEMS_RUN_STATUS
 CREATE INDEX IF NOT EXISTS IDX_THUMBNAIL_RUN_ITEMS_TASK_GUID
     ON THUMBNAIL_SCAN_RUN_ITEMS(TASK_GUID, STATUS);
 
--- Backfills for dev databases that ran the earlier batches; no-ops on a fresh
+-- Backfills for dev databases that ran an earlier batch; no-ops on a fresh
 -- install. PHASE was added after runs were already recorded, and PROGRESS_MARKER
 -- was never cleared on finish (the entity update skips null fields), so every
 -- finished run still carries 1.
 UPDATE THUMBNAIL_SCAN_RUNS SET PHASE = STATUS WHERE PHASE IS NULL;
 UPDATE THUMBNAIL_SCAN_RUNS SET PROGRESS_MARKER = NULL WHERE STATUS IN ('SUCCESS', 'FAILED');
+
+-- One row per issued client code. The plaintext code is shown exactly once at
+-- creation and never stored: CODE_HASH is the lookup key, SIGN_KEY the HKDF
+-- derivation used to verify request HMACs (symmetric verification requires
+-- server-side signing material; the code itself stays unrecoverable).
+CREATE TABLE IF NOT EXISTS CLIENT_AUTH_CODE (
+    ID                 BIGINT AUTO_INCREMENT PRIMARY KEY,
+    NAME               VARCHAR(128)  NOT NULL,
+    CODE_HASH          VARCHAR(64)   NOT NULL,
+    SIGN_KEY           VARCHAR(64)   NOT NULL,
+    STATUS             VARCHAR(16)   NOT NULL DEFAULT 'ACTIVE',
+    SCOPE              VARCHAR(16)   NOT NULL DEFAULT 'READ_WRITE',
+    EXPIRE_TIME        TIMESTAMP,
+    BOUND_INSTANCE_ID  VARCHAR(128),
+    BOUND_INSTANCE_LABEL VARCHAR(256),
+    BOUND_TIME         TIMESTAMP,
+    LAST_USED_TIME     TIMESTAMP,
+    LAST_USED_IP       VARCHAR(64),
+    LAST_USED_VERSION  VARCHAR(32),
+    CREATE_TIME        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_TIME        TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS IDX_CLIENT_AUTH_CODE_HASH ON CLIENT_AUTH_CODE(CODE_HASH);
+
+-- Aggregated access visibility: one row per (code, ip, event, version, instance,
+-- 5-minute bucket), hit-counted by the in-memory flusher. CODE_NAME is a
+-- denormalized snapshot so rows stay readable after the code is deleted.
+CREATE TABLE IF NOT EXISTS CLIENT_ACCESS_LOG (
+    ID             BIGINT AUTO_INCREMENT PRIMARY KEY,
+    CODE_ID        BIGINT,
+    CODE_NAME      VARCHAR(128),
+    AUTH_MODE      VARCHAR(16) NOT NULL,
+    CLIENT_IP      VARCHAR(64) NOT NULL,
+    CLIENT_VERSION VARCHAR(32),
+    INSTANCE_ID    VARCHAR(128),
+    EVENT          VARCHAR(32) NOT NULL,
+    HIT_COUNT      INT NOT NULL DEFAULT 1,
+    FIRST_TIME     TIMESTAMP,
+    LAST_TIME      TIMESTAMP,
+    BUCKET_KEY     VARCHAR(160) NOT NULL,
+    CREATE_TIME    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_TIME    TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS IDX_CLIENT_ACCESS_LOG_BUCKET ON CLIENT_ACCESS_LOG(BUCKET_KEY);
+CREATE INDEX IF NOT EXISTS IDX_CLIENT_ACCESS_LOG_CODE_TIME ON CLIENT_ACCESS_LOG(CODE_ID, LAST_TIME);
+CREATE INDEX IF NOT EXISTS IDX_CLIENT_ACCESS_LOG_TIME ON CLIENT_ACCESS_LOG(LAST_TIME);
+
+COMMENT ON TABLE CLIENT_AUTH_CODE IS '按客户端发放的授权码(FNK2);明文只展示一次,库存哈希与HKDF派生签名键';
+COMMENT ON COLUMN CLIENT_AUTH_CODE.CODE_HASH IS 'SHA256(完整码字符串)hex,唯一查找键(keyid)';
+COMMENT ON COLUMN CLIENT_AUTH_CODE.SIGN_KEY IS 'HKDF-SHA256(码secret,salt=flynarwhal,info=flynarwhal_sign_v2)的B64,验签与响应加密派生用';
+COMMENT ON COLUMN CLIENT_AUTH_CODE.STATUS IS 'ACTIVE/DISABLED';
+COMMENT ON COLUMN CLIENT_AUTH_CODE.SCOPE IS 'READ_WRITE/READ_ONLY;只读码拒绝写配置端点';
+COMMENT ON COLUMN CLIENT_AUTH_CODE.EXPIRE_TIME IS 'NULL=永久';
+COMMENT ON COLUMN CLIENT_AUTH_CODE.BOUND_INSTANCE_ID IS '首用绑定的客户端实例ID(X-Fn-Instance-Id),NULL=未绑定;不匹配拒绝并记DEVICE_MISMATCH';
+COMMENT ON TABLE CLIENT_ACCESS_LOG IS '访问日志聚合行:每(码,IP,事件,版本,实例,5分钟桶)一行,内存聚合30s落库';
+COMMENT ON COLUMN CLIENT_ACCESS_LOG.AUTH_MODE IS 'CODE=新授权码/LEGACY=旧版授权方式';
+COMMENT ON COLUMN CLIENT_ACCESS_LOG.EVENT IS 'OK/DEVICE_MISMATCH/BAD_SIGN/EXPIRED/DISABLED/NOT_FOUND/REPLAYED/RATE_LIMITED/READ_ONLY_DENIED';
+COMMENT ON COLUMN CLIENT_ACCESS_LOG.INSTANCE_ID IS '请求方客户端实例ID(X-Fn-Instance-Id)';
+COMMENT ON COLUMN CLIENT_ACCESS_LOG.BUCKET_KEY IS '聚合键唯一索引,upsert防重';
